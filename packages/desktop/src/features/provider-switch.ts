@@ -7,15 +7,15 @@
  * Inspired by cc-switch (paseo/reference/cc-switch/).
  */
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import log from "electron-log/main";
 
 export interface Provider {
   id: string;
   name: string;
-  type: "sub2api" | "custom";
+  type: "default" | "sub2api" | "custom";
   endpoint: string;
   apiKey: string;
   isDefault: boolean;
@@ -36,20 +36,75 @@ interface ProviderStore {
   activeProviderId: string | null;
 }
 
+export const DEFAULT_PROVIDER_ID = "default";
+const LEGACY_DEFAULT_PROVIDER_ID = "sub2api-default";
+export const DEFAULT_PROVIDER_NAME = "Default";
+export const DEFAULT_CLAUDE_MODEL = "claude-opus-4-7";
+
 const PROVIDERS_FILE = join(homedir(), ".paseo", "providers.json");
 
-// Config file paths
 function claudeSettingsPath(): string {
   return join(homedir(), ".claude", "settings.json");
 }
+
 function codexAuthPath(): string {
   return join(homedir(), ".codex", "auth.json");
 }
+
 function codexConfigPath(): string {
   return join(homedir(), ".codex", "config.toml");
 }
 
-// --- Store ---
+function providerEndpointBaseUrl(endpoint: string): string {
+  return `${endpoint.replace(/\/+$/, "")}/v1`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function ensureParentDir(filePath: string): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true });
+}
+
+async function atomicWriteText(filePath: string, content: string): Promise<void> {
+  await ensureParentDir(filePath);
+
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(tempPath, content, "utf-8");
+
+  if (process.platform === "win32" && existsSync(filePath)) {
+    await rm(filePath, { force: true });
+  }
+
+  await rename(tempPath, filePath);
+}
+
+async function readJsonObject(filePath: string): Promise<Record<string, unknown>> {
+  try {
+    const raw = await readFile(filePath, "utf-8");
+    const parsed = JSON.parse(raw) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function readFileOrNull(filePath: string): Promise<string | null> {
+  try {
+    return await readFile(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+async function restoreFile(filePath: string, contents: string | null): Promise<void> {
+  if (contents === null) {
+    await rm(filePath, { force: true });
+    return;
+  }
+  await atomicWriteText(filePath, contents);
+}
 
 async function loadStore(): Promise<ProviderStore> {
   try {
@@ -64,78 +119,84 @@ async function loadStore(): Promise<ProviderStore> {
 }
 
 async function saveStore(store: ProviderStore): Promise<void> {
-  const dir = join(homedir(), ".paseo");
-  if (!existsSync(dir)) {
-    await mkdir(dir, { recursive: true });
-  }
-  await writeFile(PROVIDERS_FILE, JSON.stringify(store, null, 2), "utf-8");
+  await ensureParentDir(PROVIDERS_FILE);
+  await atomicWriteText(PROVIDERS_FILE, JSON.stringify(store, null, 2));
 }
 
-// --- Config writers ---
+function readString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function buildClaudeSettings(provider: Provider, existing: Record<string, unknown>) {
+  const providerConfig = isRecord(provider.claudeConfig) ? provider.claudeConfig : {};
+  const existingEnv = isRecord(existing.env) ? existing.env : {};
+  const providerEnv = isRecord(providerConfig.env) ? providerConfig.env : {};
+  const defaultClaudeModel = readString(providerEnv.ANTHROPIC_MODEL) ?? DEFAULT_CLAUDE_MODEL;
+  const defaultOpusModel =
+    readString(providerEnv.ANTHROPIC_DEFAULT_OPUS_MODEL) ?? defaultClaudeModel;
+
+  return {
+    ...existing,
+    ...providerConfig,
+    env: {
+      ...existingEnv,
+      ...providerEnv,
+      ANTHROPIC_BASE_URL: provider.endpoint,
+      ANTHROPIC_AUTH_TOKEN: provider.apiKey,
+      ANTHROPIC_MODEL: defaultClaudeModel,
+      ANTHROPIC_DEFAULT_OPUS_MODEL: defaultOpusModel,
+    },
+  };
+}
+
+function buildCodexAuth(provider: Provider): Record<string, string> {
+  return provider.codexAuth ?? { OPENAI_API_KEY: provider.apiKey };
+}
+
+export function buildCodexConfig(provider: Provider): string {
+  if (provider.codexConfig) {
+    return provider.codexConfig;
+  }
+
+  const defaultCodexModel =
+    provider.type === "default" || provider.type === "sub2api" ? DEFAULT_CLAUDE_MODEL : "gpt-4o";
+
+  return `model_provider = "default"
+model = "${defaultCodexModel}"
+
+[model_providers.default]
+name = "${provider.name}"
+base_url = "${providerEndpointBaseUrl(provider.endpoint)}"
+wire_api = "responses"
+requires_openai_auth = true
+`;
+}
 
 async function writeClaudeSettings(provider: Provider): Promise<void> {
-  const dir = join(homedir(), ".claude");
-  if (!existsSync(dir)) {
-    await mkdir(dir, { recursive: true });
-  }
-
-  // Read existing settings to preserve user customizations
-  let existing: Record<string, unknown> = {};
-  try {
-    const raw = await readFile(claudeSettingsPath(), "utf-8");
-    existing = JSON.parse(raw);
-  } catch {
-    // No existing file
-  }
-
-  const env = (existing.env as Record<string, string>) ?? {};
-  env.ANTHROPIC_BASE_URL = provider.endpoint;
-  env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
-
-  const merged = {
-    ...existing,
-    env,
-    ...(provider.claudeConfig ?? {}),
-  };
-
-  await writeFile(claudeSettingsPath(), JSON.stringify(merged, null, 2), "utf-8");
+  const merged = buildClaudeSettings(provider, await readJsonObject(claudeSettingsPath()));
+  await atomicWriteText(claudeSettingsPath(), JSON.stringify(merged, null, 2));
   log.info("[provider-switch] wrote claude settings for provider:", provider.name);
 }
 
 async function writeCodexSettings(provider: Provider): Promise<void> {
-  const dir = join(homedir(), ".codex");
-  if (!existsSync(dir)) {
-    await mkdir(dir, { recursive: true });
-  }
+  const authPath = codexAuthPath();
+  const configPath = codexConfigPath();
+  const oldAuth = await readFileOrNull(authPath);
 
-  // Write auth.json
-  const auth = provider.codexAuth ?? { OPENAI_API_KEY: provider.apiKey };
-  await writeFile(codexAuthPath(), JSON.stringify(auth, null, 2), "utf-8");
+  await atomicWriteText(authPath, JSON.stringify(buildCodexAuth(provider), null, 2));
 
-  // Write config.toml
-  const configToml =
-    provider.codexConfig ??
-    `model_provider = "sub2api"
-model = "gpt-4o"
-
-[model_providers.sub2api]
-name = "${provider.name}"
-base_url = "${provider.endpoint}/v1"
-wire_api = "responses"
-requires_openai_auth = true
-`;
-  await writeFile(codexConfigPath(), configToml, "utf-8");
-  log.info("[provider-switch] wrote codex settings for provider:", provider.name);
-}
-
-// --- Backup / Restore ---
-
-async function readFileOrNull(path: string): Promise<string | null> {
   try {
-    return await readFile(path, "utf-8");
-  } catch {
-    return null;
+    await atomicWriteText(configPath, buildCodexConfig(provider));
+  } catch (error) {
+    await restoreFile(authPath, oldAuth);
+    throw error;
   }
+
+  log.info("[provider-switch] wrote codex settings for provider:", provider.name);
 }
 
 export async function backupCurrentConfig(): Promise<ConfigBackup> {
@@ -148,23 +209,11 @@ export async function backupCurrentConfig(): Promise<ConfigBackup> {
 }
 
 export async function restoreConfig(backup: ConfigBackup): Promise<void> {
-  if (backup.claudeSettings !== null) {
-    const dir = join(homedir(), ".claude");
-    if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-    await writeFile(claudeSettingsPath(), backup.claudeSettings, "utf-8");
-  }
-  if (backup.codexAuth !== null) {
-    const dir = join(homedir(), ".codex");
-    if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-    await writeFile(codexAuthPath(), backup.codexAuth, "utf-8");
-  }
-  if (backup.codexConfig !== null) {
-    await writeFile(codexConfigPath(), backup.codexConfig, "utf-8");
-  }
+  await restoreFile(claudeSettingsPath(), backup.claudeSettings);
+  await restoreFile(codexAuthPath(), backup.codexAuth);
+  await restoreFile(codexConfigPath(), backup.codexConfig);
   log.info("[provider-switch] restored config from backup at", backup.timestamp);
 }
-
-// --- Public API ---
 
 export async function getProviders(): Promise<ProviderStore> {
   return loadStore();
@@ -172,7 +221,7 @@ export async function getProviders(): Promise<ProviderStore> {
 
 export async function addProvider(provider: Provider): Promise<void> {
   const store = await loadStore();
-  const idx = store.providers.findIndex((p) => p.id === provider.id);
+  const idx = store.providers.findIndex((entry) => entry.id === provider.id);
   if (idx >= 0) {
     store.providers[idx] = provider;
   } else {
@@ -183,7 +232,7 @@ export async function addProvider(provider: Provider): Promise<void> {
 
 export async function removeProvider(id: string): Promise<void> {
   const store = await loadStore();
-  store.providers = store.providers.filter((p) => p.id !== id);
+  store.providers = store.providers.filter((provider) => provider.id !== id);
   if (store.activeProviderId === id) {
     store.activeProviderId = null;
   }
@@ -192,21 +241,22 @@ export async function removeProvider(id: string): Promise<void> {
 
 export async function switchProvider(id: string): Promise<ConfigBackup> {
   const store = await loadStore();
-  const provider = store.providers.find((p) => p.id === id);
+  const provider = store.providers.find((entry) => entry.id === id);
   if (!provider) {
     throw new Error(`Provider not found: ${id}`);
   }
 
-  // Backup current config before switching
   const backup = await backupCurrentConfig();
 
-  // Write new configs
-  await writeClaudeSettings(provider);
-  await writeCodexSettings(provider);
-
-  // Update active provider
-  store.activeProviderId = id;
-  await saveStore(store);
+  try {
+    await writeClaudeSettings(provider);
+    await writeCodexSettings(provider);
+    store.activeProviderId = id;
+    await saveStore(store);
+  } catch (error) {
+    await restoreConfig(backup);
+    throw error;
+  }
 
   log.info("[provider-switch] switched to provider:", provider.name);
   return backup;
@@ -214,8 +264,10 @@ export async function switchProvider(id: string): Promise<ConfigBackup> {
 
 export async function getCurrentProvider(): Promise<Provider | null> {
   const store = await loadStore();
-  if (!store.activeProviderId) return null;
-  return store.providers.find((p) => p.id === store.activeProviderId) ?? null;
+  if (!store.activeProviderId) {
+    return null;
+  }
+  return store.providers.find((provider) => provider.id === store.activeProviderId) ?? null;
 }
 
 export async function setupDefaultProvider(params: {
@@ -224,29 +276,42 @@ export async function setupDefaultProvider(params: {
   name?: string;
 }): Promise<Provider> {
   const store = await loadStore();
-  const id = "sub2api-default";
+  const id = DEFAULT_PROVIDER_ID;
   const provider: Provider = {
     id,
-    name: params.name ?? "Sub2API",
-    type: "sub2api",
+    name: params.name ?? DEFAULT_PROVIDER_NAME,
+    type: "default",
     endpoint: params.endpoint,
     apiKey: params.apiKey,
     isDefault: true,
+    claudeConfig: {
+      env: {
+        ANTHROPIC_MODEL: DEFAULT_CLAUDE_MODEL,
+        ANTHROPIC_DEFAULT_OPUS_MODEL: DEFAULT_CLAUDE_MODEL,
+      },
+    },
   };
 
-  const idx = store.providers.findIndex((p) => p.id === id);
+  store.providers = store.providers.filter((entry) => entry.id !== LEGACY_DEFAULT_PROVIDER_ID);
+  const idx = store.providers.findIndex((entry) => entry.id === id);
   if (idx >= 0) {
     store.providers[idx] = provider;
   } else {
     store.providers.push(provider);
   }
-  store.activeProviderId = id;
-  await saveStore(store);
 
-  // Write configs immediately
-  await writeClaudeSettings(provider);
-  await writeCodexSettings(provider);
+  const backup = await backupCurrentConfig();
 
-  log.info("[provider-switch] set up default sub2api provider");
+  try {
+    await writeClaudeSettings(provider);
+    await writeCodexSettings(provider);
+    store.activeProviderId = id;
+    await saveStore(store);
+  } catch (error) {
+    await restoreConfig(backup);
+    throw error;
+  }
+
+  log.info("[provider-switch] set up default provider");
   return provider;
 }

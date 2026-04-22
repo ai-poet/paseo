@@ -204,11 +204,97 @@ export interface InstallStatus {
   installed: boolean;
 }
 
+export interface ModelCliRuntimeToolStatus {
+  command: "codex" | "claude";
+  packageName: string;
+  installed: boolean;
+  version: string | null;
+  error: string | null;
+}
+
+export interface NodeRuntimeStatus {
+  installed: boolean;
+  version: string | null;
+  major: number | null;
+  npmVersion: string | null;
+  satisfies: boolean;
+  manager: "nvm" | "brew" | "shell";
+  error: string | null;
+}
+
+export interface ModelCliRuntimeStatus {
+  node: NodeRuntimeStatus;
+  codex: ModelCliRuntimeToolStatus;
+  claude: ModelCliRuntimeToolStatus;
+}
+
+export interface ModelCliInstallResult {
+  status: ModelCliRuntimeStatus;
+  output: string;
+}
+
 function parseInstallStatus(raw: unknown): InstallStatus {
   if (!isRecord(raw)) {
     throw new Error("Unexpected install status response.");
   }
   return { installed: raw.installed === true };
+}
+
+function parseNodeRuntimeStatus(raw: unknown): NodeRuntimeStatus {
+  if (!isRecord(raw)) {
+    throw new Error("Unexpected node runtime status response.");
+  }
+  const manager = toStringOrNull(raw.manager);
+  if (manager !== "nvm" && manager !== "brew" && manager !== "shell") {
+    throw new Error("Unexpected node runtime manager.");
+  }
+  return {
+    installed: raw.installed === true,
+    version: toStringOrNull(raw.version),
+    major: toNumberOrNull(raw.major),
+    npmVersion: toStringOrNull(raw.npmVersion),
+    satisfies: raw.satisfies === true,
+    manager,
+    error: toStringOrNull(raw.error),
+  };
+}
+
+function parseModelCliRuntimeToolStatus(raw: unknown): ModelCliRuntimeToolStatus {
+  if (!isRecord(raw)) {
+    throw new Error("Unexpected CLI runtime tool status response.");
+  }
+  const command = toStringOrNull(raw.command);
+  if (command !== "codex" && command !== "claude") {
+    throw new Error("Unexpected CLI runtime tool command.");
+  }
+  return {
+    command,
+    packageName: toStringOrNull(raw.packageName) ?? "",
+    installed: raw.installed === true,
+    version: toStringOrNull(raw.version),
+    error: toStringOrNull(raw.error),
+  };
+}
+
+function parseModelCliRuntimeStatus(raw: unknown): ModelCliRuntimeStatus {
+  if (!isRecord(raw)) {
+    throw new Error("Unexpected CLI runtime status response.");
+  }
+  return {
+    node: parseNodeRuntimeStatus(raw.node),
+    codex: parseModelCliRuntimeToolStatus(raw.codex),
+    claude: parseModelCliRuntimeToolStatus(raw.claude),
+  };
+}
+
+function parseModelCliInstallResult(raw: unknown): ModelCliInstallResult {
+  if (!isRecord(raw)) {
+    throw new Error("Unexpected CLI install result response.");
+  }
+  return {
+    status: parseModelCliRuntimeStatus(raw.status),
+    output: typeof raw.output === "string" ? raw.output : "",
+  };
 }
 
 export async function getCliInstallStatus(): Promise<InstallStatus> {
@@ -225,4 +311,24 @@ export async function getSkillsInstallStatus(): Promise<InstallStatus> {
 
 export async function installSkills(): Promise<InstallStatus> {
   return parseInstallStatus(await invokeDesktopCommand("install_skills"));
+}
+
+export async function getModelCliRuntimeStatus(): Promise<ModelCliRuntimeStatus> {
+  return parseModelCliRuntimeStatus(await invokeDesktopCommand("get_model_cli_runtime_status"));
+}
+
+export async function installNode22Runtime(): Promise<ModelCliInstallResult> {
+  return parseModelCliInstallResult(await invokeDesktopCommand("install_node22_runtime"));
+}
+
+export async function installCodexCli(): Promise<ModelCliInstallResult> {
+  return parseModelCliInstallResult(await invokeDesktopCommand("install_codex_cli"));
+}
+
+export async function installClaudeCodeCli(): Promise<ModelCliInstallResult> {
+  return parseModelCliInstallResult(await invokeDesktopCommand("install_claude_code_cli"));
+}
+
+export async function installAllModelClis(): Promise<ModelCliInstallResult> {
+  return parseModelCliInstallResult(await invokeDesktopCommand("install_all_model_clis"));
 }

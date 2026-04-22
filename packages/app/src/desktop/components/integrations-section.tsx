@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
-import { Text, View } from "react-native";
+import { Alert, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { ArrowUpRight, Terminal, Blocks, Check } from "lucide-react-native";
+import { ArrowUpRight, Terminal, Blocks, Check, Cpu, Wrench } from "lucide-react-native";
 import { settingsStyles } from "@/styles/settings";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,12 @@ import {
   getSkillsInstallStatus,
   installSkills,
   type InstallStatus,
+  getModelCliRuntimeStatus,
+  installAllModelClis,
+  installClaudeCodeCli,
+  installCodexCli,
+  installNode22Runtime,
+  type ModelCliRuntimeStatus,
 } from "@/desktop/daemon/desktop-daemon";
 
 const CLI_DOCS_URL = "https://paseo.sh/docs/cli";
@@ -25,8 +31,13 @@ export function IntegrationsSection() {
 
   const [cliStatus, setCliStatus] = useState<InstallStatus | null>(null);
   const [skillsStatus, setSkillsStatus] = useState<InstallStatus | null>(null);
+  const [modelCliStatus, setModelCliStatus] = useState<ModelCliRuntimeStatus | null>(null);
   const [isInstallingCli, setIsInstallingCli] = useState(false);
   const [isInstallingSkills, setIsInstallingSkills] = useState(false);
+  const [isInstallingNodeRuntime, setIsInstallingNodeRuntime] = useState(false);
+  const [isInstallingCodex, setIsInstallingCodex] = useState(false);
+  const [isInstallingClaudeCode, setIsInstallingClaudeCode] = useState(false);
+  const [isInstallingAll, setIsInstallingAll] = useState(false);
 
   const loadStatus = useCallback(() => {
     if (!showSection) return;
@@ -39,6 +50,11 @@ export function IntegrationsSection() {
       .then(setSkillsStatus)
       .catch((error) => {
         console.error("[Integrations] Failed to load skills status", error);
+      });
+    void getModelCliRuntimeStatus()
+      .then(setModelCliStatus)
+      .catch((error) => {
+        console.error("[Integrations] Failed to load model CLI runtime status", error);
       });
   }, [showSection]);
 
@@ -57,6 +73,7 @@ export function IntegrationsSection() {
       .then(setCliStatus)
       .catch((error) => {
         console.error("[Integrations] Failed to install CLI", error);
+        Alert.alert("Install failed", error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         setIsInstallingCli(false);
@@ -70,15 +87,95 @@ export function IntegrationsSection() {
       .then(setSkillsStatus)
       .catch((error) => {
         console.error("[Integrations] Failed to install skills", error);
+        Alert.alert("Install failed", error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         setIsInstallingSkills(false);
       });
   }, [isInstallingSkills]);
 
+  const handleInstallNodeRuntime = useCallback(() => {
+    if (isInstallingNodeRuntime) return;
+    setIsInstallingNodeRuntime(true);
+    void installNode22Runtime()
+      .then((result) => {
+        setModelCliStatus(result.status);
+      })
+      .catch((error) => {
+        console.error("[Integrations] Failed to install Node.js 22 runtime", error);
+        Alert.alert("Install failed", error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        setIsInstallingNodeRuntime(false);
+      });
+  }, [isInstallingNodeRuntime]);
+
+  const handleInstallCodex = useCallback(() => {
+    if (isInstallingCodex) return;
+    setIsInstallingCodex(true);
+    void installCodexCli()
+      .then((result) => {
+        setModelCliStatus(result.status);
+      })
+      .catch((error) => {
+        console.error("[Integrations] Failed to install Codex CLI", error);
+        Alert.alert("Install failed", error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        setIsInstallingCodex(false);
+      });
+  }, [isInstallingCodex]);
+
+  const handleInstallClaudeCode = useCallback(() => {
+    if (isInstallingClaudeCode) return;
+    setIsInstallingClaudeCode(true);
+    void installClaudeCodeCli()
+      .then((result) => {
+        setModelCliStatus(result.status);
+      })
+      .catch((error) => {
+        console.error("[Integrations] Failed to install Claude Code CLI", error);
+        Alert.alert("Install failed", error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        setIsInstallingClaudeCode(false);
+      });
+  }, [isInstallingClaudeCode]);
+
+  const handleInstallAll = useCallback(() => {
+    if (isInstallingAll) return;
+    setIsInstallingAll(true);
+    void installAllModelClis()
+      .then((result) => {
+        setModelCliStatus(result.status);
+      })
+      .catch((error) => {
+        console.error("[Integrations] Failed to install Node.js and model CLIs", error);
+        Alert.alert("Install failed", error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        setIsInstallingAll(false);
+      });
+  }, [isInstallingAll]);
+
   if (!showSection) {
     return null;
   }
+
+  const nodeRuntimeHint = modelCliStatus?.node.installed
+    ? modelCliStatus.node.satisfies
+      ? `Node.js ${modelCliStatus.node.version} · npm ${modelCliStatus.node.npmVersion ?? "unknown"}`
+      : `Detected Node.js ${modelCliStatus.node.version}. Use Node 22 for Codex and Claude Code installs.`
+    : (modelCliStatus?.node.error ?? "Node.js was not detected yet.");
+  const codexHint = modelCliStatus?.codex.installed
+    ? `Codex ${modelCliStatus.codex.version ?? "installed"}`
+    : (modelCliStatus?.codex.error ?? "Install the Codex CLI into the managed Node 22 runtime.");
+  const claudeHint = modelCliStatus?.claude.installed
+    ? `Claude Code ${modelCliStatus.claude.version ?? "installed"}`
+    : (modelCliStatus?.claude.error ??
+      "Install the Claude Code CLI into the managed Node 22 runtime.");
+  const isRuntimeBusy =
+    isInstallingNodeRuntime || isInstallingCodex || isInstallingClaudeCode || isInstallingAll;
 
   const trailing = (
     <View style={styles.headerLinks}>
@@ -161,6 +258,84 @@ export function IntegrationsSection() {
               {isInstallingSkills ? "Installing..." : "Install"}
             </Button>
           )}
+        </View>
+      </View>
+
+      <View style={settingsStyles.card}>
+        <View style={settingsStyles.row}>
+          <View style={settingsStyles.rowContent}>
+            <View style={styles.rowTitleRow}>
+              <Cpu size={theme.iconSize.md} color={theme.colors.foreground} />
+              <Text style={settingsStyles.rowTitle}>Node.js 22 runtime</Text>
+            </View>
+            <Text style={settingsStyles.rowHint}>{nodeRuntimeHint}</Text>
+          </View>
+          {modelCliStatus?.node.satisfies ? (
+            <View style={styles.installedLabel}>
+              <Check size={14} color={theme.colors.foregroundMuted} />
+              <Text style={styles.mutedText}>Ready</Text>
+            </View>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={handleInstallNodeRuntime}
+              disabled={isRuntimeBusy}
+            >
+              {isInstallingNodeRuntime ? "Installing..." : "Install"}
+            </Button>
+          )}
+        </View>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <View style={styles.rowTitleRow}>
+              <Terminal size={theme.iconSize.md} color={theme.colors.foreground} />
+              <Text style={settingsStyles.rowTitle}>Codex CLI</Text>
+            </View>
+            <Text style={settingsStyles.rowHint}>{codexHint}</Text>
+          </View>
+          <Button variant="outline" size="sm" onPress={handleInstallCodex} disabled={isRuntimeBusy}>
+            {isInstallingCodex
+              ? "Installing..."
+              : modelCliStatus?.codex.installed
+                ? "Reinstall"
+                : "Install"}
+          </Button>
+        </View>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <View style={styles.rowTitleRow}>
+              <Terminal size={theme.iconSize.md} color={theme.colors.foreground} />
+              <Text style={settingsStyles.rowTitle}>Claude Code CLI</Text>
+            </View>
+            <Text style={settingsStyles.rowHint}>{claudeHint}</Text>
+          </View>
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={handleInstallClaudeCode}
+            disabled={isRuntimeBusy}
+          >
+            {isInstallingClaudeCode
+              ? "Installing..."
+              : modelCliStatus?.claude.installed
+                ? "Reinstall"
+                : "Install"}
+          </Button>
+        </View>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <View style={styles.rowTitleRow}>
+              <Wrench size={theme.iconSize.md} color={theme.colors.foreground} />
+              <Text style={settingsStyles.rowTitle}>External agent stack</Text>
+            </View>
+            <Text style={settingsStyles.rowHint}>
+              Install Node.js 22, Codex, and Claude Code in one pass.
+            </Text>
+          </View>
+          <Button variant="outline" size="sm" onPress={handleInstallAll} disabled={isRuntimeBusy}>
+            {isInstallingAll ? "Installing..." : "Install all"}
+          </Button>
         </View>
       </View>
     </SettingsSection>

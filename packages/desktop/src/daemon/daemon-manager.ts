@@ -23,6 +23,13 @@ import {
   getSkillsInstallStatus,
 } from "../integrations/integrations-manager.js";
 import {
+  getModelCliRuntimeStatus,
+  installAllModelClis,
+  installClaudeCodeCli,
+  installCodexCli,
+  installNode22Runtime,
+} from "../integrations/model-cli-manager.js";
+import {
   getProviders,
   addProvider,
   removeProvider,
@@ -521,20 +528,22 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
     get_cli_install_status: () => getCliInstallStatus(),
     install_skills: () => installSkills(),
     get_skills_install_status: () => getSkillsInstallStatus(),
+    get_model_cli_runtime_status: () => getModelCliRuntimeStatus(),
+    install_node22_runtime: () => installNode22Runtime(),
+    install_codex_cli: () => installCodexCli(),
+    install_claude_code_cli: () => installClaudeCodeCli(),
+    install_all_model_clis: () => installAllModelClis(),
 
     // Provider switching
     get_providers: () => getProviders(),
-    add_provider: (args?: Record<string, unknown>) =>
-      addProvider(args as unknown as Provider),
+    add_provider: (args?: Record<string, unknown>) => addProvider(args as unknown as Provider),
     remove_provider: (args?: Record<string, unknown>) =>
       removeProvider((args as { id: string }).id),
     switch_provider: (args?: Record<string, unknown>) =>
       switchProvider((args as { id: string }).id),
     get_current_provider: () => getCurrentProvider(),
     setup_default_provider: (args?: Record<string, unknown>) =>
-      setupDefaultProvider(
-        args as unknown as { endpoint: string; apiKey: string; name?: string },
-      ),
+      setupDefaultProvider(args as unknown as { endpoint: string; apiKey: string; name?: string }),
     backup_config: () => backupCurrentConfig(),
     restore_config: (args?: Record<string, unknown>) =>
       restoreConfig(args as unknown as ConfigBackup),

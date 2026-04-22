@@ -40,6 +40,39 @@ const OPEN_PROJECT_EVENT = "paseo:event:open-project";
 const AUTH_CALLBACK_EVENT = "paseo:event:auth-callback";
 app.setName("Paseo");
 
+function normalizeAuthCallbackUrl(rawUrl: string | null | undefined): string | null {
+  if (typeof rawUrl !== "string") {
+    return null;
+  }
+
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== `${APP_SCHEME}:`) {
+      return null;
+    }
+
+    const route = `${parsed.host}${parsed.pathname}`.replace(/\/+$/, "");
+    return route === "auth/callback" ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseAuthCallbackUrlFromArgv(argv: string[]): string | null {
+  for (const arg of argv) {
+    const authCallbackUrl = normalizeAuthCallbackUrl(arg);
+    if (authCallbackUrl) {
+      return authCallbackUrl;
+    }
+  }
+  return null;
+}
+
 // In dev mode, detect git worktrees and isolate each instance so multiple
 // Electron windows can run side-by-side (separate userData = separate lock).
 let devWorktreeName: string | null = null;
@@ -87,10 +120,12 @@ let pendingOpenProjectPath = parseOpenProjectPathFromArgv({
   argv: process.argv,
   isDefaultApp: process.defaultApp,
 });
+let pendingAuthCallbackUrl = parseAuthCallbackUrlFromArgv(process.argv);
 
 log.info("[open-project] argv:", process.argv);
 log.info("[open-project] isDefaultApp:", process.defaultApp);
 log.info("[open-project] pendingOpenProjectPath:", pendingOpenProjectPath);
+log.info("[auth-callback] pendingAuthCallbackUrl:", pendingAuthCallbackUrl);
 
 // The renderer pulls the pending path on mount via IPC — this avoids
 // a race where the push event arrives before React registers its listener.
@@ -98,6 +133,13 @@ ipcMain.handle("paseo:get-pending-open-project", () => {
   log.info("[open-project] renderer requested pending path:", pendingOpenProjectPath);
   const result = pendingOpenProjectPath;
   pendingOpenProjectPath = null;
+  return result;
+});
+
+ipcMain.handle("paseo:get-pending-auth-callback", () => {
+  log.info("[auth-callback] renderer requested pending url:", pendingAuthCallbackUrl);
+  const result = pendingAuthCallbackUrl;
+  pendingAuthCallbackUrl = null;
   return result;
 });
 
@@ -217,6 +259,61 @@ function sendOpenProjectEvent(win: BrowserWindow, projectPath: string): void {
   send();
 }
 
+function sendAuthCallbackEvent(win: BrowserWindow, callbackUrl: string): void {
+  const send = () => {
+    log.info("[auth-callback] sending event to renderer:", callbackUrl);
+    win.webContents.send(AUTH_CALLBACK_EVENT, { url: callbackUrl });
+  };
+
+  if (win.webContents.isLoadingMainFrame()) {
+    log.info("[auth-callback] waiting for did-finish-load before sending event");
+    win.webContents.once("did-finish-load", send);
+    return;
+  }
+
+  send();
+}
+
+function revealAndFocusWindow(win: BrowserWindow): void {
+  win.show();
+  if (win.isMinimized()) {
+    win.restore();
+  }
+  win.focus();
+}
+
+function forwardAuthCallback(url: string): void {
+  const authCallbackUrl = normalizeAuthCallbackUrl(url);
+  if (!authCallbackUrl) {
+    return;
+  }
+
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win || win.webContents.isLoadingMainFrame()) {
+    pendingAuthCallbackUrl = authCallbackUrl;
+  }
+
+  if (win) {
+    sendAuthCallbackEvent(win, authCallbackUrl);
+    revealAndFocusWindow(win);
+  }
+}
+
+function registerAppProtocolClient(): void {
+  const registered =
+    process.defaultApp && process.argv.length >= 2
+      ? app.setAsDefaultProtocolClient(APP_SCHEME, process.execPath, [
+          path.resolve(process.argv[1]),
+        ])
+      : app.setAsDefaultProtocolClient(APP_SCHEME);
+
+  log.info("[protocol] registered app protocol client", {
+    scheme: APP_SCHEME,
+    registered,
+    defaultApp: process.defaultApp,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
@@ -234,15 +331,20 @@ function setupSingleInstanceLock(): boolean {
       argv: commandLine,
       isDefaultApp: false,
     });
+    const authCallbackUrl = parseAuthCallbackUrlFromArgv(commandLine);
     log.info("[open-project] second-instance openProjectPath:", openProjectPath);
+    log.info("[auth-callback] second-instance url:", authCallbackUrl);
     const win = BrowserWindow.getAllWindows()[0];
     if (win) {
-      win.show();
-      if (win.isMinimized()) win.restore();
-      win.focus();
+      revealAndFocusWindow(win);
       if (openProjectPath) {
         sendOpenProjectEvent(win, openProjectPath);
       }
+      if (authCallbackUrl) {
+        forwardAuthCallback(authCallbackUrl);
+      }
+    } else if (authCallbackUrl) {
+      pendingAuthCallbackUrl = authCallbackUrl;
     }
   });
 
@@ -268,7 +370,11 @@ async function runCliPassthroughIfRequested(): Promise<boolean> {
 }
 
 async function bootstrap(): Promise<void> {
-  if (!pendingOpenProjectPath && (await runCliPassthroughIfRequested())) {
+  if (
+    !pendingOpenProjectPath &&
+    !pendingAuthCallbackUrl &&
+    (await runCliPassthroughIfRequested())
+  ) {
     return;
   }
 
@@ -276,23 +382,18 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
+  registerAppProtocolClient();
   await app.whenReady();
 
   const appDistDir = getAppDistDir();
   protocol.handle(APP_SCHEME, (request) => {
-    const { pathname, search, hash } = new URL(request.url);
+    const parsedUrl = new URL(request.url);
+    const { host, pathname, search, hash } = parsedUrl;
     const decodedPath = decodeURIComponent(pathname);
 
     // Handle OAuth callback: paseo://auth/callback#access_token=...
-    if (decodedPath === "/auth/callback" || decodedPath.startsWith("/auth/callback")) {
-      const win = BrowserWindow.getAllWindows()[0];
-      if (win) {
-        log.info("[auth-callback] received OAuth callback, forwarding to renderer");
-        win.webContents.send(AUTH_CALLBACK_EVENT, { url: request.url });
-        win.show();
-        if (win.isMinimized()) win.restore();
-        win.focus();
-      }
+    if (host === "auth" && (decodedPath === "/callback" || decodedPath.startsWith("/callback/"))) {
+      forwardAuthCallback(request.url);
       // Return a simple HTML page that closes itself
       return new Response(
         "<html><body><script>window.close()</script><p>Login complete. You can close this window.</p></body></html>",
@@ -331,24 +432,21 @@ async function bootstrap(): Promise<void> {
   registerNotificationHandlers();
   registerOpenerHandlers();
   await createMainWindow();
+  if (pendingAuthCallbackUrl) {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      sendAuthCallbackEvent(win, pendingAuthCallbackUrl);
+    }
+  }
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createMainWindow();
-    }
-  });
-
-  // Handle paseo:// URLs opened from external browser (macOS)
-  app.on("open-url", (_event, url) => {
-    log.info("[open-url] received:", url);
-    if (url.startsWith(`${APP_SCHEME}://auth/callback`)) {
-      const win = BrowserWindow.getAllWindows()[0];
-      if (win) {
-        log.info("[auth-callback] received OAuth callback via open-url, forwarding to renderer");
-        win.webContents.send(AUTH_CALLBACK_EVENT, { url });
-        win.show();
-        if (win.isMinimized()) win.restore();
-        win.focus();
+      if (pendingAuthCallbackUrl) {
+        const win = BrowserWindow.getAllWindows()[0];
+        if (win) {
+          sendAuthCallbackEvent(win, pendingAuthCallbackUrl);
+        }
       }
     }
   });
@@ -362,6 +460,12 @@ void bootstrap().catch((error) => {
 
 app.on("before-quit", () => {
   closeAllTransportSessions();
+});
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  log.info("[open-url] received:", url);
+  forwardAuthCallback(url);
 });
 
 app.on("window-all-closed", () => {

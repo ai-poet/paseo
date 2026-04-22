@@ -6,17 +6,22 @@
  * - View/switch/add/edit providers for Claude Code and Codex
  * - Auto-setup default provider after login
  */
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { View, Text, Pressable, TextInput, Alert } from "react-native";
-import { useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { getIsElectron } from "@/constants/platform";
+import { settingsStyles } from "@/styles/settings";
+import { invokeDesktopCommand } from "@/desktop/electron/invoke";
+import { getDesktopHost } from "@/desktop/host";
+import { openExternalUrl } from "@/utils/open-external-url";
+import { buildSub2APILoginBridgeUrl, parseSub2APIAuthCallback } from "./sub2api-auth-bridge";
 
 interface Provider {
   id: string;
   name: string;
-  type: "sub2api" | "custom";
+  type: "default" | "sub2api" | "custom";
   endpoint: string;
   apiKey: string;
   isDefault: boolean;
@@ -27,9 +32,20 @@ interface ProviderStore {
   activeProviderId: string | null;
 }
 
-async function invokeDesktop(command: string, args?: Record<string, unknown>): Promise<unknown> {
-  if (!window.paseoDesktop) return null;
-  return window.paseoDesktop.invoke(command, args);
+interface AuthCallbackPayload {
+  url: string;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function extractAuthCallbackUrl(payload: unknown): string | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+  const url = (payload as AuthCallbackPayload).url;
+  return typeof url === "string" && url.length > 0 ? url : null;
 }
 
 export function Sub2APIProvidersSection() {
@@ -44,365 +60,482 @@ export function Sub2APIProvidersSection() {
   const [editEndpoint, setEditEndpoint] = useState("");
   const [editApiKey, setEditApiKey] = useState("");
   const [sub2apiEndpoint, setSub2apiEndpoint] = useState("https://api.example.com");
+  const lastHandledCallbackUrlRef = useRef<string | null>(null);
 
-  // Load providers from Electron
   const loadProviders = useCallback(async () => {
-    if (!isElectron) return;
+    if (!isElectron) {
+      return;
+    }
+
     try {
-      const store = (await invokeDesktop("get_providers")) as ProviderStore | null;
-      if (store) {
-        setProviders(store.providers);
-        setActiveId(store.activeProviderId);
-      }
+      const store = await invokeDesktopCommand<ProviderStore>("get_providers");
+      setProviders(store.providers);
+      setActiveId(store.activeProviderId);
     } catch {
-      // ignore
+      setProviders([]);
+      setActiveId(null);
     }
   }, [isElectron]);
 
+  const handleAuthCallback = useCallback(
+    async (payload: unknown) => {
+      const url = extractAuthCallbackUrl(payload);
+      if (!url) {
+        return;
+      }
+      if (lastHandledCallbackUrlRef.current === url) {
+        return;
+      }
+      lastHandledCallbackUrlRef.current = url;
+
+      try {
+        const session = parseSub2APIAuthCallback(url);
+
+        await login({
+          accessToken: session.accessToken,
+          refreshToken: session.refreshToken,
+          expiresIn: session.expiresIn,
+          endpoint: session.endpoint,
+        });
+
+        await invokeDesktopCommand("setup_default_provider", {
+          endpoint: session.endpoint,
+          apiKey: session.apiKey,
+        });
+        setSub2apiEndpoint(session.endpoint);
+        await loadProviders();
+      } catch (error) {
+        console.error("[auth-callback] failed:", error);
+        Alert.alert("Login failed", getErrorMessage(error));
+      }
+    },
+    [loadProviders, login],
+  );
+
   useEffect(() => {
-    loadProviders();
+    void loadProviders();
   }, [loadProviders]);
 
-  // Listen for auth callback from Electron deep link
   useEffect(() => {
-    if (!isElectron || !window.paseoDesktop) return;
+    if (!auth?.endpoint) {
+      return;
+    }
+    setSub2apiEndpoint(auth.endpoint);
+  }, [auth?.endpoint]);
 
+  useEffect(() => {
+    if (!isElectron) {
+      return;
+    }
+
+    const subscribe = getDesktopHost()?.events?.on;
+    if (typeof subscribe !== "function") {
+      return;
+    }
+
+    let isDisposed = false;
     let cleanup: (() => void) | null = null;
-    window.paseoDesktop.events
-      .on("auth-callback", async (payload: unknown) => {
-        const { url } = payload as { url: string };
-        try {
-          const hashStr = new URL(url).hash.slice(1);
-          const params = new URLSearchParams(hashStr);
-          const accessToken = params.get("access_token");
-          const refreshToken = params.get("refresh_token");
-          const expiresIn = parseInt(params.get("expires_in") ?? "0", 10);
 
-          if (accessToken && refreshToken) {
-            await login({
-              accessToken,
-              refreshToken,
-              expiresIn,
-              endpoint: sub2apiEndpoint,
-            });
-
-            // Auto-fetch API key and setup default provider
-            const keysResp = await fetch(`${sub2apiEndpoint}/api/v1/keys`, {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            });
-            let apiKey = "";
-            if (keysResp.ok) {
-              const keys = (await keysResp.json()) as { data?: { key: string }[] };
-              if (keys.data && keys.data.length > 0) {
-                apiKey = keys.data[0].key;
-              }
-            }
-            // If no key, create one
-            if (!apiKey) {
-              const createResp = await fetch(`${sub2apiEndpoint}/api/v1/keys`, {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${accessToken}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ name: "Paseo Desktop" }),
-              });
-              if (createResp.ok) {
-                const created = (await createResp.json()) as { data?: { key: string } };
-                apiKey = created.data?.key ?? "";
-              }
-            }
-
-            if (apiKey) {
-              await invokeDesktop("setup_default_provider", {
-                endpoint: sub2apiEndpoint,
-                apiKey,
-                name: "Sub2API",
-              });
-              await loadProviders();
-            }
-          }
-        } catch (e) {
-          console.error("[auth-callback] failed:", e);
+    void Promise.resolve(subscribe("auth-callback", handleAuthCallback))
+      .then((unsubscribe) => {
+        if (isDisposed) {
+          unsubscribe();
+          return;
         }
+        cleanup = unsubscribe;
       })
-      .then((unsub) => {
-        cleanup = unsub;
+      .catch((error) => {
+        console.error("[auth-callback] subscribe failed:", error);
       });
 
     return () => {
+      isDisposed = true;
       cleanup?.();
     };
-  }, [isElectron, sub2apiEndpoint, login, loadProviders]);
+  }, [handleAuthCallback, isElectron]);
 
-  const handleGitHubLogin = useCallback(() => {
-    const startURL = `${sub2apiEndpoint}/api/v1/auth/oauth/github/start?redirect=paseo://auth/callback`;
-    if (window.paseoDesktop) {
-      window.paseoDesktop.opener.openUrl(startURL);
+  useEffect(() => {
+    if (!isElectron) {
+      return;
+    }
+
+    const getPendingAuthCallback = getDesktopHost()?.getPendingAuthCallback;
+    if (typeof getPendingAuthCallback !== "function") {
+      return;
+    }
+
+    void getPendingAuthCallback()
+      .then((url) => {
+        if (!url) {
+          return;
+        }
+        void handleAuthCallback({ url });
+      })
+      .catch((error) => {
+        console.error("[auth-callback] pending read failed:", error);
+      });
+  }, [handleAuthCallback, isElectron]);
+
+  const handleGitHubLogin = useCallback(async () => {
+    const startURL = buildSub2APILoginBridgeUrl(sub2apiEndpoint);
+    try {
+      await openExternalUrl(startURL);
+    } catch (error) {
+      Alert.alert("Error", `Failed to open login page: ${getErrorMessage(error)}`);
     }
   }, [sub2apiEndpoint]);
 
-  const handleSwitchProvider = useCallback(
-    async (id: string) => {
-      try {
-        await invokeDesktop("switch_provider", { id });
-        setActiveId(id);
-      } catch (e) {
-        Alert.alert("Error", `Failed to switch provider: ${e}`);
-      }
-    },
-    [],
-  );
+  const handleSwitchProvider = useCallback(async (id: string) => {
+    try {
+      await invokeDesktopCommand("switch_provider", { id });
+      setActiveId(id);
+    } catch (error) {
+      Alert.alert("Error", `Failed to switch provider: ${getErrorMessage(error)}`);
+    }
+  }, []);
 
   const handleAddProvider = useCallback(async () => {
-    if (!editName.trim() || !editEndpoint.trim() || !editApiKey.trim()) return;
+    const name = editName.trim();
+    const endpoint = editEndpoint.trim().replace(/\/$/, "");
+    const apiKey = editApiKey.trim();
+
+    if (!name || !endpoint || !apiKey) {
+      Alert.alert("Missing information", "Name, endpoint, and API key are required.");
+      return;
+    }
+
     const provider: Provider = {
       id: `custom-${Date.now()}`,
-      name: editName.trim(),
+      name,
       type: "custom",
-      endpoint: editEndpoint.trim().replace(/\/$/, ""),
-      apiKey: editApiKey.trim(),
+      endpoint,
+      apiKey,
       isDefault: false,
     };
-    await invokeDesktop("add_provider", provider as unknown as Record<string, unknown>);
-    setShowAddForm(false);
-    setEditName("");
-    setEditEndpoint("");
-    setEditApiKey("");
-    await loadProviders();
-  }, [editName, editEndpoint, editApiKey, loadProviders]);
+
+    try {
+      await invokeDesktopCommand("add_provider", provider as unknown as Record<string, unknown>);
+      setShowAddForm(false);
+      setEditName("");
+      setEditEndpoint("");
+      setEditApiKey("");
+      await loadProviders();
+    } catch (error) {
+      Alert.alert("Error", `Failed to add provider: ${getErrorMessage(error)}`);
+    }
+  }, [editApiKey, editEndpoint, editName, loadProviders]);
 
   const handleRemoveProvider = useCallback(
     async (id: string) => {
-      await invokeDesktop("remove_provider", { id });
-      await loadProviders();
+      try {
+        await invokeDesktopCommand("remove_provider", { id });
+        await loadProviders();
+      } catch (error) {
+        Alert.alert("Error", `Failed to remove provider: ${getErrorMessage(error)}`);
+      }
     },
     [loadProviders],
   );
 
-  if (!isElectron) return null;
+  if (!isElectron) {
+    return null;
+  }
 
   return (
-    <SettingsSection title="API Providers" subtitle="Manage Claude Code & Codex endpoints">
-      {/* Login section */}
-      <View style={{ padding: 12, gap: 8 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Text style={{ fontSize: 13, color: theme.colors.textSecondary, flex: 1 }}>
-            Sub2API Endpoint
-          </Text>
+    <SettingsSection title="API Providers">
+      <View style={[settingsStyles.card, styles.cardBody]}>
+        <Text style={styles.sectionHint}>Manage Claude Code and Codex endpoints.</Text>
+
+        <View style={styles.endpointRow}>
+          <Text style={styles.fieldLabel}>Sub2API Endpoint</Text>
           <TextInput
             value={sub2apiEndpoint}
             onChangeText={setSub2apiEndpoint}
             placeholder="https://api.example.com"
-            style={{
-              flex: 2,
-              fontSize: 13,
-              color: theme.colors.text,
-              borderWidth: 1,
-              borderColor: theme.colors.border,
-              borderRadius: 6,
-              paddingHorizontal: 8,
-              paddingVertical: 4,
-            }}
+            placeholderTextColor={theme.colors.foregroundMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.textInput}
           />
         </View>
 
         {isLoggedIn ? (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: "#22c55e",
-              }}
-            />
-            <Text style={{ fontSize: 13, color: theme.colors.text, flex: 1 }}>
-              Logged in to {auth?.endpoint}
-            </Text>
+          <View style={styles.statusRow}>
+            <View style={styles.statusBadge}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>Logged in to {auth?.endpoint}</Text>
+            </View>
             <Pressable
-              onPress={logout}
-              style={{
-                paddingHorizontal: 12,
-                paddingVertical: 4,
-                borderRadius: 6,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-              }}
+              onPress={() => void logout()}
+              style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
             >
-              <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Logout</Text>
+              <Text style={styles.secondaryButtonText}>Logout</Text>
             </Pressable>
           </View>
         ) : (
           <Pressable
-            onPress={handleGitHubLogin}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              paddingVertical: 8,
-              borderRadius: 8,
-              backgroundColor: "#24292e",
-            }}
+            onPress={() => void handleGitHubLogin()}
+            style={({ pressed }) => [styles.githubButton, pressed && styles.buttonPressed]}
           >
-            <Text style={{ fontSize: 14, color: "#fff", fontWeight: "600" }}>
-              Login with GitHub
-            </Text>
+            <Text style={styles.githubButtonText}>Login with GitHub</Text>
           </Pressable>
         )}
       </View>
 
-      {/* Provider list */}
-      {providers.length > 0 && (
-        <View style={{ borderTopWidth: 1, borderTopColor: theme.colors.border }}>
-          {providers.map((p) => (
+      {providers.length > 0 ? (
+        <View style={settingsStyles.card}>
+          {providers.map((provider, index) => (
             <View
-              key={p.id}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                padding: 12,
-                gap: 8,
-                borderBottomWidth: 1,
-                borderBottomColor: theme.colors.border,
-              }}
+              key={provider.id}
+              style={[settingsStyles.row, index > 0 && settingsStyles.rowBorder]}
             >
-              <View
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 4,
-                  backgroundColor: activeId === p.id ? "#22c55e" : theme.colors.border,
-                }}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, color: theme.colors.text, fontWeight: "500" }}>
-                  {p.name}
-                </Text>
-                <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
-                  {p.endpoint}
-                </Text>
+              <View style={settingsStyles.rowContent}>
+                <View style={styles.providerTitleRow}>
+                  <View
+                    style={[
+                      styles.providerDot,
+                      activeId === provider.id ? styles.providerDotActive : styles.providerDotIdle,
+                    ]}
+                  />
+                  <Text style={settingsStyles.rowTitle}>{provider.name}</Text>
+                </View>
+                <Text style={settingsStyles.rowHint}>{provider.endpoint}</Text>
               </View>
-              {activeId !== p.id && (
-                <Pressable
-                  onPress={() => handleSwitchProvider(p.id)}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 4,
-                    borderRadius: 6,
-                    backgroundColor: theme.colors.accent,
-                  }}
-                >
-                  <Text style={{ fontSize: 12, color: "#fff" }}>Switch</Text>
-                </Pressable>
-              )}
-              {!p.isDefault && (
-                <Pressable
-                  onPress={() => handleRemoveProvider(p.id)}
-                  style={{ paddingHorizontal: 6, paddingVertical: 4 }}
-                >
-                  <Text style={{ fontSize: 12, color: "#ef4444" }}>Remove</Text>
-                </Pressable>
-              )}
+
+              <View style={styles.providerActions}>
+                {activeId !== provider.id ? (
+                  <Pressable
+                    onPress={() => void handleSwitchProvider(provider.id)}
+                    style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
+                  >
+                    <Text style={styles.primaryButtonText}>Switch</Text>
+                  </Pressable>
+                ) : (
+                  <Text style={styles.activeProviderText}>Active</Text>
+                )}
+
+                {!provider.isDefault ? (
+                  <Pressable
+                    onPress={() => void handleRemoveProvider(provider.id)}
+                    style={({ pressed }) => [styles.removeButton, pressed && styles.buttonPressed]}
+                  >
+                    <Text style={styles.removeButtonText}>Remove</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           ))}
         </View>
-      )}
+      ) : null}
 
-      {/* Add custom provider */}
-      <View style={{ padding: 12, gap: 8 }}>
+      <View style={[settingsStyles.card, styles.cardBody]}>
         {showAddForm ? (
-          <View style={{ gap: 8 }}>
+          <View style={styles.formBody}>
             <TextInput
               value={editName}
               onChangeText={setEditName}
               placeholder="Provider name"
-              style={{
-                fontSize: 13,
-                color: theme.colors.text,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                borderRadius: 6,
-                paddingHorizontal: 8,
-                paddingVertical: 4,
-              }}
+              placeholderTextColor={theme.colors.foregroundMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.textInput}
             />
             <TextInput
               value={editEndpoint}
               onChangeText={setEditEndpoint}
               placeholder="https://api.example.com"
-              style={{
-                fontSize: 13,
-                color: theme.colors.text,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                borderRadius: 6,
-                paddingHorizontal: 8,
-                paddingVertical: 4,
-              }}
+              placeholderTextColor={theme.colors.foregroundMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.textInput}
             />
             <TextInput
               value={editApiKey}
               onChangeText={setEditApiKey}
-              placeholder="API Key"
+              placeholder="API key"
+              placeholderTextColor={theme.colors.foregroundMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
               secureTextEntry
-              style={{
-                fontSize: 13,
-                color: theme.colors.text,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                borderRadius: 6,
-                paddingHorizontal: 8,
-                paddingVertical: 4,
-              }}
+              style={styles.textInput}
             />
-            <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={styles.formActions}>
               <Pressable
-                onPress={handleAddProvider}
-                style={{
-                  flex: 1,
-                  alignItems: "center",
-                  paddingVertical: 6,
-                  borderRadius: 6,
-                  backgroundColor: theme.colors.accent,
-                }}
+                onPress={() => void handleAddProvider()}
+                style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
               >
-                <Text style={{ fontSize: 13, color: "#fff" }}>Add</Text>
+                <Text style={styles.primaryButtonText}>Add</Text>
               </Pressable>
               <Pressable
                 onPress={() => setShowAddForm(false)}
-                style={{
-                  flex: 1,
-                  alignItems: "center",
-                  paddingVertical: 6,
-                  borderRadius: 6,
-                  borderWidth: 1,
-                  borderColor: theme.colors.border,
-                }}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
               >
-                <Text style={{ fontSize: 13, color: theme.colors.textSecondary }}>Cancel</Text>
+                <Text style={styles.secondaryButtonText}>Cancel</Text>
               </Pressable>
             </View>
           </View>
         ) : (
           <Pressable
             onPress={() => setShowAddForm(true)}
-            style={{
-              alignItems: "center",
-              paddingVertical: 6,
-              borderRadius: 6,
-              borderWidth: 1,
-              borderColor: theme.colors.border,
-              borderStyle: "dashed",
-            }}
+            style={({ pressed }) => [styles.addProviderButton, pressed && styles.buttonPressed]}
           >
-            <Text style={{ fontSize: 13, color: theme.colors.textSecondary }}>
-              + Add Custom Provider
-            </Text>
+            <Text style={styles.addProviderButtonText}>+ Add Custom Provider</Text>
           </Pressable>
         )}
       </View>
     </SettingsSection>
   );
 }
+
+const styles = StyleSheet.create((theme) => ({
+  cardBody: {
+    padding: theme.spacing[4],
+    gap: theme.spacing[3],
+  },
+  sectionHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  endpointRow: {
+    gap: theme.spacing[2],
+  },
+  fieldLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  textInput: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface1,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing[3],
+  },
+  statusBadge: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: theme.colors.palette.green[400],
+  },
+  statusText: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    flexShrink: 1,
+  },
+  githubButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: "#24292e",
+    paddingVertical: theme.spacing[3],
+    paddingHorizontal: theme.spacing[4],
+  },
+  githubButtonText: {
+    color: theme.colors.palette.white,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+  },
+  buttonPressed: {
+    opacity: 0.85,
+  },
+  primaryButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.accent,
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+  },
+  primaryButtonText: {
+    color: theme.colors.accentForeground,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  secondaryButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface1,
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+  },
+  secondaryButtonText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  providerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  providerDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  providerDotActive: {
+    backgroundColor: theme.colors.palette.green[400],
+  },
+  providerDotIdle: {
+    backgroundColor: theme.colors.border,
+  },
+  providerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  activeProviderText: {
+    color: theme.colors.palette.green[400],
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  removeButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[1],
+  },
+  removeButtonText: {
+    color: theme.colors.destructive,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  formBody: {
+    gap: theme.spacing[2],
+  },
+  formActions: {
+    flexDirection: "row",
+    gap: theme.spacing[2],
+  },
+  addProviderButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: theme.colors.border,
+    paddingVertical: theme.spacing[3],
+    paddingHorizontal: theme.spacing[4],
+  },
+  addProviderButtonText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+  },
+}));

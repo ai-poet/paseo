@@ -5,7 +5,7 @@
  * Tokens are persisted in AsyncStorage and auto-refreshed before expiry.
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const AUTH_STORAGE_KEY = "@paseo:sub2api-auth";
@@ -37,6 +37,10 @@ export interface UseAuthReturn {
   getAccessToken: () => Promise<string | null>;
 }
 
+interface ApiEnvelope<T> {
+  data?: T;
+}
+
 async function loadAuth(): Promise<Sub2APIAuthState | null> {
   try {
     const raw = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
@@ -57,9 +61,7 @@ async function clearAuth(): Promise<void> {
   await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
 }
 
-async function refreshAccessToken(
-  auth: Sub2APIAuthState,
-): Promise<Sub2APIAuthState | null> {
+async function refreshAccessToken(auth: Sub2APIAuthState): Promise<Sub2APIAuthState | null> {
   try {
     const resp = await fetch(`${auth.endpoint}/api/v1/auth/refresh`, {
       method: "POST",
@@ -67,11 +69,15 @@ async function refreshAccessToken(
       body: JSON.stringify({ refresh_token: auth.refreshToken }),
     });
     if (!resp.ok) return null;
-    const data = (await resp.json()) as {
+    const payload = (await resp.json()) as ApiEnvelope<{
       access_token: string;
       refresh_token: string;
       expires_in: number;
-    };
+    }>;
+    const data = payload.data;
+    if (!data?.access_token || !Number.isFinite(data.expires_in) || data.expires_in <= 0) {
+      return null;
+    }
     const next: Sub2APIAuthState = {
       accessToken: data.access_token,
       refreshToken: data.refresh_token || auth.refreshToken,
