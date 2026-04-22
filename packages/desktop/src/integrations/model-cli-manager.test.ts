@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildWindowsGitBashChocolateyInstallCommand,
+  buildWindowsGitBashDirectInstallCommand,
+  buildWindowsGitBashInstallCommand,
+  buildWindowsGitBashScoopInstallCommand,
   CLAUDE_CODE_PACKAGE_NAME,
   CODEX_PACKAGE_NAME,
   REQUIRED_NODE_MAJOR,
@@ -58,5 +62,27 @@ describe("model-cli-manager", () => {
     );
     expect(options?.gitBashPath).toBe(gitBashPath);
     expect(options?.forceWindowsCmd).toBeUndefined();
+  });
+
+  it("builds the expected WinGet command for Git Bash auto-install", () => {
+    const command = buildWindowsGitBashInstallCommand();
+    expect(command).toContain("winget install");
+    expect(command).toContain("--id Git.Git");
+    expect(command).toContain("--accept-package-agreements");
+    expect(command).toContain("--accept-source-agreements");
+  });
+
+  it("builds Chocolatey and Scoop Git Bash install commands", () => {
+    expect(buildWindowsGitBashChocolateyInstallCommand()).toContain("choco install git");
+    expect(buildWindowsGitBashScoopInstallCommand()).toBe("scoop install git");
+  });
+
+  it("builds a direct PowerShell Git Bash installer command", () => {
+    const command = buildWindowsGitBashDirectInstallCommand();
+    expect(command).toContain("powershell -NoProfile");
+    expect(command).toContain("Git-64-bit.exe");
+    expect(command).toContain("/VERYSILENT");
+    expect(command).toContain("Invoke-WebRequest");
+    expect(command).toContain("Start-Process");
   });
 });

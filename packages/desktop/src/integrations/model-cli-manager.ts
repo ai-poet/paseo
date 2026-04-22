@@ -7,6 +7,9 @@ import { execCommand } from "@getpaseo/server";
 export const REQUIRED_NODE_MAJOR = 22;
 export const CODEX_PACKAGE_NAME = "@openai/codex";
 export const CLAUDE_CODE_PACKAGE_NAME = "@anthropic-ai/claude-code";
+const WINDOWS_GIT_WINGET_PACKAGE_ID = "Git.Git";
+const WINDOWS_GIT_DIRECT_DOWNLOAD_URL =
+  "https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe";
 
 type RuntimeManagerId = "nvm" | "brew" | "shell";
 
@@ -151,6 +154,17 @@ async function resolveWindowsGitBashPath(): Promise<string | null> {
   const fallbackCandidates = [
     path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe"),
     path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "usr", "bin", "bash.exe"),
+    path.join(process.env.USERPROFILE ?? "", "scoop", "apps", "git", "current", "bin", "bash.exe"),
+    path.join(
+      process.env.USERPROFILE ?? "",
+      "scoop",
+      "apps",
+      "git",
+      "current",
+      "usr",
+      "bin",
+      "bash.exe",
+    ),
     path.join(
       process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
       "Git",
@@ -182,6 +196,22 @@ export function wrapWithNode22Runtime(command: string, manager: RuntimeManagerId
     return `brew install node@${REQUIRED_NODE_MAJOR}; BREW_NODE_PREFIX="$(brew --prefix node@${REQUIRED_NODE_MAJOR})"; export PATH="$BREW_NODE_PREFIX/bin:$PATH"; ${command}`;
   }
   return command;
+}
+
+export function buildWindowsGitBashInstallCommand(): string {
+  return `winget install --id ${WINDOWS_GIT_WINGET_PACKAGE_ID} -e --accept-package-agreements --accept-source-agreements`;
+}
+
+export function buildWindowsGitBashChocolateyInstallCommand(): string {
+  return "choco install git -y --no-progress";
+}
+
+export function buildWindowsGitBashScoopInstallCommand(): string {
+  return "scoop install git";
+}
+
+export function buildWindowsGitBashDirectInstallCommand(): string {
+  return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $installerUrl='${WINDOWS_GIT_DIRECT_DOWNLOAD_URL}'; $installerPath=Join-Path $env:TEMP ('paseo-git-installer-' + [Guid]::NewGuid().ToString('N') + '.exe'); Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing; Start-Process -FilePath $installerPath -ArgumentList '/VERYSILENT','/NORESTART','/SP-','/NOCANCEL' -Wait; Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue;"`;
 }
 
 async function readNodeStatus(
@@ -351,6 +381,82 @@ async function installNode22IntoManager(
   );
 }
 
+async function ensureWindowsGitBash(options?: ShellOptions): Promise<{
+  gitBashPath: string;
+  output: string;
+}> {
+  if (process.platform !== "win32") {
+    throw new Error("Git Bash auto-install is only supported on Windows.");
+  }
+
+  const detected = options?.gitBashPath ?? (await resolveWindowsGitBashPath());
+  if (detected) {
+    return { gitBashPath: detected, output: "" };
+  }
+
+  const attempts: Array<{
+    name: string;
+    command: string;
+  }> = [];
+
+  if (await commandExists("winget")) {
+    attempts.push({ name: "winget", command: buildWindowsGitBashInstallCommand() });
+  }
+  if (await commandExists("choco")) {
+    attempts.push({ name: "choco", command: buildWindowsGitBashChocolateyInstallCommand() });
+  }
+  if (await commandExists("scoop")) {
+    attempts.push({ name: "scoop", command: buildWindowsGitBashScoopInstallCommand() });
+  }
+  if (await commandExists("powershell")) {
+    attempts.push({ name: "powershell-direct", command: buildWindowsGitBashDirectInstallCommand() });
+  }
+
+  if (attempts.length === 0) {
+    throw new Error(
+      "No supported Windows installer was found for Git Bash. Install WinGet, Chocolatey, or Scoop; or install Git for Windows manually.",
+    );
+  }
+
+  const outputs: string[] = [];
+  const errors: string[] = [];
+
+  for (const attempt of attempts) {
+    try {
+      const result = await runShell(attempt.command, {
+        ...options,
+        forceWindowsCmd: true,
+      });
+      const combined = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      if (combined) {
+        outputs.push(`[${attempt.name}]\n${combined}`);
+      } else {
+        outputs.push(`[${attempt.name}] installer command completed.`);
+      }
+    } catch (error) {
+      errors.push(`[${attempt.name}] ${getErrorMessage(error)}`);
+      continue;
+    }
+
+    const installedPath = await resolveWindowsGitBashPath();
+    if (installedPath) {
+      return {
+        gitBashPath: installedPath,
+        output: outputs.join("\n\n").trim(),
+      };
+    }
+  }
+
+  throw new Error(
+    [
+      "Git Bash installation commands completed but bash.exe was not detected.",
+      errors.length > 0 ? `attempt errors: ${errors.join(" | ")}` : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
 export async function installNode22Runtime(): Promise<ModelCliInstallResult> {
   const manager = await resolveRuntimeManager();
   const gitBashPath = await resolveWindowsGitBashPath();
@@ -414,12 +520,16 @@ export async function installCodexCli(): Promise<ModelCliInstallResult> {
 
 export async function installClaudeCodeCli(): Promise<ModelCliInstallResult> {
   const manager = await resolveRuntimeManager();
-  const gitBashPath = await resolveWindowsGitBashPath();
+  const outputs: string[] = [];
+  let gitBashPath = await resolveWindowsGitBashPath();
   if (process.platform === "win32" && !gitBashPath) {
-    throw new Error("Git Bash is required on Windows before installing Claude Code.");
+    const gitBashInstall = await ensureWindowsGitBash();
+    gitBashPath = gitBashInstall.gitBashPath;
+    if (gitBashInstall.output) {
+      outputs.push(gitBashInstall.output);
+    }
   }
   const nodeStatus = await readNodeStatus(manager, { gitBashPath });
-  const outputs: string[] = [];
 
   if (!nodeStatus.satisfies) {
     outputs.push(await installNode22IntoManager(manager, { gitBashPath }));
@@ -434,12 +544,16 @@ export async function installClaudeCodeCli(): Promise<ModelCliInstallResult> {
 
 export async function installAllModelClis(): Promise<ModelCliInstallResult> {
   const manager = await resolveRuntimeManager();
-  const gitBashPath = await resolveWindowsGitBashPath();
+  const outputs: string[] = [];
+  let gitBashPath = await resolveWindowsGitBashPath();
   if (process.platform === "win32" && !gitBashPath) {
-    throw new Error("Git Bash is required on Windows before installing Claude Code.");
+    const gitBashInstall = await ensureWindowsGitBash();
+    gitBashPath = gitBashInstall.gitBashPath;
+    if (gitBashInstall.output) {
+      outputs.push(gitBashInstall.output);
+    }
   }
   const nodeStatus = await readNodeStatus(manager, { gitBashPath });
-  const outputs: string[] = [];
 
   if (!nodeStatus.satisfies) {
     outputs.push(await installNode22IntoManager(manager, { gitBashPath }));
