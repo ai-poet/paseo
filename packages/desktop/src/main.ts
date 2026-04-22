@@ -37,6 +37,7 @@ import { parseOpenProjectPathFromArgv } from "./open-project-routing.js";
 const DEV_SERVER_URL = process.env.EXPO_DEV_URL ?? "http://localhost:8081";
 const APP_SCHEME = "paseo";
 const OPEN_PROJECT_EVENT = "paseo:event:open-project";
+const AUTH_CALLBACK_EVENT = "paseo:event:auth-callback";
 app.setName("Paseo");
 
 // In dev mode, detect git worktrees and isolate each instance so multiple
@@ -282,6 +283,23 @@ async function bootstrap(): Promise<void> {
     const { pathname, search, hash } = new URL(request.url);
     const decodedPath = decodeURIComponent(pathname);
 
+    // Handle OAuth callback: paseo://auth/callback#access_token=...
+    if (decodedPath === "/auth/callback" || decodedPath.startsWith("/auth/callback")) {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) {
+        log.info("[auth-callback] received OAuth callback, forwarding to renderer");
+        win.webContents.send(AUTH_CALLBACK_EVENT, { url: request.url });
+        win.show();
+        if (win.isMinimized()) win.restore();
+        win.focus();
+      }
+      // Return a simple HTML page that closes itself
+      return new Response(
+        "<html><body><script>window.close()</script><p>Login complete. You can close this window.</p></body></html>",
+        { headers: { "Content-Type": "text/html" } },
+      );
+    }
+
     // Chromium can occasionally request the exported entrypoint directly.
     // Canonicalize it back to the route URL so Expo Router sees `/`, not `/index.html`.
     if (decodedPath.endsWith("/index.html")) {
@@ -317,6 +335,21 @@ async function bootstrap(): Promise<void> {
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createMainWindow();
+    }
+  });
+
+  // Handle paseo:// URLs opened from external browser (macOS)
+  app.on("open-url", (_event, url) => {
+    log.info("[open-url] received:", url);
+    if (url.startsWith(`${APP_SCHEME}://auth/callback`)) {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) {
+        log.info("[auth-callback] received OAuth callback via open-url, forwarding to renderer");
+        win.webContents.send(AUTH_CALLBACK_EVENT, { url });
+        win.show();
+        if (win.isMinimized()) win.restore();
+        win.focus();
+      }
     }
   });
 }
