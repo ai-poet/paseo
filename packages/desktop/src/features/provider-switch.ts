@@ -2,7 +2,7 @@
  * Provider switching for Claude Code and Codex configurations.
  *
  * Reads/writes ~/.claude/settings.json and ~/.codex/ config files
- * to switch between different API providers (sub2api, custom, etc.).
+ * to switch between different API providers (default, custom, etc.).
  *
  * Inspired by cc-switch (paseo/reference/cc-switch/).
  */
@@ -15,7 +15,7 @@ import log from "electron-log/main";
 export interface Provider {
   id: string;
   name: string;
-  type: "default" | "sub2api" | "custom";
+  type: "default" | "custom";
   endpoint: string;
   apiKey: string;
   isDefault: boolean;
@@ -55,8 +55,33 @@ function codexConfigPath(): string {
   return join(homedir(), ".codex", "config.toml");
 }
 
+function normalizeProviderEndpoint(endpoint: string): string {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  if (trimmed.toLowerCase().endsWith("/v1")) {
+    return trimmed.slice(0, -3);
+  }
+  return trimmed;
+}
+
+function normalizeProviderType(type: string): Provider["type"] {
+  return type === "custom" ? "custom" : "default";
+}
+
+function normalizeProvider(provider: Provider): Provider {
+  return {
+    ...provider,
+    type: normalizeProviderType(provider.type),
+    endpoint: normalizeProviderEndpoint(provider.endpoint),
+    isDefault: provider.id === DEFAULT_PROVIDER_ID ? true : provider.isDefault,
+  };
+}
+
 function providerEndpointBaseUrl(endpoint: string): string {
-  return `${endpoint.replace(/\/+$/, "")}/v1`;
+  const normalized = normalizeProviderEndpoint(endpoint);
+  if (!normalized) {
+    return `${endpoint.replace(/\/+$/, "")}/v1`;
+  }
+  return `${normalized}/v1`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -112,7 +137,34 @@ async function loadStore(): Promise<ProviderStore> {
       return { providers: [], activeProviderId: null };
     }
     const raw = await readFile(PROVIDERS_FILE, "utf-8");
-    return JSON.parse(raw) as ProviderStore;
+    const parsed = JSON.parse(raw) as ProviderStore;
+    const providersInput = Array.isArray(parsed.providers) ? parsed.providers : [];
+    const providers = providersInput.map((provider) => normalizeProvider(provider));
+    const activeProviderId =
+      typeof parsed.activeProviderId === "string" &&
+      providers.some((provider) => provider.id === parsed.activeProviderId)
+        ? parsed.activeProviderId
+        : null;
+
+    const normalizedStore: ProviderStore = { providers, activeProviderId };
+    const shouldPersistNormalizedStore =
+      !Array.isArray(parsed.providers) ||
+      parsed.activeProviderId !== activeProviderId ||
+      providers.some((provider, index) => {
+        const original = providersInput[index];
+        return (
+          !original ||
+          provider.type !== original.type ||
+          provider.endpoint !== original.endpoint ||
+          provider.isDefault !== original.isDefault
+        );
+      });
+
+    if (shouldPersistNormalizedStore) {
+      await saveStore(normalizedStore);
+    }
+
+    return normalizedStore;
   } catch {
     return { providers: [], activeProviderId: null };
   }
@@ -145,7 +197,7 @@ export function buildClaudeSettings(provider: Provider, existing: Record<string,
     env: {
       ...existingEnv,
       ...providerEnv,
-      ANTHROPIC_BASE_URL: provider.endpoint,
+      ANTHROPIC_BASE_URL: normalizeProviderEndpoint(provider.endpoint),
       ANTHROPIC_AUTH_TOKEN: provider.apiKey,
       ANTHROPIC_MODEL: defaultClaudeModel,
       ANTHROPIC_DEFAULT_OPUS_MODEL: defaultOpusModel,
@@ -162,8 +214,7 @@ export function buildCodexConfig(provider: Provider): string {
     return provider.codexConfig;
   }
 
-  const defaultCodexModel =
-    provider.type === "default" || provider.type === "sub2api" ? DEFAULT_CLAUDE_MODEL : "gpt-4o";
+  const defaultCodexModel = provider.type === "default" ? DEFAULT_CLAUDE_MODEL : "gpt-4o";
 
   return `model_provider = "default"
 model = "${defaultCodexModel}"
@@ -221,11 +272,12 @@ export async function getProviders(): Promise<ProviderStore> {
 
 export async function addProvider(provider: Provider): Promise<void> {
   const store = await loadStore();
-  const idx = store.providers.findIndex((entry) => entry.id === provider.id);
+  const normalizedProvider = normalizeProvider(provider);
+  const idx = store.providers.findIndex((entry) => entry.id === normalizedProvider.id);
   if (idx >= 0) {
-    store.providers[idx] = provider;
+    store.providers[idx] = normalizedProvider;
   } else {
-    store.providers.push(provider);
+    store.providers.push(normalizedProvider);
   }
   await saveStore(store);
 }
@@ -281,7 +333,7 @@ export async function setupDefaultProvider(params: {
     id,
     name: params.name ?? DEFAULT_PROVIDER_NAME,
     type: "default",
-    endpoint: params.endpoint,
+    endpoint: normalizeProviderEndpoint(params.endpoint),
     apiKey: params.apiKey,
     isDefault: true,
     claudeConfig: {

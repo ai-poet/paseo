@@ -7,7 +7,36 @@ export interface Sub2APIAuthCallback {
 }
 
 function normalizeEndpoint(endpoint: string): string {
-  return endpoint.trim().replace(/\/+$/, "");
+  const trimmed = endpoint.trim();
+  if (!trimmed) {
+    throw new Error("Sub2API endpoint is required.");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error("Sub2API endpoint must be an absolute URL.");
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Sub2API endpoint must use http or https.");
+  }
+  if (!parsed.host.trim()) {
+    throw new Error("Sub2API endpoint is missing a host.");
+  }
+
+  const normalizedPath = parsed.pathname.replace(/\/+$/, "");
+  return `${parsed.protocol}//${parsed.host}${normalizedPath}`;
+}
+
+export function isValidSub2APIEndpoint(endpoint: string): boolean {
+  try {
+    normalizeEndpoint(endpoint);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function buildSub2APILoginBridgeUrl(endpoint: string): string {

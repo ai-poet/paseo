@@ -46,6 +46,7 @@ interface CommandResult {
 
 interface ShellOptions {
   gitBashPath?: string | null;
+  forceWindowsCmd?: boolean;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -98,7 +99,7 @@ function buildGitBashCommand(
 
 async function runShell(command: string, options?: ShellOptions): Promise<CommandResult> {
   const shell =
-    process.platform === "win32" && options?.gitBashPath
+    process.platform === "win32" && !options?.forceWindowsCmd && options?.gitBashPath
       ? buildGitBashCommand(command, options.gitBashPath)
       : buildShellCommand(command);
   return await execCommand(shell.command, shell.args, {
@@ -187,6 +188,31 @@ async function readNodeStatus(
   manager: RuntimeManagerId,
   options?: ShellOptions,
 ): Promise<NodeRuntimeStatus> {
+  if (process.platform === "win32" && manager === "shell") {
+    const [nodeProbe, npmProbe] = await Promise.all([
+      tryRunShell("node -v", { ...options, forceWindowsCmd: true }),
+      tryRunShell("npm -v", { ...options, forceWindowsCmd: true }),
+    ]);
+    const nodeVersion = parseSemanticVersion(nodeProbe?.stdout ?? nodeProbe?.stderr ?? null);
+    const npmVersion = parseSemanticVersion(npmProbe?.stdout ?? npmProbe?.stderr ?? null);
+    const major = parseMajorVersion(nodeVersion);
+
+    return {
+      installed: Boolean(nodeVersion),
+      version: nodeVersion,
+      major,
+      npmVersion,
+      satisfies: major !== null && major >= REQUIRED_NODE_MAJOR,
+      manager,
+      error:
+        nodeVersion
+          ? null
+          : trimToNull(nodeProbe?.stderr) ??
+            trimToNull(npmProbe?.stderr) ??
+            "Node.js was not found.",
+    };
+  }
+
   try {
     const result = await runShell(
       wrapWithRuntimeManager(
@@ -243,7 +269,14 @@ async function readCliStatus(
   }
 
   try {
-    const result = await runShell(wrapWithRuntimeManager(`${command} --version`, manager), options);
+    const commandOptions =
+      process.platform === "win32" && manager === "shell" && command === "codex"
+        ? { ...options, forceWindowsCmd: true }
+        : options;
+    const result = await runShell(
+      wrapWithRuntimeManager(`${command} --version`, manager),
+      commandOptions,
+    );
     const version = parseSemanticVersion(result.stdout) ?? parseSemanticVersion(result.stderr);
     return {
       command,
@@ -275,14 +308,42 @@ export async function getModelCliRuntimeStatus(): Promise<ModelCliRuntimeStatus>
   return { node, codex, claude };
 }
 
-async function installNode22IntoManager(manager: RuntimeManagerId): Promise<string> {
+async function installNode22IntoManager(
+  manager: RuntimeManagerId,
+  options?: ShellOptions,
+): Promise<string> {
   if (manager === "nvm") {
-    const result = await runShell(wrapWithNode22Runtime("node -v && npm -v", manager));
+    const result = await runShell(wrapWithNode22Runtime("node -v && npm -v", manager), options);
     return [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
   }
   if (manager === "brew") {
-    const result = await runShell(wrapWithNode22Runtime("node -v && npm -v", manager));
+    const result = await runShell(wrapWithNode22Runtime("node -v && npm -v", manager), options);
     return [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+  }
+  if (manager === "shell" && process.platform === "win32") {
+    if (!(await commandExists("winget"))) {
+      throw new Error(
+        "Automatic Node.js 22 installation on Windows requires WinGet. Install WinGet first, then retry.",
+      );
+    }
+
+    const installResult = await runShell(
+      "winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements",
+      { ...options, forceWindowsCmd: true },
+    );
+
+    const status = await readNodeStatus(manager, { ...options, forceWindowsCmd: true });
+    if (!status.satisfies) {
+      throw new Error(
+        `Node.js installation finished but the detected runtime is ${status.version ?? "unknown"}. Please ensure Node.js ${REQUIRED_NODE_MAJOR}+ is available in PATH.`,
+      );
+    }
+
+    const verifyResult = await runShell("node -v && npm -v", { ...options, forceWindowsCmd: true });
+    return [installResult.stdout, installResult.stderr, verifyResult.stdout, verifyResult.stderr]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
   }
 
   throw new Error(
@@ -297,7 +358,7 @@ export async function installNode22Runtime(): Promise<ModelCliInstallResult> {
   let output = "";
 
   if (!status.satisfies) {
-    output = await installNode22IntoManager(manager);
+    output = await installNode22IntoManager(manager, { gitBashPath });
   }
 
   return {
@@ -306,14 +367,30 @@ export async function installNode22Runtime(): Promise<ModelCliInstallResult> {
   };
 }
 
+export function resolvePackageInstallShellOptions(
+  packageName: string,
+  manager: RuntimeManagerId,
+  options?: ShellOptions,
+  platform: NodeJS.Platform = process.platform,
+): ShellOptions | undefined {
+  if (platform !== "win32" || manager !== "shell") {
+    return options;
+  }
+  if (packageName === CLAUDE_CODE_PACKAGE_NAME && options?.gitBashPath) {
+    return options;
+  }
+  return { ...options, forceWindowsCmd: true };
+}
+
 async function installPackageIntoRuntime(
   packageName: string,
   manager: RuntimeManagerId,
   options?: ShellOptions,
 ): Promise<string> {
+  const runtimeOptions = resolvePackageInstallShellOptions(packageName, manager, options);
   const result = await runShell(
     wrapWithNode22Runtime(`npm install -g ${packageName}@latest`, manager),
-    options,
+    runtimeOptions,
   );
   return [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
 }
@@ -325,7 +402,7 @@ export async function installCodexCli(): Promise<ModelCliInstallResult> {
   const outputs: string[] = [];
 
   if (!nodeStatus.satisfies) {
-    outputs.push(await installNode22IntoManager(manager));
+    outputs.push(await installNode22IntoManager(manager, { gitBashPath }));
   }
   outputs.push(await installPackageIntoRuntime(CODEX_PACKAGE_NAME, manager, { gitBashPath }));
 
@@ -345,7 +422,7 @@ export async function installClaudeCodeCli(): Promise<ModelCliInstallResult> {
   const outputs: string[] = [];
 
   if (!nodeStatus.satisfies) {
-    outputs.push(await installNode22IntoManager(manager));
+    outputs.push(await installNode22IntoManager(manager, { gitBashPath }));
   }
   outputs.push(await installPackageIntoRuntime(CLAUDE_CODE_PACKAGE_NAME, manager, { gitBashPath }));
 
@@ -365,7 +442,7 @@ export async function installAllModelClis(): Promise<ModelCliInstallResult> {
   const outputs: string[] = [];
 
   if (!nodeStatus.satisfies) {
-    outputs.push(await installNode22IntoManager(manager));
+    outputs.push(await installNode22IntoManager(manager, { gitBashPath }));
   }
   outputs.push(await installPackageIntoRuntime(CODEX_PACKAGE_NAME, manager, { gitBashPath }));
   outputs.push(await installPackageIntoRuntime(CLAUDE_CODE_PACKAGE_NAME, manager, { gitBashPath }));

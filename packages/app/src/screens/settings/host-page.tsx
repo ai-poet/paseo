@@ -24,6 +24,7 @@ import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { ProvidersSection } from "@/screens/settings/providers-section";
 import { Sub2APIProvidersSection } from "@/screens/settings/sub2api-providers-section";
+import { Sub2APIModelsSection } from "@/screens/settings/sub2api-models-section";
 import { PairDeviceModal } from "@/desktop/components/pair-device-modal";
 import { LocalDaemonSection } from "@/desktop/components/desktop-updates-section";
 
@@ -153,6 +154,8 @@ export function HostPage({ serverId, onHostRemoved }: HostPageProps) {
       <ProvidersSection serverId={serverId} />
 
       <Sub2APIProvidersSection />
+
+      <Sub2APIModelsSection />
 
       <RemoveHostSection host={host} onRemoved={onHostRemoved} />
     </View>

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildSub2APILoginBridgeUrl, parseSub2APIAuthCallback } from "./sub2api-auth-bridge";
+import {
+  buildSub2APILoginBridgeUrl,
+  isValidSub2APIEndpoint,
+  parseSub2APIAuthCallback,
+} from "./sub2api-auth-bridge";
 
 describe("sub2api-auth-bridge", () => {
   it("builds the web auth bridge url from the configured endpoint", () => {
@@ -20,5 +24,12 @@ describe("sub2api-auth-bridge", () => {
       apiKey: "sk-test",
       endpoint: "https://api.example.com",
     });
+  });
+
+  it("rejects invalid endpoint formats", () => {
+    expect(isValidSub2APIEndpoint("")).toBe(false);
+    expect(isValidSub2APIEndpoint("api.example.com")).toBe(false);
+    expect(isValidSub2APIEndpoint("ftp://api.example.com")).toBe(false);
+    expect(() => buildSub2APILoginBridgeUrl("api.example.com")).toThrow();
   });
 });

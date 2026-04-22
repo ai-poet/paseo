@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  CLAUDE_CODE_PACKAGE_NAME,
+  CODEX_PACKAGE_NAME,
   REQUIRED_NODE_MAJOR,
   parseMajorVersion,
   parseSemanticVersion,
+  resolvePackageInstallShellOptions,
   wrapWithNode22Runtime,
   wrapWithRuntimeManager,
 } from "./model-cli-manager";
@@ -33,5 +36,27 @@ describe("model-cli-manager", () => {
 
     expect(wrapWithRuntimeManager(command, "shell")).toBe(command);
     expect(wrapWithNode22Runtime(command, "shell")).toBe(command);
+  });
+
+  it("uses cmd shell for Codex install on Windows shell manager", () => {
+    const options = resolvePackageInstallShellOptions(
+      CODEX_PACKAGE_NAME,
+      "shell",
+      { gitBashPath: "C:/Program Files/Git/bin/bash.exe" },
+      "win32",
+    );
+    expect(options?.forceWindowsCmd).toBe(true);
+  });
+
+  it("uses Git Bash for Claude Code install when available on Windows", () => {
+    const gitBashPath = "C:/Program Files/Git/bin/bash.exe";
+    const options = resolvePackageInstallShellOptions(
+      CLAUDE_CODE_PACKAGE_NAME,
+      "shell",
+      { gitBashPath },
+      "win32",
+    );
+    expect(options?.gitBashPath).toBe(gitBashPath);
+    expect(options?.forceWindowsCmd).toBeUndefined();
   });
 });

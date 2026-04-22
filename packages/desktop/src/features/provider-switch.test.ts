@@ -21,12 +21,12 @@ function createProvider(overrides: Partial<Provider> = {}): Provider {
 }
 
 describe("provider-switch", () => {
-  it("writes the Anthropic default model into Claude settings", () => {
+  it("writes Anthropic settings with normalized endpoint and default model", () => {
     const settings = buildClaudeSettings(createProvider(), {});
 
     expect(settings).toMatchObject({
       env: {
-        ANTHROPIC_BASE_URL: "https://api.example.com/v1",
+        ANTHROPIC_BASE_URL: "https://api.example.com",
         ANTHROPIC_AUTH_TOKEN: "sk-live-example",
         ANTHROPIC_MODEL: DEFAULT_CLAUDE_MODEL,
         ANTHROPIC_DEFAULT_OPUS_MODEL: DEFAULT_CLAUDE_MODEL,
@@ -40,5 +40,7 @@ describe("provider-switch", () => {
     expect(config).toContain('model_provider = "default"');
     expect(config).toContain(`model = "${DEFAULT_CLAUDE_MODEL}"`);
     expect(config).toContain(`name = "${DEFAULT_PROVIDER_NAME}"`);
+    expect(config).toContain('base_url = "https://api.example.com/v1"');
+    expect(config).not.toContain("/v1/v1");
   });
 });
