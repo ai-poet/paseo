@@ -55,7 +55,7 @@ export function Sub2APIModelsSection() {
   const handleSwitchBestGroup = useCallback(
     async (item: Sub2APIModelCatalogItem) => {
       if (!auth?.endpoint) {
-        Alert.alert("Missing endpoint", "Please sign in to the managed service first.");
+        Alert.alert("Not signed in", "Please sign in to Paseo Cloud first.");
         return;
       }
 
@@ -76,7 +76,10 @@ export function Sub2APIModelsSection() {
           name: item.best_group.name,
         });
 
-        Alert.alert("Switched", `Provider is now using group "${item.best_group.name}".`);
+        Alert.alert(
+          "Switched",
+          `Managed route for Claude Code and Codex now uses group "${item.best_group.name}".`,
+        );
       } catch (error) {
         Alert.alert("Switch failed", getErrorMessage(error));
       } finally {
@@ -94,21 +97,29 @@ export function Sub2APIModelsSection() {
   }
 
   return (
-    <SettingsSection title="Model Catalog">
+    <SettingsSection title="Model catalog">
       {!isLoggedIn ? (
         <View style={[settingsStyles.card, styles.cardBody]}>
-          <Text style={styles.hintText}>Sign in to browse the model catalog.</Text>
+          <Text style={styles.hintText}>Sign in to Paseo Cloud to browse the model catalog.</Text>
         </View>
       ) : null}
 
       {isLoggedIn ? (
         <>
           <View style={[settingsStyles.card, styles.cardBody]}>
-            <Text style={styles.summaryTitle}>Catalog Summary</Text>
+            <Text style={styles.summaryTitle}>Summary</Text>
             {modelsQuery.isLoading ? (
-              <Text style={styles.hintText}>Loading model catalog...</Text>
+              <Text style={styles.hintText}>Loading catalog…</Text>
             ) : modelsQuery.error ? (
-              <Text style={styles.errorText}>{getErrorMessage(modelsQuery.error)}</Text>
+              <View style={styles.errorBlock}>
+                <Text style={styles.errorText}>{getErrorMessage(modelsQuery.error)}</Text>
+                <Pressable
+                  onPress={() => void modelsQuery.refetch()}
+                  style={({ pressed }) => [styles.retryButton, pressed && styles.buttonPressed]}
+                >
+                  <Text style={styles.retryButtonText}>Retry</Text>
+                </Pressable>
+              </View>
             ) : (
               <View style={styles.summaryGrid}>
                 <Text style={styles.summaryCell}>
@@ -182,15 +193,34 @@ export function Sub2APIModelsSection() {
 const styles = StyleSheet.create((theme) => ({
   cardBody: {
     padding: theme.spacing[4],
-    gap: theme.spacing[2],
+    gap: theme.spacing[3],
   },
   hintText: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
   },
+  errorBlock: {
+    gap: theme.spacing[2],
+  },
   errorText: {
     color: theme.colors.destructive,
     fontSize: theme.fontSize.xs,
+  },
+  retryButton: {
+    alignSelf: "flex-start",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface1,
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+  },
+  retryButtonText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
   },
   summaryTitle: {
     color: theme.colors.foreground,

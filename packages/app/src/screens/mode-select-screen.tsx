@@ -156,15 +156,15 @@ export function ModeSelectScreen() {
           <View style={styles.copyBlock}>
             <Text style={styles.title}>选择你的使用方式</Text>
             <Text style={styles.subtitle}>
-              可以使用我们托管的内置服务，也可以自备 API Key 接入第三方模型。
+              可选 Paseo 云端托管方案，或由您自备 API Key（BYOK）接入模型服务。
             </Text>
           </View>
 
           <View style={styles.cards}>
             <ModeCard
               icon={<Cloud size={20} color={theme.colors.accent} />}
-              title="内置服务"
-              description="登录后自动为 Claude Code / Codex 配置 Provider，按需计费，开箱即用。"
+              title="Paseo 云端"
+              description="登录后自动为 Claude Code / Codex 配置线路，按需计费，开箱即用。"
               metaText="登录 · 推荐"
               metaAccent
               recommended

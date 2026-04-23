@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { Cloud } from "lucide-react-native";
+import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { getIsElectron } from "@/constants/platform";
 import { settingsStyles } from "@/styles/settings";
@@ -20,24 +22,33 @@ import {
 import type { Sub2APIGroup, Sub2APIKey } from "@/lib/sub2api-client";
 import { isValidSub2APIEndpoint } from "./sub2api-auth-bridge";
 import { Sub2APIPayModal } from "./sub2api-pay-modal";
-import {
-  getManagedServiceUrlFromEnv,
-  shouldShowManagedServiceUrlEditor,
-} from "@/config/managed-service-env";
+import { getManagedServiceUrlFromEnv } from "@/config/managed-service-env";
+import type {
+  CodexWireApi,
+  DesktopProviderPayload,
+  ManagedProviderTarget,
+  ProviderStore,
+} from "@/screens/settings/sub2api-provider-types";
 
-interface Provider {
-  id: string;
-  name: string;
-  type: "default" | "custom";
-  endpoint: string;
-  apiKey: string;
-  isDefault: boolean;
+function providerTargetHint(p: DesktopProviderPayload): string {
+  if (p.isDefault || p.target === undefined) {
+    return "Claude Code + Codex";
+  }
+  if (p.target === "claude") {
+    return "Claude Code · Anthropic";
+  }
+  return `Codex · ${p.codexWireApi === "chat" ? "Chat" : "Responses"}`;
 }
 
-interface ProviderStore {
-  providers: Provider[];
-  activeProviderId: string | null;
-}
+const CUSTOM_TARGET_SEGMENT_OPTIONS: SegmentedControlOption<ManagedProviderTarget>[] = [
+  { value: "claude", label: "Claude Code" },
+  { value: "codex", label: "Codex" },
+];
+
+const CODEX_WIRE_SEGMENT_OPTIONS: SegmentedControlOption<CodexWireApi>[] = [
+  { value: "responses", label: "Responses" },
+  { value: "chat", label: "Chat" },
+];
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -66,6 +77,10 @@ function findReusableKey(keys: Sub2APIKey[], groupId: number): Sub2APIKey | null
   );
 }
 
+function normalizeFilter(s: string): string {
+  return s.trim().toLowerCase();
+}
+
 export function Sub2APIProvidersSection() {
   const { theme } = useUnistyles();
   const router = useRouter();
@@ -73,18 +88,22 @@ export function Sub2APIProvidersSection() {
   const { getAccessToken } = useSub2APIAuth();
   const isElectron = getIsElectron();
 
-  const [providers, setProviders] = useState<Provider[]>([]);
+  const [providers, setProviders] = useState<DesktopProviderPayload[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showAddProviderForm, setShowAddProviderForm] = useState(false);
   const [editProviderName, setEditProviderName] = useState("");
   const [editProviderEndpoint, setEditProviderEndpoint] = useState("");
   const [editProviderApiKey, setEditProviderApiKey] = useState("");
+  const [customTarget, setCustomTarget] = useState<ManagedProviderTarget>("claude");
+  const [codexWireApi, setCodexWireApi] = useState<CodexWireApi>("responses");
   const [newKeyName, setNewKeyName] = useState("Paseo Desktop");
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [switchingGroupId, setSwitchingGroupId] = useState<number | null>(null);
   const [switchingKeyId, setSwitchingKeyId] = useState<number | null>(null);
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [payToken, setPayToken] = useState<string | null>(null);
+  const [groupFilter, setGroupFilter] = useState("");
+  const [keyFilter, setKeyFilter] = useState("");
 
   const meQuery = useSub2APIMe();
   const keysQuery = useSub2APIKeys(1, 200);
@@ -97,6 +116,45 @@ export function Sub2APIProvidersSection() {
 
   const keys = useMemo(() => keysQuery.data?.items ?? [], [keysQuery.data?.items]);
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+
+  const filteredGroups = useMemo(() => {
+    const q = normalizeFilter(groupFilter);
+    if (!q) return groups;
+    return groups.filter(
+      (g) =>
+        g.name.toLowerCase().includes(q) ||
+        g.platform.toLowerCase().includes(q) ||
+        String(g.rate_multiplier).includes(q),
+    );
+  }, [groups, groupFilter]);
+
+  const filteredKeys = useMemo(() => {
+    const q = normalizeFilter(keyFilter);
+    if (!q) return keys;
+    return keys.filter(
+      (k) =>
+        k.name.toLowerCase().includes(q) ||
+        (k.group?.name?.toLowerCase().includes(q) ?? false) ||
+        maskApiKey(k.key).toLowerCase().includes(q),
+    );
+  }, [keys, keyFilter]);
+
+  const signedInAccountLabel = useMemo(() => {
+    const u = meQuery.data;
+    if (u) {
+      const name = u.username?.trim();
+      if (name) return name;
+      const email = u.email?.trim();
+      if (email) return email;
+    }
+    if (meQuery.isPending || meQuery.isFetching) return "…";
+    return "Account";
+  }, [meQuery.data, meQuery.isPending, meQuery.isFetching]);
+
+  const activeProvider = useMemo(
+    () => providers.find((p) => p.id === activeId) ?? null,
+    [providers, activeId],
+  );
 
   const loadProviders = useCallback(async () => {
     if (!isElectron) {
@@ -137,8 +195,6 @@ export function Sub2APIProvidersSection() {
 
   const handleLogout = useCallback(async () => {
     await logout();
-    // In builtin mode the app is unusable without a session — kick the user
-    // back to the login screen so they can re-auth or switch modes.
     if (settings.accessMode === "builtin") {
       router.replace("/login");
     }
@@ -164,6 +220,24 @@ export function Sub2APIProvidersSection() {
   useEffect(() => {
     void loadProviders();
   }, [loadProviders]);
+
+  const openCustomProviderForm = useCallback(() => {
+    setShowAddProviderForm(true);
+    setEditProviderName("");
+    setEditProviderEndpoint("");
+    setEditProviderApiKey("");
+    setCustomTarget("claude");
+    setCodexWireApi("responses");
+  }, []);
+
+  const closeCustomProviderForm = useCallback(() => {
+    setShowAddProviderForm(false);
+    setEditProviderName("");
+    setEditProviderEndpoint("");
+    setEditProviderApiKey("");
+    setCustomTarget("claude");
+    setCodexWireApi("responses");
+  }, []);
 
   useEffect(() => {
     if (selectedGroupId !== null || groups.length === 0) {
@@ -213,26 +287,35 @@ export function Sub2APIProvidersSection() {
       return;
     }
 
-    const provider: Provider = {
+    const provider: DesktopProviderPayload = {
       id: `custom-${Date.now()}`,
       name,
       type: "custom",
       endpoint,
       apiKey,
       isDefault: false,
+      target: customTarget,
+      ...(customTarget === "claude"
+        ? { claudeApiFormat: "anthropic" as const }
+        : { codexWireApi }),
     };
 
     try {
       await invokeDesktopCommand("add_provider", provider as unknown as Record<string, unknown>);
-      setShowAddProviderForm(false);
-      setEditProviderName("");
-      setEditProviderEndpoint("");
-      setEditProviderApiKey("");
+      closeCustomProviderForm();
       await loadProviders();
     } catch (error) {
       Alert.alert("Add provider failed", getErrorMessage(error));
     }
-  }, [editProviderApiKey, editProviderEndpoint, editProviderName, loadProviders]);
+  }, [
+    closeCustomProviderForm,
+    codexWireApi,
+    customTarget,
+    editProviderApiKey,
+    editProviderEndpoint,
+    editProviderName,
+    loadProviders,
+  ]);
 
   const handleRemoveProvider = useCallback(
     async (id: string) => {
@@ -274,7 +357,7 @@ export function Sub2APIProvidersSection() {
 
   const handleCreateKeyAndSwitch = useCallback(async () => {
     if (selectedGroupId === null) {
-      Alert.alert("Missing group", "Please select a target group.");
+      Alert.alert("Missing group", "Select a group from the list below.");
       return;
     }
     const name = newKeyName.trim();
@@ -311,6 +394,7 @@ export function Sub2APIProvidersSection() {
   const handleQuickSwitchGroup = useCallback(
     async (group: Sub2APIGroup) => {
       setSwitchingGroupId(group.id);
+      setSelectedGroupId(group.id);
       try {
         const reusable = findReusableKey(keys, group.id);
         const keyToUse =
@@ -335,308 +419,448 @@ export function Sub2APIProvidersSection() {
   if (!isElectron) {
     return null;
   }
-  // In BYOK mode the user manages their own API keys; hide this section.
   if (settings.accessMode === "byok") {
     return null;
   }
 
   return (
-    <SettingsSection title="Cloud providers">
-      <View style={[settingsStyles.card, styles.cardBody]}>
-        <Text style={styles.sectionHint}>
-          OAuth login, key management, group switching and payment are managed here.
-        </Text>
-
-        {shouldShowManagedServiceUrlEditor() ? (
-          <View style={styles.endpointRow}>
-            <Text style={styles.fieldLabel}>Service URL</Text>
-            <TextInput
-              value={serviceEndpoint}
-              onChangeText={setServiceEndpoint}
-              placeholder="https://api.example.com"
-              placeholderTextColor={theme.colors.foregroundMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.textInput}
-            />
-            {!canStartLogin ? (
-              <Text style={styles.errorHint}>Enter a valid http(s) endpoint before login.</Text>
-            ) : null}
-          </View>
-        ) : null}
-
-        {isLoggedIn ? (
-          <View style={styles.statusRow}>
-            <View style={styles.statusBadge}>
-              <View style={styles.statusDot} />
-              <Text style={styles.statusText}>Logged in to {auth?.endpoint}</Text>
+    <>
+      <SettingsSection title="Account">
+        {!isLoggedIn ? (
+          <View style={styles.dashedCard}>
+            <View style={styles.emptyIconWrap}>
+              <Cloud size={theme.iconSize.lg} color={theme.colors.foregroundMuted} />
             </View>
+            <Text style={styles.emptyTitle}>Sign in</Text>
+            <Text style={styles.emptyBody}>
+              Connect with GitHub to manage balance, routing, and API keys for Claude Code / Codex.
+            </Text>
             <Pressable
-              onPress={() => void handleLogout()}
-              style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+              onPress={() => void handleGitHubLogin()}
+              style={({ pressed }) => [
+                styles.githubButton,
+                pressed && styles.buttonPressed,
+                !canStartLogin && styles.disabledButton,
+              ]}
+              disabled={!canStartLogin}
             >
-              <Text style={styles.secondaryButtonText}>Logout</Text>
+              <Text style={styles.githubButtonText}>Login with GitHub</Text>
             </Pressable>
           </View>
         ) : (
-          <Pressable
-            onPress={() => void handleGitHubLogin()}
-            style={({ pressed }) => [
-              styles.githubButton,
-              pressed && styles.buttonPressed,
-              !canStartLogin && styles.disabledButton,
-            ]}
-            disabled={!canStartLogin}
-          >
-            <Text style={styles.githubButtonText}>Login with GitHub</Text>
-          </Pressable>
-        )}
-      </View>
-
-      {isLoggedIn ? (
-        <View style={[settingsStyles.card, styles.cardBody]}>
-          <View style={styles.balanceHeader}>
-            <View>
-              <Text style={styles.balanceLabel}>Balance</Text>
-              <Text style={styles.balanceValue}>{formatUsd(meQuery.data?.balance)}</Text>
-            </View>
-            <Pressable
-              onPress={() => void handleOpenPayModal()}
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
-            >
-              <Text style={styles.primaryButtonText}>Recharge</Text>
-            </Pressable>
-          </View>
-          <Text style={styles.usageHint}>
-            Today: {formatUsd(usageTodayQuery.data?.total_cost)} ({usageTodayQuery.data?.total_requests ?? 0} req)
-          </Text>
-          <Text style={styles.usageHint}>
-            Week: {formatUsd(usageWeekQuery.data?.total_cost)} ({usageWeekQuery.data?.total_requests ?? 0} req)
-          </Text>
-          <Text style={styles.usageHint}>
-            Month: {formatUsd(usageMonthQuery.data?.total_cost)} ({usageMonthQuery.data?.total_requests ?? 0} req)
-          </Text>
-        </View>
-      ) : null}
-
-      {isLoggedIn ? (
-        <View style={[settingsStyles.card, styles.cardBody]}>
-          <Text style={styles.formTitle}>Create Key + Switch Provider</Text>
-          <TextInput
-            value={newKeyName}
-            onChangeText={setNewKeyName}
-            placeholder="Paseo Desktop"
-            placeholderTextColor={theme.colors.foregroundMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.textInput}
-          />
-          {groupsQuery.isLoading ? <Text style={styles.usageHint}>Loading groups...</Text> : null}
-          {groupsQuery.error ? (
-            <Text style={styles.errorHint}>{getErrorMessage(groupsQuery.error)}</Text>
-          ) : null}
-          <View style={styles.groupList}>
-            {groups.map((group) => (
-              <Pressable
-                key={group.id}
-                onPress={() => setSelectedGroupId(group.id)}
-                style={({ pressed }) => [
-                  styles.groupChip,
-                  selectedGroupId === group.id && styles.groupChipSelected,
-                  pressed && styles.buttonPressed,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.groupChipText,
-                    selectedGroupId === group.id && styles.groupChipTextSelected,
-                  ]}
-                >
-                  {group.name} · {group.platform} · {group.rate_multiplier}x
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Pressable
-            onPress={() => void handleCreateKeyAndSwitch()}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              pressed && styles.buttonPressed,
-              (switchingGroupId !== null || createKeyMutation.isPending) && styles.disabledButton,
-            ]}
-            disabled={switchingGroupId !== null || createKeyMutation.isPending}
-          >
-            <Text style={styles.primaryButtonText}>
-              {createKeyMutation.isPending ? "Creating..." : "Create and Switch"}
+          <View style={[settingsStyles.card, styles.cardBody]}>
+            <Text style={styles.sectionHint}>
+              Your Paseo Cloud session, billing, and routing for Claude Code / Codex.
             </Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {isLoggedIn && groups.length > 0 ? (
-        <View style={settingsStyles.card}>
-          {groups.map((group, index) => (
-            <View key={group.id} style={[settingsStyles.row, index > 0 && settingsStyles.rowBorder]}>
-              <View style={settingsStyles.rowContent}>
-                <Text style={settingsStyles.rowTitle}>{group.name}</Text>
-                <Text style={settingsStyles.rowHint}>
-                  {group.platform} · multiplier {group.rate_multiplier}x
+            <View style={styles.statusRow}>
+              <View style={styles.statusBadge}>
+                <View style={styles.statusDot} />
+                <Text style={styles.statusText} numberOfLines={2}>
+                  Signed in as {signedInAccountLabel}
                 </Text>
               </View>
               <Pressable
-                onPress={() => void handleQuickSwitchGroup(group)}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  pressed && styles.buttonPressed,
-                  switchingGroupId === group.id && styles.disabledButton,
-                ]}
-                disabled={switchingGroupId === group.id}
+                onPress={() => void handleLogout()}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
               >
-                <Text style={styles.primaryButtonText}>
-                  {switchingGroupId === group.id ? "Switching..." : "Use Group"}
-                </Text>
+                <Text style={styles.secondaryButtonText}>Logout</Text>
               </Pressable>
             </View>
-          ))}
-        </View>
-      ) : null}
+          </View>
+        )}
+      </SettingsSection>
 
-      {isLoggedIn && keys.length > 0 ? (
-        <View style={settingsStyles.card}>
-          {keys.map((key, index) => (
-            <View key={key.id} style={[settingsStyles.row, index > 0 && settingsStyles.rowBorder]}>
-              <View style={settingsStyles.rowContent}>
-                <Text style={settingsStyles.rowTitle}>{key.name}</Text>
-                <Text style={settingsStyles.rowHint}>
-                  {maskApiKey(key.key)} · Group: {key.group?.name ?? key.group_id ?? "none"}
-                </Text>
-                <Text style={settingsStyles.rowHint}>Used: {formatUsd(key.quota_used)}</Text>
-              </View>
-              <View style={styles.keyActions}>
+      {isLoggedIn ? (
+        <>
+          <SettingsSection title="Balance & usage">
+            <View style={[settingsStyles.card, styles.cardBody]}>
+              {meQuery.error ? (
+                <View style={styles.errorBlock}>
+                  <Text style={styles.errorHint}>{getErrorMessage(meQuery.error)}</Text>
+                  <Pressable
+                    onPress={() => void meQuery.refetch()}
+                    style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+                  >
+                    <Text style={styles.secondaryButtonText}>Retry</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={styles.balanceHeader}>
+                  <View>
+                    <Text style={styles.balanceLabel}>Balance</Text>
+                    <Text style={styles.balanceValue}>{formatUsd(meQuery.data?.balance)}</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => void handleOpenPayModal()}
+                    style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
+                  >
+                    <Text style={styles.primaryButtonText}>Recharge</Text>
+                  </Pressable>
+                </View>
+              )}
+              <Text style={styles.usageHint}>
+                Today: {formatUsd(usageTodayQuery.data?.total_cost)} (
+                {usageTodayQuery.data?.total_requests ?? 0} req)
+              </Text>
+              <Text style={styles.usageHint}>
+                Week: {formatUsd(usageWeekQuery.data?.total_cost)} (
+                {usageWeekQuery.data?.total_requests ?? 0} req)
+              </Text>
+              <Text style={styles.usageHint}>
+                Month: {formatUsd(usageMonthQuery.data?.total_cost)} (
+                {usageMonthQuery.data?.total_requests ?? 0} req)
+              </Text>
+            </View>
+          </SettingsSection>
+
+          <SettingsSection title="Active route">
+            <View
+              style={[
+                settingsStyles.card,
+                styles.cardBody,
+                activeProvider ? styles.heroCardActive : null,
+              ]}
+            >
+              {activeProvider ? (
+                <>
+                  <View style={styles.heroTitleRow}>
+                    <View
+                      style={[styles.providerDotHero, styles.providerDotActive]}
+                      accessibilityLabel="Active"
+                    />
+                    <Text style={styles.heroLabel}>Active route</Text>
+                  </View>
+                  <Text style={styles.heroName}>{activeProvider.name}</Text>
+                  <Text style={styles.heroEndpoint}>{activeProvider.endpoint}</Text>
+                  <Text style={styles.heroKeyHint}>Key {maskApiKey(activeProvider.apiKey)}</Text>
+                  <Text style={styles.heroMetaHint}>{providerTargetHint(activeProvider)}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.heroName}>No active route</Text>
+                  <Text style={styles.sectionHint}>
+                    Choose a group below or pick a saved endpoint. Claude Code and Codex use the
+                    active route according to each entry&apos;s target (see Custom endpoint).
+                  </Text>
+                </>
+              )}
+            </View>
+          </SettingsSection>
+
+          <SettingsSection title="Group routing">
+            <View style={[settingsStyles.card, styles.cardBody]}>
+              <Text style={styles.sectionHint}>
+                Switch reuses an existing key for that group when possible; otherwise a new key is
+                created. Tap a row to select it for “Create new key” below.
+              </Text>
+              <Text style={styles.fieldLabel}>Filter groups</Text>
+              <TextInput
+                value={groupFilter}
+                onChangeText={setGroupFilter}
+                placeholder="Search by name or platform"
+                placeholderTextColor={theme.colors.foregroundMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.textInput}
+              />
+              {groupsQuery.isLoading ? (
+                <Text style={styles.usageHint}>Loading groups…</Text>
+              ) : null}
+              {groupsQuery.error ? (
+                <View style={styles.errorBlock}>
+                  <Text style={styles.errorHint}>{getErrorMessage(groupsQuery.error)}</Text>
+                  <Pressable
+                    onPress={() => void groupsQuery.refetch()}
+                    style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+                  >
+                    <Text style={styles.secondaryButtonText}>Retry</Text>
+                  </Pressable>
+                </View>
+              ) : filteredGroups.length === 0 && !groupsQuery.isLoading ? (
+                <Text style={styles.usageHint}>No groups match your filter.</Text>
+              ) : (
+                <View style={styles.groupRowList}>
+                  {filteredGroups.map((group) => {
+                    const selected = selectedGroupId === group.id;
+                    const busy = switchingGroupId === group.id;
+                    return (
+                      <View
+                        key={group.id}
+                        style={[styles.groupRouteRow, selected && styles.groupRouteRowSelected]}
+                      >
+                        <Pressable
+                          onPress={() => setSelectedGroupId(group.id)}
+                          style={styles.groupRouteRowMain}
+                        >
+                          <Text style={settingsStyles.rowTitle}>{group.name}</Text>
+                          <Text style={settingsStyles.rowHint}>
+                            {group.platform} · {group.rate_multiplier}x
+                          </Text>
+                          {selected ? (
+                            <Text style={styles.selectedPillText}>Selected for new key</Text>
+                          ) : null}
+                        </Pressable>
+                        <Pressable
+                          onPress={() => void handleQuickSwitchGroup(group)}
+                          style={({ pressed }) => [
+                            styles.primaryButton,
+                            pressed && styles.buttonPressed,
+                            busy && styles.disabledButton,
+                          ]}
+                          disabled={busy}
+                        >
+                          <Text style={styles.primaryButtonText}>
+                            {busy ? "Switching…" : "Switch"}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              <View style={styles.createKeyBlock}>
+                <Text style={styles.formTitle}>Create new key &amp; switch</Text>
+                <TextInput
+                  value={newKeyName}
+                  onChangeText={setNewKeyName}
+                  placeholder="Key label (e.g. Paseo Desktop)"
+                  placeholderTextColor={theme.colors.foregroundMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.textInput}
+                />
                 <Pressable
-                  onPress={() => void handleUseKey(key)}
+                  onPress={() => void handleCreateKeyAndSwitch()}
                   style={({ pressed }) => [
                     styles.primaryButton,
                     pressed && styles.buttonPressed,
-                    switchingKeyId === key.id && styles.disabledButton,
+                    (switchingGroupId !== null || createKeyMutation.isPending) && styles.disabledButton,
                   ]}
-                  disabled={switchingKeyId === key.id}
+                  disabled={switchingGroupId !== null || createKeyMutation.isPending}
                 >
                   <Text style={styles.primaryButtonText}>
-                    {switchingKeyId === key.id ? "Using..." : "Use"}
+                    {createKeyMutation.isPending ? "Creating…" : "Create key & switch"}
                   </Text>
                 </Pressable>
-                <Pressable
-                  onPress={() => void handleDeleteKey(key.id)}
-                  style={({ pressed }) => [styles.removeButton, pressed && styles.buttonPressed]}
-                >
-                  <Text style={styles.removeButtonText}>Delete</Text>
-                </Pressable>
               </View>
             </View>
-          ))}
-        </View>
-      ) : null}
+          </SettingsSection>
 
-      {providers.length > 0 ? (
-        <View style={settingsStyles.card}>
-          {providers.map((provider, index) => (
-            <View
-              key={provider.id}
-              style={[settingsStyles.row, index > 0 && settingsStyles.rowBorder]}
-            >
-              <View style={settingsStyles.rowContent}>
-                <View style={styles.providerTitleRow}>
-                  <View
-                    style={[
-                      styles.providerDot,
-                      activeId === provider.id ? styles.providerDotActive : styles.providerDotIdle,
-                    ]}
-                  />
-                  <Text style={settingsStyles.rowTitle}>{provider.name}</Text>
+          <SettingsSection title="API keys">
+            <View style={[settingsStyles.card, styles.cardBody]}>
+              {keysQuery.error ? (
+                <View style={styles.errorBlock}>
+                  <Text style={styles.errorHint}>{getErrorMessage(keysQuery.error)}</Text>
+                  <Pressable
+                    onPress={() => void keysQuery.refetch()}
+                    style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+                  >
+                    <Text style={styles.secondaryButtonText}>Retry</Text>
+                  </Pressable>
                 </View>
-                <Text style={settingsStyles.rowHint}>{provider.endpoint}</Text>
-              </View>
-              <View style={styles.providerActions}>
-                {activeId !== provider.id ? (
-                  <Pressable
-                    onPress={() => void handleSwitchProvider(provider.id)}
-                    style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
-                  >
-                    <Text style={styles.primaryButtonText}>Switch</Text>
-                  </Pressable>
-                ) : (
-                  <Text style={styles.activeProviderText}>Active</Text>
-                )}
-                {!provider.isDefault ? (
-                  <Pressable
-                    onPress={() => void handleRemoveProvider(provider.id)}
-                    style={({ pressed }) => [styles.removeButton, pressed && styles.buttonPressed]}
-                  >
-                    <Text style={styles.removeButtonText}>Remove</Text>
-                  </Pressable>
-                ) : null}
-              </View>
+              ) : null}
+              <Text style={styles.fieldLabel}>Filter keys</Text>
+              <TextInput
+                value={keyFilter}
+                onChangeText={setKeyFilter}
+                placeholder="Search by name or group"
+                placeholderTextColor={theme.colors.foregroundMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.textInput}
+              />
+              {keysQuery.isLoading ? (
+                <Text style={styles.usageHint}>Loading keys…</Text>
+              ) : filteredKeys.length === 0 ? (
+                <Text style={styles.usageHint}>No keys yet — use group routing to create one.</Text>
+              ) : (
+                <View style={styles.keyRowList}>
+                  {filteredKeys.map((key) => (
+                    <View key={key.id} style={styles.keyRow}>
+                      <View style={settingsStyles.rowContent}>
+                        <Text style={settingsStyles.rowTitle}>{key.name}</Text>
+                        <Text style={settingsStyles.rowHint}>
+                          {maskApiKey(key.key)} · Group: {key.group?.name ?? key.group_id ?? "none"}
+                        </Text>
+                        <Text style={settingsStyles.rowHint}>Used: {formatUsd(key.quota_used)}</Text>
+                      </View>
+                      <View style={styles.keyActions}>
+                        <Pressable
+                          onPress={() => void handleUseKey(key)}
+                          style={({ pressed }) => [
+                            styles.primaryButton,
+                            pressed && styles.buttonPressed,
+                            switchingKeyId === key.id && styles.disabledButton,
+                          ]}
+                          disabled={switchingKeyId === key.id}
+                        >
+                          <Text style={styles.primaryButtonText}>
+                            {switchingKeyId === key.id ? "Using…" : "Use"}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => void handleDeleteKey(key.id)}
+                          style={({ pressed }) => [styles.removeButton, pressed && styles.buttonPressed]}
+                        >
+                          <Text style={styles.removeButtonText}>Delete</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
-          ))}
-        </View>
-      ) : null}
+          </SettingsSection>
 
-      <View style={[settingsStyles.card, styles.cardBody]}>
-        {showAddProviderForm ? (
-          <View style={styles.formBody}>
-            <TextInput
-              value={editProviderName}
-              onChangeText={setEditProviderName}
-              placeholder="Provider name"
-              placeholderTextColor={theme.colors.foregroundMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.textInput}
-            />
-            <TextInput
-              value={editProviderEndpoint}
-              onChangeText={setEditProviderEndpoint}
-              placeholder="https://api.example.com"
-              placeholderTextColor={theme.colors.foregroundMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.textInput}
-            />
-            <TextInput
-              value={editProviderApiKey}
-              onChangeText={setEditProviderApiKey}
-              placeholder="API key"
-              placeholderTextColor={theme.colors.foregroundMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              style={styles.textInput}
-            />
-            <View style={styles.formActions}>
-              <Pressable
-                onPress={() => void handleAddProvider()}
-                style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
-              >
-                <Text style={styles.primaryButtonText}>Add</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setShowAddProviderForm(false)}
-                style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
-              >
-                <Text style={styles.secondaryButtonText}>Cancel</Text>
-              </Pressable>
+          <SettingsSection title="Saved endpoints">
+            {providers.length === 0 ? (
+              <View style={styles.dashedCard}>
+                <Text style={styles.emptyTitle}>No saved endpoints</Text>
+                <Text style={styles.emptyBody}>
+                  After sign-in, your default cloud route appears here. Add custom Claude Code or Codex
+                  endpoints below when you use another base URL or wire format.
+                </Text>
+              </View>
+            ) : (
+              <View style={settingsStyles.card}>
+                {providers.map((provider, index) => (
+                  <View
+                    key={provider.id}
+                    style={[settingsStyles.row, index > 0 && settingsStyles.rowBorder]}
+                  >
+                    <View style={settingsStyles.rowContent}>
+                      <View style={styles.providerTitleRow}>
+                        <View
+                          style={[
+                            styles.providerDot,
+                            activeId === provider.id ? styles.providerDotActive : styles.providerDotIdle,
+                          ]}
+                        />
+                        <Text style={settingsStyles.rowTitle}>{provider.name}</Text>
+                      </View>
+                      <Text style={settingsStyles.rowHint}>{provider.endpoint}</Text>
+                      <Text style={styles.providerMetaHint}>{providerTargetHint(provider)}</Text>
+                    </View>
+                    <View style={styles.providerActions}>
+                      {activeId !== provider.id ? (
+                        <Pressable
+                          onPress={() => void handleSwitchProvider(provider.id)}
+                          style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
+                        >
+                          <Text style={styles.primaryButtonText}>Switch</Text>
+                        </Pressable>
+                      ) : (
+                        <Text style={styles.activeProviderText}>Active</Text>
+                      )}
+                      {!provider.isDefault ? (
+                        <Pressable
+                          onPress={() => void handleRemoveProvider(provider.id)}
+                          style={({ pressed }) => [styles.removeButton, pressed && styles.buttonPressed]}
+                        >
+                          <Text style={styles.removeButtonText}>Remove</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </SettingsSection>
+
+          <SettingsSection title="Custom endpoint">
+            <View style={[settingsStyles.card, styles.cardBody]}>
+              {showAddProviderForm ? (
+                <View style={styles.formBody}>
+                  <Text style={styles.fieldLabel}>Target</Text>
+                  <SegmentedControl
+                    options={CUSTOM_TARGET_SEGMENT_OPTIONS}
+                    value={customTarget}
+                    onValueChange={setCustomTarget}
+                    size="sm"
+                  />
+                  {customTarget === "claude" ? (
+                    <Text style={styles.usageHint}>
+                      Claude Code is configured as native Anthropic Messages only (ANTHROPIC_BASE_URL).
+                      OpenAI-compatible upstreams will be supported via a separate gateway later.
+                    </Text>
+                  ) : (
+                    <>
+                      <Text style={styles.fieldLabel}>Wire API</Text>
+                      <SegmentedControl
+                        options={CODEX_WIRE_SEGMENT_OPTIONS}
+                        value={codexWireApi}
+                        onValueChange={setCodexWireApi}
+                        size="sm"
+                      />
+                      <Text style={styles.usageHint}>
+                        Matches Codex CLI wire expectations (OpenAI-compatible).
+                      </Text>
+                    </>
+                  )}
+                  <Text style={styles.fieldLabel}>Name</Text>
+                  <TextInput
+                    value={editProviderName}
+                    onChangeText={setEditProviderName}
+                    placeholder="Provider name"
+                    placeholderTextColor={theme.colors.foregroundMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.textInput}
+                  />
+                  <Text style={styles.fieldLabel}>Endpoint</Text>
+                  <TextInput
+                    value={editProviderEndpoint}
+                    onChangeText={setEditProviderEndpoint}
+                    placeholder="https://api.example.com"
+                    placeholderTextColor={theme.colors.foregroundMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.textInput}
+                  />
+                  <Text style={styles.fieldLabel}>API key</Text>
+                  <Text style={styles.usageHint}>
+                    {customTarget === "claude"
+                      ? "Anthropic-style credential for Claude Code; the desktop app maps it into the right env vars."
+                      : "OpenAI-style credential (Codex / OPENAI_API_KEY semantics)."}
+                  </Text>
+                  <TextInput
+                    value={editProviderApiKey}
+                    onChangeText={setEditProviderApiKey}
+                    placeholder="API key"
+                    placeholderTextColor={theme.colors.foregroundMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                    style={styles.textInput}
+                  />
+                  <View style={styles.formActions}>
+                    <Pressable
+                      onPress={() => void handleAddProvider()}
+                      style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
+                    >
+                      <Text style={styles.primaryButtonText}>Add</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={closeCustomProviderForm}
+                      style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+                    >
+                      <Text style={styles.secondaryButtonText}>Cancel</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={openCustomProviderForm}
+                  style={({ pressed }) => [styles.addProviderButton, pressed && styles.buttonPressed]}
+                >
+                  <Text style={styles.addProviderButtonText}>+ Add custom provider</Text>
+                </Pressable>
+              )}
             </View>
-          </View>
-        ) : (
-          <Pressable
-            onPress={() => setShowAddProviderForm(true)}
-            style={({ pressed }) => [styles.addProviderButton, pressed && styles.buttonPressed]}
-          >
-            <Text style={styles.addProviderButtonText}>+ Add Custom Provider</Text>
-          </Pressable>
-        )}
-      </View>
+          </SettingsSection>
+        </>
+      ) : null}
 
       <Sub2APIPayModal
         visible={isPayModalOpen}
@@ -645,7 +869,7 @@ export function Sub2APIProvidersSection() {
         onClose={() => setIsPayModalOpen(false)}
         onCompleted={handlePayCompleted}
       />
-    </SettingsSection>
+    </>
   );
 }
 
@@ -654,12 +878,91 @@ const styles = StyleSheet.create((theme) => ({
     padding: theme.spacing[4],
     gap: theme.spacing[3],
   },
+  dashedCard: {
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.surface1,
+    padding: theme.spacing[6],
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  emptyIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surface0,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: theme.spacing[1],
+  },
+  emptyTitle: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.base,
+    fontWeight: theme.fontWeight.medium,
+    textAlign: "center",
+  },
+  emptyBody: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    textAlign: "center",
+    maxWidth: 320,
+    marginBottom: theme.spacing[2],
+  },
+  heroCardActive: {
+    borderColor: theme.colors.palette.green[400],
+    borderWidth: 1,
+  },
+  heroTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    marginBottom: theme.spacing[1],
+  },
+  providerDotHero: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  heroLabel: {
+    color: theme.colors.palette.green[400],
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  heroName: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.medium,
+  },
+  heroEndpoint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    marginTop: theme.spacing[1],
+  },
+  heroKeyHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    marginTop: theme.spacing[2],
+  },
+  heroMetaHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    marginTop: theme.spacing[1],
+  },
+  providerMetaHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    marginTop: theme.spacing[1],
+  },
   sectionHint: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
   },
   endpointRow: {
     gap: theme.spacing[2],
+    alignSelf: "stretch",
+    width: "100%",
   },
   fieldLabel: {
     color: theme.colors.foregroundMuted,
@@ -678,6 +981,9 @@ const styles = StyleSheet.create((theme) => ({
   errorHint: {
     color: theme.colors.destructive,
     fontSize: theme.fontSize.xs,
+  },
+  errorBlock: {
+    gap: theme.spacing[2],
   },
   statusRow: {
     flexDirection: "row",
@@ -709,6 +1015,8 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: "#24292e",
     paddingVertical: theme.spacing[3],
     paddingHorizontal: theme.spacing[4],
+    alignSelf: "stretch",
+    width: "100%",
   },
   githubButtonText: {
     color: theme.colors.palette.white,
@@ -744,29 +1052,52 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
   },
-  groupList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  groupRowList: {
     gap: theme.spacing[2],
   },
-  groupChip: {
+  groupRouteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.md,
-    paddingHorizontal: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
-    backgroundColor: theme.colors.surface1,
+    padding: theme.spacing[2],
+    backgroundColor: theme.colors.surface0,
   },
-  groupChipSelected: {
+  groupRouteRowSelected: {
     borderColor: theme.colors.accent,
-    backgroundColor: "rgba(59,130,246,0.12)",
+    backgroundColor: "rgba(59,130,246,0.08)",
   },
-  groupChipText: {
-    color: theme.colors.foregroundMuted,
+  groupRouteRowMain: {
+    flex: 1,
+    gap: theme.spacing[1],
+  },
+  selectedPillText: {
+    color: theme.colors.accent,
     fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    marginTop: theme.spacing[1],
   },
-  groupChipTextSelected: {
-    color: theme.colors.foreground,
+  createKeyBlock: {
+    gap: theme.spacing[2],
+    marginTop: theme.spacing[2],
+    paddingTop: theme.spacing[3],
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  keyRowList: {
+    gap: theme.spacing[2],
+  },
+  keyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing[3],
+    backgroundColor: theme.colors.surface0,
   },
   primaryButton: {
     alignItems: "center",

@@ -23,13 +23,11 @@ export function hasExplicitManagedServiceUrlEnv(): boolean {
 }
 
 /**
- * Show the service URL text field only when there is no env override and no shipped default.
+ * Product builds never show a service-URL field in the UI; set `EXPO_PUBLIC_MANAGED_SERVICE_URL`
+ * at build time (or rely on the shipped default) instead.
  */
 export function shouldShowManagedServiceUrlEditor(): boolean {
-  if (hasExplicitManagedServiceUrlEnv()) {
-    return false;
-  }
-  return DEFAULT_MANAGED_SERVICE_URL.length === 0;
+  return false;
 }
 
 export function isManagedServiceUrlEnvValid(): boolean {

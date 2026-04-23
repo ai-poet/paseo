@@ -11,10 +11,15 @@ export function ManagedProviderSettingsPage() {
 
   return (
     <View testID="managed-provider-settings">
-      <SettingsSection title="内置托管服务">
-        <View style={[settingsStyles.card, { padding: theme.spacing[4] }]}>
+      <SettingsSection title="Paseo Cloud">
+        <View style={[settingsStyles.card, { padding: theme.spacing[4], gap: theme.spacing[2] }]}>
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm }}>
-            管理内置托管服务的登录、计费以及 Claude Code / Codex 使用的 API 线路。
+            Sign in, balance, routing, and API keys for your Paseo Cloud account (Claude Code and
+            Codex).
+          </Text>
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs }}>
+            Model catalog helps pick a group by model for Claude Code and Codex; day-to-day switching
+            is under Account and Group routing.
           </Text>
         </View>
       </SettingsSection>

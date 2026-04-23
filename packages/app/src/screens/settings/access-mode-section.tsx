@@ -16,7 +16,7 @@ export function AccessModeSection() {
 
   const modeLabel =
     settings.accessMode === "builtin"
-      ? "内置服务"
+      ? "Paseo 云端"
       : settings.accessMode === "byok"
         ? "BYOK（自带 API Key）"
         : "未选择";
@@ -37,7 +37,7 @@ export function AccessModeSection() {
           当前：{modeLabel}
         </Text>
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs }}>
-          重新选择内置服务或 BYOK。选择内置服务后需重新登录。
+          可在 Paseo 云端与 BYOK 之间切换。选择云端后需重新登录。
         </Text>
         <Button variant="secondary" size="sm" onPress={() => void handleSwitchMode()}>
           切换访问模式

@@ -1,45 +1,52 @@
 /**
  * Provider switching for Claude Code and Codex configurations.
  *
- * Reads/writes ~/.claude/settings.json and ~/.codex/ config files
- * to switch between different API providers (default, custom, etc.).
- *
- * Inspired by cc-switch (paseo/reference/cc-switch/).
+ * Reads/writes ~/.claude/settings.json and ~/.codex/ config files.
+ * Custom entries may target only Claude, only Codex, or both (managed default).
  */
+import { existsSync } from "node:fs";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import log from "electron-log/main";
 
-export interface Provider {
+export const DEFAULT_PROVIDER_ID = "default";
+const LEGACY_DEFAULT_PROVIDER_ID = "sub2api-default";
+export const DEFAULT_PROVIDER_NAME = "Default";
+export const DEFAULT_CLAUDE_MODEL = "claude-opus-4-7";
+
+export type ManagedProviderTarget = "claude" | "codex";
+
+/** Claude Code is written as native Anthropic Messages only; other wire shapes belong in a future gateway layer. */
+export type ClaudeApiFormat = "anthropic";
+
+export type CodexWireApi = "responses" | "chat";
+
+const PASEO_UPSTREAM_FORMAT_KEY = "PASEO_ANTHROPIC_UPSTREAM_FORMAT";
+
+export interface StoredProvider {
   id: string;
   name: string;
   type: "default" | "custom";
   endpoint: string;
   apiKey: string;
   isDefault: boolean;
+  /** When set, switching applies only to that CLI. Omitted = write both (managed default / legacy). */
+  target?: ManagedProviderTarget;
+  claudeApiFormat?: ClaudeApiFormat;
+  codexWireApi?: CodexWireApi;
   claudeConfig?: Record<string, unknown>;
-  codexAuth?: Record<string, string>;
+  codexAuth?: Record<string, unknown>;
   codexConfig?: string;
 }
 
-export interface ConfigBackup {
-  timestamp: number;
-  claudeSettings: string | null;
-  codexAuth: string | null;
-  codexConfig: string | null;
-}
+/** @deprecated Prefer `StoredProvider`; kept for daemon IPC typings. */
+export type Provider = StoredProvider;
 
-interface ProviderStore {
-  providers: Provider[];
+export interface ProviderStore {
+  providers: StoredProvider[];
   activeProviderId: string | null;
 }
-
-export const DEFAULT_PROVIDER_ID = "default";
-const LEGACY_DEFAULT_PROVIDER_ID = "sub2api-default";
-export const DEFAULT_PROVIDER_NAME = "Default";
-export const DEFAULT_CLAUDE_MODEL = "claude-opus-4-7";
 
 const PROVIDERS_FILE = join(homedir(), ".paseo", "providers.json");
 
@@ -55,7 +62,7 @@ function codexConfigPath(): string {
   return join(homedir(), ".codex", "config.toml");
 }
 
-function normalizeProviderEndpoint(endpoint: string): string {
+export function normalizeProviderEndpoint(endpoint: string): string {
   const trimmed = endpoint.trim().replace(/\/+$/, "");
   if (trimmed.toLowerCase().endsWith("/v1")) {
     return trimmed.slice(0, -3);
@@ -63,16 +70,41 @@ function normalizeProviderEndpoint(endpoint: string): string {
   return trimmed;
 }
 
-function normalizeProviderType(type: string): Provider["type"] {
+function normalizeProviderType(type: string): "default" | "custom" {
   return type === "custom" ? "custom" : "default";
 }
 
-function normalizeProvider(provider: Provider): Provider {
+function normalizeClaudeApiFormat(raw: unknown): ClaudeApiFormat | undefined {
+  if (raw === "anthropic") {
+    return "anthropic";
+  }
+  // Legacy openai_* values are dropped on load until conversion is implemented app-side.
+  return undefined;
+}
+
+function normalizeCodexWireApi(raw: unknown): CodexWireApi | undefined {
+  if (raw === "responses" || raw === "chat") {
+    return raw;
+  }
+  return undefined;
+}
+
+function normalizeTarget(raw: unknown): ManagedProviderTarget | undefined {
+  if (raw === "claude" || raw === "codex") {
+    return raw;
+  }
+  return undefined;
+}
+
+export function normalizeProvider(input: StoredProvider): StoredProvider {
   return {
-    ...provider,
-    type: normalizeProviderType(provider.type),
-    endpoint: normalizeProviderEndpoint(provider.endpoint),
-    isDefault: provider.id === DEFAULT_PROVIDER_ID ? true : provider.isDefault,
+    ...input,
+    type: normalizeProviderType(input.type),
+    endpoint: normalizeProviderEndpoint(input.endpoint),
+    isDefault: input.id === DEFAULT_PROVIDER_ID ? true : input.isDefault,
+    target: normalizeTarget(input.target),
+    claudeApiFormat: normalizeClaudeApiFormat(input.claudeApiFormat),
+    codexWireApi: normalizeCodexWireApi(input.codexWireApi),
   };
 }
 
@@ -94,21 +126,18 @@ async function ensureParentDir(filePath: string): Promise<void> {
 
 async function atomicWriteText(filePath: string, content: string): Promise<void> {
   await ensureParentDir(filePath);
-
   const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
   await writeFile(tempPath, content, "utf-8");
-
   if (process.platform === "win32" && existsSync(filePath)) {
     await rm(filePath, { force: true });
   }
-
   await rename(tempPath, filePath);
 }
 
 async function readJsonObject(filePath: string): Promise<Record<string, unknown>> {
   try {
     const raw = await readFile(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed: unknown = JSON.parse(raw);
     return isRecord(parsed) ? parsed : {};
   } catch {
     return {};
@@ -131,39 +160,48 @@ async function restoreFile(filePath: string, contents: string | null): Promise<v
   await atomicWriteText(filePath, contents);
 }
 
+function providerNeedsReNormalize(original: unknown, normalized: StoredProvider): boolean {
+  if (!isRecord(original)) {
+    return true;
+  }
+  return (
+    normalizeProviderEndpoint(String(original.endpoint ?? "")) !== normalized.endpoint ||
+    normalizeProviderType(String(original.type ?? "")) !== normalized.type ||
+    Boolean(original.isDefault) !== normalized.isDefault ||
+    normalizeTarget(original.target) !== normalized.target ||
+    normalizeClaudeApiFormat(original.claudeApiFormat) !== normalized.claudeApiFormat ||
+    normalizeCodexWireApi(original.codexWireApi) !== normalized.codexWireApi
+  );
+}
+
 async function loadStore(): Promise<ProviderStore> {
   try {
     if (!existsSync(PROVIDERS_FILE)) {
       return { providers: [], activeProviderId: null };
     }
     const raw = await readFile(PROVIDERS_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as ProviderStore;
-    const providersInput = Array.isArray(parsed.providers) ? parsed.providers : [];
-    const providers = providersInput.map((provider) => normalizeProvider(provider));
+    const parsed: unknown = JSON.parse(raw);
+    const parsedRecord = isRecord(parsed) ? parsed : {};
+    const providersInput = Array.isArray(parsedRecord.providers) ? parsedRecord.providers : [];
+    const providers = providersInput.map((p) =>
+      normalizeProvider(p as StoredProvider),
+    );
     const activeProviderId =
-      typeof parsed.activeProviderId === "string" &&
-      providers.some((provider) => provider.id === parsed.activeProviderId)
-        ? parsed.activeProviderId
+      typeof parsedRecord.activeProviderId === "string" &&
+      providers.some((provider) => provider.id === parsedRecord.activeProviderId)
+        ? parsedRecord.activeProviderId
         : null;
-
     const normalizedStore: ProviderStore = { providers, activeProviderId };
     const shouldPersistNormalizedStore =
-      !Array.isArray(parsed.providers) ||
-      parsed.activeProviderId !== activeProviderId ||
+      !Array.isArray(parsedRecord.providers) ||
+      parsedRecord.activeProviderId !== activeProviderId ||
       providers.some((provider, index) => {
         const original = providersInput[index];
-        return (
-          !original ||
-          provider.type !== original.type ||
-          provider.endpoint !== original.endpoint ||
-          provider.isDefault !== original.isDefault
-        );
+        return providerNeedsReNormalize(original, provider);
       });
-
     if (shouldPersistNormalizedStore) {
       await saveStore(normalizedStore);
     }
-
     return normalizedStore;
   } catch {
     return { providers: [], activeProviderId: null };
@@ -183,7 +221,10 @@ function readString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function buildClaudeSettings(provider: Provider, existing: Record<string, unknown>) {
+export function buildClaudeSettings(
+  provider: StoredProvider,
+  existing: Record<string, unknown>,
+): Record<string, unknown> {
   const providerConfig = isRecord(provider.claudeConfig) ? provider.claudeConfig : {};
   const existingEnv = isRecord(existing.env) ? existing.env : {};
   const providerEnv = isRecord(providerConfig.env) ? providerConfig.env : {};
@@ -191,63 +232,69 @@ export function buildClaudeSettings(provider: Provider, existing: Record<string,
   const defaultOpusModel =
     readString(providerEnv.ANTHROPIC_DEFAULT_OPUS_MODEL) ?? defaultClaudeModel;
 
+  const env: Record<string, unknown> = {
+    ...existingEnv,
+    ...providerEnv,
+    ANTHROPIC_BASE_URL: normalizeProviderEndpoint(provider.endpoint),
+    ANTHROPIC_AUTH_TOKEN: provider.apiKey,
+    ANTHROPIC_MODEL: defaultClaudeModel,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: defaultOpusModel,
+  };
+  delete env[PASEO_UPSTREAM_FORMAT_KEY];
+
   return {
     ...existing,
     ...providerConfig,
-    env: {
-      ...existingEnv,
-      ...providerEnv,
-      ANTHROPIC_BASE_URL: normalizeProviderEndpoint(provider.endpoint),
-      ANTHROPIC_AUTH_TOKEN: provider.apiKey,
-      ANTHROPIC_MODEL: defaultClaudeModel,
-      ANTHROPIC_DEFAULT_OPUS_MODEL: defaultOpusModel,
-    },
+    env,
   };
 }
 
-function buildCodexAuth(provider: Provider): Record<string, string> {
-  return provider.codexAuth ?? { OPENAI_API_KEY: provider.apiKey };
+export function buildCodexAuth(provider: StoredProvider): Record<string, unknown> {
+  return (provider.codexAuth as Record<string, unknown>) ?? { OPENAI_API_KEY: provider.apiKey };
 }
 
-export function buildCodexConfig(provider: Provider): string {
+export function buildCodexConfig(provider: StoredProvider): string {
   if (provider.codexConfig) {
     return provider.codexConfig;
   }
-
   const defaultCodexModel = provider.type === "default" ? DEFAULT_CLAUDE_MODEL : "gpt-4o";
-
+  const wireApi: CodexWireApi = provider.codexWireApi ?? "responses";
   return `model_provider = "default"
 model = "${defaultCodexModel}"
 
 [model_providers.default]
 name = "${provider.name}"
 base_url = "${providerEndpointBaseUrl(provider.endpoint)}"
-wire_api = "responses"
+wire_api = "${wireApi}"
 requires_openai_auth = true
 `;
 }
 
-async function writeClaudeSettings(provider: Provider): Promise<void> {
+async function writeClaudeSettings(provider: StoredProvider): Promise<void> {
   const merged = buildClaudeSettings(provider, await readJsonObject(claudeSettingsPath()));
   await atomicWriteText(claudeSettingsPath(), JSON.stringify(merged, null, 2));
   log.info("[provider-switch] wrote claude settings for provider:", provider.name);
 }
 
-async function writeCodexSettings(provider: Provider): Promise<void> {
+async function writeCodexSettings(provider: StoredProvider): Promise<void> {
   const authPath = codexAuthPath();
   const configPath = codexConfigPath();
   const oldAuth = await readFileOrNull(authPath);
-
   await atomicWriteText(authPath, JSON.stringify(buildCodexAuth(provider), null, 2));
-
   try {
     await atomicWriteText(configPath, buildCodexConfig(provider));
   } catch (error) {
     await restoreFile(authPath, oldAuth);
     throw error;
   }
-
   log.info("[provider-switch] wrote codex settings for provider:", provider.name);
+}
+
+export interface ConfigBackup {
+  timestamp: number;
+  claudeSettings: string | null;
+  codexAuth: string | null;
+  codexConfig: string | null;
 }
 
 export async function backupCurrentConfig(): Promise<ConfigBackup> {
@@ -266,11 +313,19 @@ export async function restoreConfig(backup: ConfigBackup): Promise<void> {
   log.info("[provider-switch] restored config from backup at", backup.timestamp);
 }
 
+function shouldWriteClaude(provider: StoredProvider): boolean {
+  return provider.target === undefined || provider.target === "claude";
+}
+
+function shouldWriteCodex(provider: StoredProvider): boolean {
+  return provider.target === undefined || provider.target === "codex";
+}
+
 export async function getProviders(): Promise<ProviderStore> {
   return loadStore();
 }
 
-export async function addProvider(provider: Provider): Promise<void> {
+export async function addProvider(provider: StoredProvider): Promise<void> {
   const store = await loadStore();
   const normalizedProvider = normalizeProvider(provider);
   const idx = store.providers.findIndex((entry) => entry.id === normalizedProvider.id);
@@ -297,39 +352,40 @@ export async function switchProvider(id: string): Promise<ConfigBackup> {
   if (!provider) {
     throw new Error(`Provider not found: ${id}`);
   }
-
   const backup = await backupCurrentConfig();
-
   try {
-    await writeClaudeSettings(provider);
-    await writeCodexSettings(provider);
+    if (shouldWriteClaude(provider)) {
+      await writeClaudeSettings(provider);
+    }
+    if (shouldWriteCodex(provider)) {
+      await writeCodexSettings(provider);
+    }
     store.activeProviderId = id;
     await saveStore(store);
   } catch (error) {
     await restoreConfig(backup);
     throw error;
   }
-
   log.info("[provider-switch] switched to provider:", provider.name);
   return backup;
 }
 
-export async function getCurrentProvider(): Promise<Provider | null> {
+export async function getCurrentProvider(): Promise<StoredProvider | null> {
   const store = await loadStore();
   if (!store.activeProviderId) {
     return null;
   }
-  return store.providers.find((provider) => provider.id === store.activeProviderId) ?? null;
+  return store.providers.find((p) => p.id === store.activeProviderId) ?? null;
 }
 
 export async function setupDefaultProvider(params: {
   endpoint: string;
   apiKey: string;
   name?: string;
-}): Promise<Provider> {
+}): Promise<StoredProvider> {
   const store = await loadStore();
   const id = DEFAULT_PROVIDER_ID;
-  const provider: Provider = {
+  const provider: StoredProvider = {
     id,
     name: params.name ?? DEFAULT_PROVIDER_NAME,
     type: "default",
@@ -343,7 +399,6 @@ export async function setupDefaultProvider(params: {
       },
     },
   };
-
   store.providers = store.providers.filter((entry) => entry.id !== LEGACY_DEFAULT_PROVIDER_ID);
   const idx = store.providers.findIndex((entry) => entry.id === id);
   if (idx >= 0) {
@@ -351,9 +406,7 @@ export async function setupDefaultProvider(params: {
   } else {
     store.providers.push(provider);
   }
-
   const backup = await backupCurrentConfig();
-
   try {
     await writeClaudeSettings(provider);
     await writeCodexSettings(provider);
@@ -363,7 +416,6 @@ export async function setupDefaultProvider(params: {
     await restoreConfig(backup);
     throw error;
   }
-
   log.info("[provider-switch] set up default provider");
   return provider;
 }

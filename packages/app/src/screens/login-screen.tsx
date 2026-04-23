@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,7 +11,6 @@ import {
   getManagedServiceUrlFromEnv,
   hasExplicitManagedServiceUrlEnv,
   isManagedServiceUrlEnvValid,
-  shouldShowManagedServiceUrlEditor,
 } from "@/config/managed-service-env";
 
 const styles = StyleSheet.create((theme) => ({
@@ -52,23 +51,6 @@ const styles = StyleSheet.create((theme) => ({
   form: {
     width: "100%",
     gap: theme.spacing[3],
-  },
-  fieldLabel: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-    fontWeight: theme.fontWeight.medium,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  textInput: {
-    backgroundColor: theme.colors.surface2,
-    borderRadius: theme.borderRadius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: theme.spacing[4],
-    paddingVertical: theme.spacing[3],
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.base,
   },
   errorHint: {
     color: theme.colors.destructive,
@@ -127,12 +109,9 @@ export function LoginScreen() {
   const router = useRouter();
   const { updateSettings } = useAppSettings();
   const injectedServiceUrl = getManagedServiceUrlFromEnv();
-  const showServiceUrlEditor = shouldShowManagedServiceUrlEditor();
   const explicitServiceUrlEnv = hasExplicitManagedServiceUrlEnv();
 
   const {
-    endpoint,
-    setEndpoint,
     canStartLogin,
     isLoggedIn,
     handleGitHubLogin,
@@ -174,7 +153,9 @@ export function LoginScreen() {
           <PaseoLogo size={96} />
           <View style={styles.copyBlock}>
             <Text style={styles.title}>登录 Paseo</Text>
-            <Text style={styles.subtitle}>使用托管内置服务，登录后自动为你配置 Provider。</Text>
+            <Text style={styles.subtitle}>
+              使用 GitHub 登录 Paseo 云端账户，自动完成 Claude Code / Codex 线路配置。
+            </Text>
           </View>
 
           <View style={styles.form}>
@@ -182,24 +163,6 @@ export function LoginScreen() {
               <Text style={styles.errorHint}>
                 环境变量中的服务地址不是合法的 http(s) URL，请修正后重新打包或启动。
               </Text>
-            ) : null}
-            {showServiceUrlEditor ? (
-              <>
-                <Text style={styles.fieldLabel}>服务地址</Text>
-                <TextInput
-                  value={endpoint}
-                  onChangeText={setEndpoint}
-                  placeholder="https://api.example.com"
-                  placeholderTextColor={theme.colors.foregroundMuted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={styles.textInput}
-                  testID="login-endpoint-input"
-                />
-                {!canStartLogin ? (
-                  <Text style={styles.errorHint}>请填写合法的 http(s) 地址后再登录。</Text>
-                ) : null}
-              </>
             ) : null}
 
             <Pressable
@@ -218,7 +181,7 @@ export function LoginScreen() {
                 <LogIn size={18} color={theme.colors.accentForeground} />
               )}
               <Text style={styles.primaryButtonText}>
-                {isInFlight ? "等待浏览器授权…" : "使用 GitHub 登录"}
+                {isInFlight ? "等待浏览器授权…" : "Sign in with GitHub"}
               </Text>
             </Pressable>
           </View>
