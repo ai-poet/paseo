@@ -10,13 +10,13 @@ export function providerWritesCodex(p: { target?: ManagedProviderTarget }): bool
 }
 
 export function providerTargetHint(p: DesktopProviderPayload): string {
-  if (p.isDefault || p.target === undefined) {
-    return "Claude Code + Codex";
-  }
   if (p.target === "claude") {
     return "Claude Code · Anthropic";
   }
-  return "Codex · Responses";
+  if (p.target === "codex") {
+    return "Codex · Responses";
+  }
+  return "Claude Code + Codex";
 }
 
 export const CUSTOM_TARGET_SEGMENT_OPTIONS: SegmentedControlOption<ManagedProviderTarget>[] = [

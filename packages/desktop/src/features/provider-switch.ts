@@ -15,6 +15,12 @@ const LEGACY_DEFAULT_PROVIDER_ID = "sub2api-default";
 export const DEFAULT_PROVIDER_NAME = "Default";
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-4-7";
 
+/** Paseo Cloud–managed rows: one per CLI so keys/endpoints can differ. */
+export const PASEO_MANAGED_CLAUDE_PROVIDER_ID = "paseo-managed-claude";
+export const PASEO_MANAGED_CODEX_PROVIDER_ID = "paseo-managed-codex";
+
+export type SetupManagedCloudScope = "claude" | "codex" | "both";
+
 export type ManagedProviderTarget = "claude" | "codex";
 
 /** Claude Code is written as native Anthropic Messages only; other wire shapes belong in a future gateway layer. */
@@ -24,6 +30,9 @@ export type ClaudeApiFormat = "anthropic";
 export type CodexWireApi = "responses";
 
 const PASEO_UPSTREAM_FORMAT_KEY = "PASEO_ANTHROPIC_UPSTREAM_FORMAT";
+const CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC_KEY = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC";
+const CLAUDE_CODE_ATTRIBUTION_HEADER_KEY = "CLAUDE_CODE_ATTRIBUTION_HEADER";
+const DEFAULT_CODEX_MODEL = "gpt-5.4";
 
 export interface StoredProvider {
   id: string;
@@ -372,9 +381,7 @@ async function loadStore(): Promise<ProviderStore> {
     const parsed: unknown = JSON.parse(raw);
     const parsedRecord = isRecord(parsed) ? parsed : {};
     const providersInput = Array.isArray(parsedRecord.providers) ? parsedRecord.providers : [];
-    const providers = providersInput.map((p) =>
-      normalizeProvider(p as StoredProvider),
-    );
+    const providers = providersInput.map((p) => normalizeProvider(p as StoredProvider));
     const legacyActive =
       typeof parsedRecord.activeProviderId === "string" &&
       providers.some((provider) => provider.id === parsedRecord.activeProviderId)
@@ -389,10 +396,18 @@ async function loadStore(): Promise<ProviderStore> {
       return raw;
     };
 
-    let activeClaudeProviderId = readScopedActive("activeClaudeProviderId") ?? legacyActive;
-    let activeCodexProviderId = readScopedActive("activeCodexProviderId") ?? legacyActive;
+    const scopedClaudeActive = readScopedActive("activeClaudeProviderId");
+    const scopedCodexActive = readScopedActive("activeCodexProviderId");
+    const hasScopedActive = scopedClaudeActive !== null || scopedCodexActive !== null;
+    const legacyFallback = hasScopedActive ? null : legacyActive;
 
-    const diskClaudeId = await inferActiveClaudeProviderIdFromDisk(providers, activeClaudeProviderId);
+    let activeClaudeProviderId = scopedClaudeActive ?? legacyFallback;
+    let activeCodexProviderId = scopedCodexActive ?? legacyFallback;
+
+    const diskClaudeId = await inferActiveClaudeProviderIdFromDisk(
+      providers,
+      activeClaudeProviderId,
+    );
     if (diskClaudeId !== undefined) {
       activeClaudeProviderId = diskClaudeId;
     }
@@ -406,7 +421,7 @@ async function loadStore(): Promise<ProviderStore> {
       activeCodexProviderId !== null &&
       activeClaudeProviderId === activeCodexProviderId
         ? activeClaudeProviderId
-        : legacyActive;
+        : (activeClaudeProviderId ?? activeCodexProviderId ?? null);
 
     const normalizedStore: ProviderStore = {
       providers,
@@ -468,6 +483,8 @@ export function buildClaudeSettings(
     ANTHROPIC_AUTH_TOKEN: provider.apiKey,
     ANTHROPIC_MODEL: defaultClaudeModel,
     ANTHROPIC_DEFAULT_OPUS_MODEL: defaultOpusModel,
+    [CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC_KEY]: "1",
+    [CLAUDE_CODE_ATTRIBUTION_HEADER_KEY]: "0",
   };
   delete env[PASEO_UPSTREAM_FORMAT_KEY];
 
@@ -483,15 +500,22 @@ export function buildCodexAuth(provider: StoredProvider): Record<string, unknown
 }
 
 export function buildCodexConfig(provider: StoredProvider): string {
-  if (provider.codexConfig) {
+  // Managed Codex row should always follow the integration-guide template.
+  if (provider.codexConfig && provider.id !== PASEO_MANAGED_CODEX_PROVIDER_ID) {
     return provider.codexConfig;
   }
-  const defaultCodexModel = provider.type === "default" ? DEFAULT_CLAUDE_MODEL : "gpt-4o";
-  return `model_provider = "default"
-model = "${defaultCodexModel}"
+  return `model_provider = "OpenAI"
+model = "${DEFAULT_CODEX_MODEL}"
+review_model = "${DEFAULT_CODEX_MODEL}"
+model_reasoning_effort = "xhigh"
+disable_response_storage = true
+network_access = "enabled"
+windows_wsl_setup_acknowledged = true
+model_context_window = 1000000
+model_auto_compact_token_limit = 900000
 
-[model_providers.default]
-name = "${provider.name}"
+[model_providers.OpenAI]
+name = "OpenAI"
 base_url = "${providerEndpointBaseUrl(provider.endpoint)}"
 wire_api = "responses"
 requires_openai_auth = true
@@ -649,46 +673,130 @@ export async function getCurrentProvider(): Promise<StoredProvider | null> {
   return store.providers.find((p) => p.id === id) ?? null;
 }
 
-export async function setupDefaultProvider(params: {
+function upsertProviderRow(store: ProviderStore, provider: StoredProvider): void {
+  const normalized = normalizeProvider(provider);
+  const idx = store.providers.findIndex((entry) => entry.id === normalized.id);
+  if (idx >= 0) {
+    store.providers[idx] = normalized;
+  } else {
+    store.providers.push(normalized);
+  }
+}
+
+export function buildPaseoManagedClaudeProvider(params: {
   endpoint: string;
   apiKey: string;
-  name?: string;
-}): Promise<StoredProvider> {
-  const store = await loadStore();
-  const id = DEFAULT_PROVIDER_ID;
-  const provider: StoredProvider = {
-    id,
-    name: params.name ?? DEFAULT_PROVIDER_NAME,
+  name: string;
+}): StoredProvider {
+  return normalizeProvider({
+    id: PASEO_MANAGED_CLAUDE_PROVIDER_ID,
+    name: params.name,
     type: "default",
     endpoint: normalizeProviderEndpoint(params.endpoint),
     apiKey: params.apiKey,
     isDefault: true,
+    target: "claude",
+    claudeApiFormat: "anthropic",
     claudeConfig: {
       env: {
         ANTHROPIC_MODEL: DEFAULT_CLAUDE_MODEL,
         ANTHROPIC_DEFAULT_OPUS_MODEL: DEFAULT_CLAUDE_MODEL,
       },
     },
-  };
+  });
+}
+
+export function buildPaseoManagedCodexProvider(params: {
+  endpoint: string;
+  apiKey: string;
+  name: string;
+}): StoredProvider {
+  return normalizeProvider({
+    id: PASEO_MANAGED_CODEX_PROVIDER_ID,
+    name: params.name,
+    type: "default",
+    endpoint: normalizeProviderEndpoint(params.endpoint),
+    apiKey: params.apiKey,
+    isDefault: true,
+    target: "codex",
+    codexWireApi: "responses",
+  });
+}
+
+/**
+ * Apply Paseo Cloud session key / group routing to one or both CLIs.
+ * @param scope `both` (default): same key to Claude + Codex via two managed rows. `claude` / `codex`: that CLI only.
+ */
+export async function setupDefaultProvider(params: {
+  endpoint: string;
+  apiKey: string;
+  name?: string;
+  scope?: SetupManagedCloudScope;
+}): Promise<StoredProvider> {
+  const scope: SetupManagedCloudScope = params.scope ?? "both";
+  const baseName = params.name ?? DEFAULT_PROVIDER_NAME;
+  const store = await loadStore();
   store.providers = store.providers.filter((entry) => entry.id !== LEGACY_DEFAULT_PROVIDER_ID);
-  const idx = store.providers.findIndex((entry) => entry.id === id);
-  if (idx >= 0) {
-    store.providers[idx] = provider;
-  } else {
-    store.providers.push(provider);
-  }
+
+  const claudeDisplayName = scope === "both" ? `${baseName} (Claude Code)` : baseName;
+  const codexDisplayName = scope === "both" ? `${baseName} (Codex)` : baseName;
+
   const backup = await backupCurrentConfig();
   try {
-    await writeClaudeSettings(provider);
-    await writeCodexSettings(provider);
-    store.activeClaudeProviderId = id;
-    store.activeCodexProviderId = id;
+    if (scope === "both") {
+      store.providers = store.providers.filter((entry) => entry.id !== DEFAULT_PROVIDER_ID);
+      const claudeP = buildPaseoManagedClaudeProvider({
+        endpoint: params.endpoint,
+        apiKey: params.apiKey,
+        name: claudeDisplayName,
+      });
+      const codexP = buildPaseoManagedCodexProvider({
+        endpoint: params.endpoint,
+        apiKey: params.apiKey,
+        name: codexDisplayName,
+      });
+      upsertProviderRow(store, claudeP);
+      upsertProviderRow(store, codexP);
+      await writeClaudeSettings(claudeP);
+      await writeCodexSettings(codexP);
+      store.activeClaudeProviderId = PASEO_MANAGED_CLAUDE_PROVIDER_ID;
+      store.activeCodexProviderId = PASEO_MANAGED_CODEX_PROVIDER_ID;
+    } else if (scope === "claude") {
+      const claudeP = buildPaseoManagedClaudeProvider({
+        endpoint: params.endpoint,
+        apiKey: params.apiKey,
+        name: claudeDisplayName,
+      });
+      upsertProviderRow(store, claudeP);
+      await writeClaudeSettings(claudeP);
+      store.activeClaudeProviderId = PASEO_MANAGED_CLAUDE_PROVIDER_ID;
+    } else {
+      const codexP = buildPaseoManagedCodexProvider({
+        endpoint: params.endpoint,
+        apiKey: params.apiKey,
+        name: codexDisplayName,
+      });
+      upsertProviderRow(store, codexP);
+      await writeCodexSettings(codexP);
+      store.activeCodexProviderId = PASEO_MANAGED_CODEX_PROVIDER_ID;
+    }
     syncLegacyActiveProviderId(store);
     await saveStore(store);
   } catch (error) {
     await restoreConfig(backup);
     throw error;
   }
-  log.info("[provider-switch] set up default provider");
-  return provider;
+  log.info("[provider-switch] set up managed cloud provider scope:", scope);
+  if (scope === "codex") {
+    return buildPaseoManagedCodexProvider({
+      endpoint: params.endpoint,
+      apiKey: params.apiKey,
+      name: codexDisplayName,
+    });
+  }
+  return buildPaseoManagedClaudeProvider({
+    endpoint: params.endpoint,
+    apiKey: params.apiKey,
+    name: claudeDisplayName,
+  });
 }

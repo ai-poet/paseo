@@ -13,6 +13,7 @@ import {
   useSub2APIModelCatalog,
 } from "@/hooks/use-sub2api-api";
 import type { Sub2APIKey, Sub2APIModelCatalogItem } from "@/lib/sub2api-client";
+import { resolveManagedCloudRouteFromPlatform } from "@/screens/settings/managed-cloud-scope";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -59,6 +60,12 @@ export function Sub2APIModelsSection() {
         return;
       }
 
+      const resolved = resolveManagedCloudRouteFromPlatform(item.platform);
+      if (!resolved.ok) {
+        Alert.alert("Cannot apply route", resolved.reason);
+        return;
+      }
+
       const targetGroupId = item.best_group.id;
       setSwitchingModel(item.model);
       try {
@@ -74,12 +81,13 @@ export function Sub2APIModelsSection() {
           endpoint: auth.endpoint,
           apiKey: keyToUse.key,
           name: item.best_group.name,
+          scope: resolved.scope,
         });
         await loadProviders();
 
         Alert.alert(
           "Switched",
-          `Managed route for Claude Code and Codex now uses group "${item.best_group.name}".`,
+          `Group "${item.best_group.name}" (${item.platform}) now configures ${resolved.cliLabel} on this device.`,
         );
       } catch (error) {
         Alert.alert("Switch failed", getErrorMessage(error));
@@ -106,6 +114,10 @@ export function Sub2APIModelsSection() {
         <>
           <View style={[settingsStyles.card, styles.cardBody]}>
             <Text style={styles.summaryTitle}>Summary</Text>
+            <Text style={styles.hintText}>
+              Each row uses the catalog <Text style={{ fontWeight: "600" }}>platform</Text> (anthropic →
+              Claude Code, openai → Codex) to apply the best group key to the matching CLI only.
+            </Text>
             {modelsQuery.isLoading ? (
               <Text style={styles.hintText}>Loading catalog…</Text>
             ) : modelsQuery.error ? (
@@ -139,6 +151,7 @@ export function Sub2APIModelsSection() {
           {models.length > 0 ? (
             <View style={settingsStyles.card}>
               {models.map((item, index) => {
+                const route = resolveManagedCloudRouteFromPlatform(item.platform);
                 const isSwitching = switchingModel === item.model;
                 const savings = formatPercent(item.comparison.savings_percent ?? null);
                 const officialPrice = formatUSD(
@@ -163,18 +176,27 @@ export function Sub2APIModelsSection() {
                       <Text style={settingsStyles.rowHint}>
                         Official {officialPrice} · Effective {effectivePrice} · Savings {savings}
                       </Text>
+                      {route.ok ? (
+                        <Text style={styles.hintText}>
+                          Applies to <Text style={{ fontWeight: "600" }}>{route.cliLabel}</Text> only
+                        </Text>
+                      ) : (
+                        <Text style={styles.errorText}>{route.reason}</Text>
+                      )}
                     </View>
                     <Pressable
                       onPress={() => void handleSwitchBestGroup(item)}
                       style={({ pressed }) => [
                         styles.switchButton,
                         pressed && styles.buttonPressed,
-                        isSwitching && styles.switchButtonDisabled,
+                        (isSwitching || switchingModel !== null || !route.ok) &&
+                          styles.switchButtonDisabled,
                       ]}
-                      disabled={isSwitching}
+                      disabled={isSwitching || switchingModel !== null || !route.ok}
+                      testID={`catalog-use-${item.model}`}
                     >
                       <Text style={styles.switchButtonText}>
-                        {isSwitching ? "Switching..." : "Use"}
+                        {isSwitching ? "Applying…" : "Use"}
                       </Text>
                     </Pressable>
                   </View>

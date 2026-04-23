@@ -40,6 +40,7 @@ import {
   restoreConfig,
   type Provider,
   type ConfigBackup,
+  type SetupManagedCloudScope,
 } from "../features/provider-switch.js";
 import {
   openLocalTransportSession,
@@ -545,7 +546,14 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
     },
     get_current_provider: () => getCurrentProvider(),
     setup_default_provider: (args?: Record<string, unknown>) =>
-      setupDefaultProvider(args as unknown as { endpoint: string; apiKey: string; name?: string }),
+      setupDefaultProvider(
+        args as unknown as {
+          endpoint: string;
+          apiKey: string;
+          name?: string;
+          scope?: SetupManagedCloudScope;
+        },
+      ),
     backup_config: () => backupCurrentConfig(),
     restore_config: (args?: Record<string, unknown>) =>
       restoreConfig(args as unknown as ConfigBackup),

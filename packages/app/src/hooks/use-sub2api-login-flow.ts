@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { getIsElectron } from "@/constants/platform";
 import { getDesktopHost } from "@/desktop/host";
-import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { useSub2APIAuth, type Sub2APIAuthState } from "@/hooks/use-sub2api-auth";
 import {
@@ -31,9 +30,9 @@ function extractAuthCallbackUrl(payload: unknown): string | null {
 }
 
 export interface UseSub2APILoginFlowOptions {
-  /** Called after a successful OAuth callback + provider setup. */
+  /** Called after a successful OAuth callback is persisted locally. */
   onLoginSuccess?: (auth: Sub2APIAuthState) => void;
-  /** Called if the callback or provider setup fails. */
+  /** Called if the callback handling fails. */
   onLoginError?: (error: unknown) => void;
   /** Fallback endpoint if the user has no saved auth yet. */
   defaultEndpoint?: string;
@@ -105,20 +104,6 @@ export function useSub2APILoginFlow(
 
   const canStartLogin = isValidSub2APIEndpoint(endpoint);
 
-  const setupDefaultProviderWithKey = useCallback(
-    async (apiKey: string, targetEndpoint: string, name?: string) => {
-      if (!isValidSub2APIEndpoint(targetEndpoint)) {
-        throw new Error("Service endpoint is invalid.");
-      }
-      await invokeDesktopCommand("setup_default_provider", {
-        endpoint: targetEndpoint,
-        apiKey,
-        ...(name ? { name } : {}),
-      });
-    },
-    [],
-  );
-
   const handleAuthCallback = useCallback(
     async (payload: unknown) => {
       const url = extractAuthCallbackUrl(payload);
@@ -134,7 +119,6 @@ export function useSub2APILoginFlow(
           expiresIn: session.expiresIn,
           endpoint: session.endpoint,
         });
-        await setupDefaultProviderWithKey(session.apiKey, session.endpoint, "Default");
         setEndpoint(session.endpoint);
 
         const nextAuth: Sub2APIAuthState = {
@@ -154,7 +138,7 @@ export function useSub2APILoginFlow(
         setIsInFlight(false);
       }
     },
-    [login, setupDefaultProviderWithKey],
+    [login],
   );
 
   useEffect(() => {

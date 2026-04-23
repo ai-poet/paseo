@@ -45,6 +45,18 @@ export type DesktopProvidersStoreValue = {
 
 const DesktopProvidersContext = createContext<DesktopProvidersStoreValue | null>(null);
 
+export function resolveScopedActiveProviderIds(store: ProviderStore): {
+  claude: string | null;
+  codex: string | null;
+} {
+  const hasScopedIds = store.activeClaudeProviderId !== null || store.activeCodexProviderId !== null;
+  const legacyFallback = hasScopedIds ? null : (store.activeProviderId ?? null);
+  return {
+    claude: store.activeClaudeProviderId ?? legacyFallback,
+    codex: store.activeCodexProviderId ?? legacyFallback,
+  };
+}
+
 export function DesktopProvidersStoreProvider({ children }: { children: ReactNode }) {
   const isElectron = getIsElectron();
   const [providers, setProviders] = useState<DesktopProviderPayload[]>([]);
@@ -63,10 +75,7 @@ export function DesktopProvidersStoreProvider({ children }: { children: ReactNod
     try {
       const store = await invokeDesktopCommand<ProviderStore>("get_providers");
       setProviders(store.providers);
-      const claude =
-        store.activeClaudeProviderId ?? store.activeProviderId ?? null;
-      const codex =
-        store.activeCodexProviderId ?? store.activeProviderId ?? null;
+      const { claude, codex } = resolveScopedActiveProviderIds(store);
       setActiveClaudeProviderId(claude);
       setActiveCodexProviderId(codex);
     } catch {

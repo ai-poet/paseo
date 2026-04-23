@@ -365,4 +365,61 @@ export const managedProviderSettingsStyles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[1],
     paddingHorizontal: theme.spacing[2],
   },
+  cloudShell: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: theme.spacing[4],
+  },
+  cloudShellCompact: {
+    flexDirection: "column",
+  },
+  cloudMenuCard: {
+    width: 220,
+    alignSelf: "flex-start",
+  },
+  cloudMenuCardCompact: {
+    width: "100%",
+  },
+  cloudMenuHeader: {
+    paddingHorizontal: theme.spacing[4],
+    paddingTop: theme.spacing[4],
+    paddingBottom: theme.spacing[3],
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    gap: theme.spacing[1],
+  },
+  cloudMenuList: {
+    padding: theme.spacing[2],
+    gap: theme.spacing[1],
+  },
+  cloudMenuListCompact: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  cloudMenuButton: {
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[3],
+    backgroundColor: theme.colors.surface1,
+  },
+  cloudMenuButtonCompact: {
+    minWidth: 120,
+  },
+  cloudMenuButtonActive: {
+    backgroundColor: theme.colors.surface0,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  cloudMenuButtonText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+  },
+  cloudMenuButtonTextActive: {
+    color: theme.colors.foreground,
+  },
+  cloudContent: {
+    flex: 1,
+    minWidth: 0,
+  },
 }));
