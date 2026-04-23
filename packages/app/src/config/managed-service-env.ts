@@ -15,13 +15,21 @@ export function getManagedServiceUrlFromEnv(): string {
 }
 
 /**
- * True when the URL is not meant to be typed manually: explicit env and/or shipped default.
+ * `EXPO_PUBLIC_MANAGED_SERVICE_URL` was set at bundle time (non-empty).
  */
-export function hasManagedServiceUrlEnv(): boolean {
-  const explicit =
-    typeof process.env.EXPO_PUBLIC_MANAGED_SERVICE_URL === "string" &&
-    process.env.EXPO_PUBLIC_MANAGED_SERVICE_URL.trim().length > 0;
-  return explicit || DEFAULT_MANAGED_SERVICE_URL.length > 0;
+export function hasExplicitManagedServiceUrlEnv(): boolean {
+  const raw = process.env.EXPO_PUBLIC_MANAGED_SERVICE_URL;
+  return typeof raw === "string" && raw.trim().length > 0;
+}
+
+/**
+ * Show the service URL text field only when there is no env override and no shipped default.
+ */
+export function shouldShowManagedServiceUrlEditor(): boolean {
+  if (hasExplicitManagedServiceUrlEnv()) {
+    return false;
+  }
+  return DEFAULT_MANAGED_SERVICE_URL.length === 0;
 }
 
 export function isManagedServiceUrlEnvValid(): boolean {

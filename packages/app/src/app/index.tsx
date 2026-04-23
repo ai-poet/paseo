@@ -8,9 +8,9 @@ import { shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 
-const WELCOME_ROUTE = "/welcome";
-const LOGIN_ROUTE = "/login";
-const MODE_SELECT_ROUTE = "/mode-select";
+const WELCOME_ROUTE = "/welcome" as const;
+const LOGIN_ROUTE = "/login" as const;
+const MODE_SELECT_ROUTE = "/mode-select" as const;
 
 function useAnyOnlineHostServerId(serverIds: string[]): string | null {
   const runtime = getHostRuntimeStore();

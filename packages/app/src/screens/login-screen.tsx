@@ -9,8 +9,9 @@ import { useSub2APILoginFlow } from "@/hooks/use-sub2api-login-flow";
 import { useAppSettings } from "@/hooks/use-settings";
 import {
   getManagedServiceUrlFromEnv,
-  hasManagedServiceUrlEnv,
+  hasExplicitManagedServiceUrlEnv,
   isManagedServiceUrlEnvValid,
+  shouldShowManagedServiceUrlEditor,
 } from "@/config/managed-service-env";
 
 const styles = StyleSheet.create((theme) => ({
@@ -126,7 +127,8 @@ export function LoginScreen() {
   const router = useRouter();
   const { updateSettings } = useAppSettings();
   const injectedServiceUrl = getManagedServiceUrlFromEnv();
-  const serviceUrlFromEnv = hasManagedServiceUrlEnv();
+  const showServiceUrlEditor = shouldShowManagedServiceUrlEditor();
+  const explicitServiceUrlEnv = hasExplicitManagedServiceUrlEnv();
 
   const {
     endpoint,
@@ -153,7 +155,7 @@ export function LoginScreen() {
     router.replace("/");
   };
 
-  const envUrlInvalid = serviceUrlFromEnv && !isManagedServiceUrlEnvValid();
+  const envUrlInvalid = explicitServiceUrlEnv && !isManagedServiceUrlEnvValid();
   const loginDisabled = !canStartLogin || isInFlight || envUrlInvalid;
 
   return (
@@ -176,19 +178,12 @@ export function LoginScreen() {
           </View>
 
           <View style={styles.form}>
-            {serviceUrlFromEnv ? (
-              <>
-                <Text style={styles.fieldLabel}>服务地址</Text>
-                <Text style={[styles.subtitle, { textAlign: "left" as const, width: "100%" }]}>
-                  已由当前构建环境自动配置，无需填写。
-                </Text>
-                {envUrlInvalid ? (
-                  <Text style={styles.errorHint}>
-                    环境变量中的地址不是合法的 http(s) URL，请修正后重新打包或启动。
-                  </Text>
-                ) : null}
-              </>
-            ) : (
+            {envUrlInvalid ? (
+              <Text style={styles.errorHint}>
+                环境变量中的服务地址不是合法的 http(s) URL，请修正后重新打包或启动。
+              </Text>
+            ) : null}
+            {showServiceUrlEditor ? (
               <>
                 <Text style={styles.fieldLabel}>服务地址</Text>
                 <TextInput
@@ -205,7 +200,7 @@ export function LoginScreen() {
                   <Text style={styles.errorHint}>请填写合法的 http(s) 地址后再登录。</Text>
                 ) : null}
               </>
-            )}
+            ) : null}
 
             <Pressable
               onPress={() => void handleGitHubLogin()}
