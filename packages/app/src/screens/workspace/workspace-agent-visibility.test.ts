@@ -138,6 +138,26 @@ describe("workspace agent visibility", () => {
     ).toBe(true);
   });
 
+  it("matches when cwd and workspace differ only by path casing (case-insensitive volume)", () => {
+    const sessionAgents = new Map<string, Agent>([
+      [
+        "case-agent",
+        makeAgent({
+          id: "case-agent",
+          cwd: "/users/dev/projects/WORKTREE-abc",
+        }),
+      ],
+    ]);
+
+    const result = deriveWorkspaceAgentVisibility({
+      sessionAgents,
+      workspaceDirectory: "/Users/dev/projects/worktree-abc",
+    });
+
+    expect(result.activeAgentIds).toEqual(new Set(["case-agent"]));
+    expect(result.knownAgentIds.has("case-agent")).toBe(true);
+  });
+
   it("matches workspace agents when cwd and route workspace differ only by trailing slash", () => {
     const sessionAgents = new Map<string, Agent>([
       [

@@ -85,6 +85,7 @@ import {
   getWorkspaceExecutionAuthority,
   resolveWorkspaceRouteId,
 } from "@/utils/workspace-execution";
+import { isCreatingWorktreePlaceholderId } from "@/utils/quick-create-worktree";
 import {
   WorkspaceTabPresentationResolver,
   WorkspaceTabIcon,
@@ -1184,7 +1185,28 @@ function WorkspaceScreenContent({
   );
 
   const emptyWorkspaceSeedRef = useRef<string | null>(null);
+  const emptyWorkspacePrevWorkspaceIdRef = useRef<string | null>(null);
   const requestedWorkspaceSetupStatusKeyRef = useRef<string | null>(null);
+
+  // Reset empty-workspace auto-seed when switching workspaces. When a worktree finishes creating,
+  // `navigateToPreparedWorkspaceTab` in the sidebar already opened a draft for the new id; treat
+  // the real workspace as seeded so this effect does not add a second tab a moment later.
+  useEffect(() => {
+    const prev = emptyWorkspacePrevWorkspaceIdRef.current;
+    const current = normalizedWorkspaceId ?? null;
+    const server = normalizedServerId ?? "";
+    if (
+      prev &&
+      isCreatingWorktreePlaceholderId(prev) &&
+      current &&
+      !isCreatingWorktreePlaceholderId(current)
+    ) {
+      emptyWorkspaceSeedRef.current = `${server}:${current}`;
+    } else {
+      emptyWorkspaceSeedRef.current = null;
+    }
+    emptyWorkspacePrevWorkspaceIdRef.current = current;
+  }, [normalizedServerId, normalizedWorkspaceId]);
 
   useEffect(() => {
     if (!isRouteFocused) {
@@ -1240,12 +1262,13 @@ function WorkspaceScreenContent({
     if (!persistenceKey) {
       return;
     }
+    if (normalizedWorkspaceId && isCreatingWorktreePlaceholderId(normalizedWorkspaceId)) {
+      return;
+    }
     if (workspaceAgentVisibility.activeAgentIds.size > 0 || terminals.length > 0) {
-      emptyWorkspaceSeedRef.current = null;
       return;
     }
     if (tabs.length > 0) {
-      emptyWorkspaceSeedRef.current = null;
       return;
     }
     const workspaceKey = `${normalizedServerId}:${normalizedWorkspaceId}`;

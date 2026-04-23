@@ -5,6 +5,20 @@ function normalizeWorkspaceId(value: string | null | undefined): string {
   return normalizeWorkspacePath(value) ?? "";
 }
 
+/** Match execution directory to agent cwd (trailing slashes normalized; case on macOS volumes). */
+function workspacePathsMatch(agentCwd: string, workspaceDir: string): boolean {
+  const a = normalizeWorkspaceId(agentCwd);
+  const b = normalizeWorkspaceId(workspaceDir);
+  if (!a || !b) {
+    return false;
+  }
+  if (a === b) {
+    return true;
+  }
+  // Default APFS/HFS+ are case-insensitive; host may return different casing than the route descriptor.
+  return a.toLowerCase() === b.toLowerCase();
+}
+
 export interface WorkspaceAgentVisibility {
   activeAgentIds: Set<string>;
   knownAgentIds: Set<string>;
@@ -26,7 +40,7 @@ export function deriveWorkspaceAgentVisibility(input: {
   const activeAgentIds = new Set<string>();
   const knownAgentIds = new Set<string>();
   for (const agent of sessionAgents.values()) {
-    if (normalizeWorkspaceId(agent.cwd) !== normalizedWorkspaceDirectory) {
+    if (!workspacePathsMatch(agent.cwd, workspaceDirectory ?? "")) {
       continue;
     }
     knownAgentIds.add(agent.id);

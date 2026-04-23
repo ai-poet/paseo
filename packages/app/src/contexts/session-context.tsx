@@ -68,8 +68,9 @@ function throttledBalanceRefresh(queryClient: ReturnType<typeof useQueryClient>)
   const now = Date.now();
   if (now - _lastBalanceRefreshAt < BALANCE_REFRESH_THROTTLE_MS) return;
   _lastBalanceRefreshAt = now;
-  void queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.me(undefined) });
-  void queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.usage(undefined, "today") });
+  // `me(undefined)` resolves to a "none" segment that never matches the logged-in endpoint key.
+  // Invalidate the whole managed-cloud subtree (same as sub2api-desktop-auth-bridge).
+  void queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.root });
 }
 
 // Re-export types from session-store and draft-store for backward compatibility
@@ -1076,8 +1077,12 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         voiceRuntime?.onTurnEvent(serverId, agentId, event.type);
       }
 
-      // Refresh balance after agent turn completes
-      if (event.type === "turn_completed") {
+      // Refresh Sub2API balance / usage when a turn ends (completed, failed, or canceled).
+      if (
+        event.type === "turn_completed" ||
+        event.type === "turn_failed" ||
+        event.type === "turn_canceled"
+      ) {
         throttledBalanceRefresh(queryClient);
       }
 
