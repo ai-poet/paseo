@@ -78,6 +78,7 @@ import { upsertTerminalListEntry } from "@/utils/terminal-list";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useStableEvent } from "@/hooks/use-stable-event";
+import { HeaderBalanceBadge } from "@/components/header-balance-badge";
 import { buildProviderCommand } from "@/utils/provider-command-templates";
 import { generateDraftId } from "@/stores/draft-keys";
 import {
@@ -122,7 +123,6 @@ import { isWeb, isNative } from "@/constants/platform";
 import { useContainerWidth } from "@/hooks/use-container-width";
 
 const TERMINALS_QUERY_STALE_TIME = 5_000;
-const WORKSPACE_SETUP_AUTO_OPEN_WINDOW_MS = 30_000;
 const EMPTY_UI_TABS: WorkspaceTab[] = [];
 const EMPTY_PINNED_AGENT_IDS = new Set<string>();
 const EMPTY_SET = new Set<string>();
@@ -1172,13 +1172,6 @@ function WorkspaceScreenContent({
     () => focusedPaneTabState.tabs.map((tab) => tab.descriptor),
     [focusedPaneTabState.tabs],
   );
-  const hasSetupTab = useMemo(
-    () =>
-      uiTabs.some(
-        (tab) => tab.target.kind === "setup" && tab.target.workspaceId === normalizedWorkspaceId,
-      ),
-    [normalizedWorkspaceId, uiTabs],
-  );
 
   const navigateToTabId = useCallback(
     function navigateToTabId(tabId: string) {
@@ -1191,7 +1184,6 @@ function WorkspaceScreenContent({
   );
 
   const emptyWorkspaceSeedRef = useRef<string | null>(null);
-  const autoOpenedSetupTabWorkspaceRef = useRef<string | null>(null);
   const requestedWorkspaceSetupStatusKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1271,59 +1263,6 @@ function WorkspaceScreenContent({
     terminals.length,
     tabs.length,
     workspaceAgentVisibility.activeAgentIds.size,
-  ]);
-
-  useEffect(() => {
-    if (!isRouteFocused) {
-      return;
-    }
-    if (!persistenceKey) {
-      return;
-    }
-    if (!workspaceSetupSnapshot || !showWorkspaceSetup) {
-      if (autoOpenedSetupTabWorkspaceRef.current === persistenceKey) {
-        autoOpenedSetupTabWorkspaceRef.current = null;
-      }
-      return;
-    }
-
-    const snapshotAge = Date.now() - workspaceSetupSnapshot.updatedAt;
-    const shouldAutoOpen =
-      workspaceSetupSnapshot.status === "running" ||
-      snapshotAge <= WORKSPACE_SETUP_AUTO_OPEN_WINDOW_MS;
-    if (!shouldAutoOpen) {
-      return;
-    }
-    if (hasSetupTab) {
-      autoOpenedSetupTabWorkspaceRef.current = persistenceKey;
-      return;
-    }
-    if (autoOpenedSetupTabWorkspaceRef.current === persistenceKey) {
-      return;
-    }
-
-    const target = normalizeWorkspaceTabTarget({
-      kind: "setup",
-      workspaceId: normalizedWorkspaceId,
-    });
-    if (!target) {
-      return;
-    }
-
-    const tabId = openWorkspaceTabInBackground(persistenceKey, target);
-    if (!tabId) {
-      return;
-    }
-
-    autoOpenedSetupTabWorkspaceRef.current = persistenceKey;
-  }, [
-    hasSetupTab,
-    isRouteFocused,
-    normalizedWorkspaceId,
-    openWorkspaceTabInBackground,
-    persistenceKey,
-    showWorkspaceSetup,
-    workspaceSetupSnapshot,
   ]);
 
   const handleOpenFileFromExplorer = useCallback(
@@ -2329,6 +2268,7 @@ function WorkspaceScreenContent({
               }
               right={
                 <View style={styles.headerRight}>
+                  <HeaderBalanceBadge />
                   {!isMobile && workspaceDescriptor && workspaceDescriptor.scripts.length > 0 ? (
                     <WorkspaceScriptsButton
                       serverId={normalizedServerId}

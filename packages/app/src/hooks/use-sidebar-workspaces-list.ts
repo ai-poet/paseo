@@ -51,17 +51,17 @@ export interface SidebarWorkspacesListResult {
 function createStructuralWorkspaceEntry(input: {
   serverId: string;
   project: WorkspaceStructureProject;
-  workspaceId: string;
+  workspace: WorkspaceStructureProject["workspaces"][number];
 }): SidebarWorkspaceEntry {
   return {
-    workspaceKey: `${input.serverId}:${input.workspaceId}`,
+    workspaceKey: `${input.serverId}:${input.workspace.workspaceId}`,
     serverId: input.serverId,
-    workspaceId: input.workspaceId,
+    workspaceId: input.workspace.workspaceId,
     projectRootPath: input.project.iconWorkingDir,
-    workspaceDirectory: undefined,
+    workspaceDirectory: input.workspace.workspaceDirectory,
     projectKind: input.project.projectKind,
-    workspaceKind: "checkout",
-    name: input.workspaceId,
+    workspaceKind: input.workspace.workspaceKind,
+    name: input.workspace.workspaceName,
     statusBucket: "done",
     diffStat: null,
     scripts: [],
@@ -102,11 +102,11 @@ export function buildSidebarProjectsFromStructure(input: {
     projectName: project.projectName,
     projectKind: project.projectKind,
     iconWorkingDir: project.iconWorkingDir,
-    workspaces: project.workspaceKeys.map((workspaceId) =>
+    workspaces: project.workspaces.map((workspace) =>
       createStructuralWorkspaceEntry({
         serverId: input.serverId,
         project,
-        workspaceId,
+        workspace,
       }),
     ),
   }));

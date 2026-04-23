@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef } from "react";
-import { Keyboard, ScrollView, Text, View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { ActivityIndicator, Keyboard, ScrollView, Text, View } from "react-native";
+import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import invariant from "tiny-invariant";
 import { Composer } from "@/components/composer";
@@ -19,6 +19,7 @@ import { shouldAutoFocusWorkspaceDraftComposer } from "@/screens/workspace/works
 import type { AgentCapabilityFlags } from "@server/server/agent/agent-sdk-types";
 import type { AgentSnapshotPayload } from "@server/shared/messages";
 import { isWeb } from "@/constants/platform";
+import { isCreatingWorktreePlaceholderId } from "@/utils/quick-create-worktree";
 
 const EMPTY_PENDING_PERMISSIONS = new Map();
 const DRAFT_CAPABILITIES: AgentCapabilityFlags = {
@@ -49,12 +50,14 @@ export function WorkspaceDraftAgentTab({
   onCreated,
   onOpenWorkspaceFile,
 }: WorkspaceDraftAgentTabProps) {
+  const { theme } = useUnistyles();
   const insets = useSafeAreaInsets();
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
   const workspaceAuthority = useWorkspaceExecutionAuthority(serverId, workspaceId);
   const workspaceExecutionAuthority = workspaceAuthority?.ok ? workspaceAuthority.authority : null;
   const workspaceDirectory = workspaceExecutionAuthority?.workspaceDirectory ?? null;
+  const shouldShowSetupLoading = isCreatingWorktreePlaceholderId(workspaceId);
   const addImagesRef = useRef<((images: ImageAttachment[]) => void) | null>(null);
   const draftStoreKey = useMemo(
     () =>
@@ -279,6 +282,17 @@ export function WorkspaceDraftAgentTab({
                 onOpenWorkspaceFile={onOpenWorkspaceFile}
               />
             </View>
+          ) : shouldShowSetupLoading ? (
+            <View style={styles.setupLoadingContainer}>
+              <View style={styles.setupLoadingCard}>
+                <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
+                <Text style={styles.setupLoadingTitle}>Setting up workspace…</Text>
+                <Text style={styles.setupLoadingText}>
+                  The worktree is being prepared. This view will switch to the normal workspace as
+                  soon as setup is ready.
+                </Text>
+              </View>
+            </View>
           ) : (
             <ScrollView
               style={styles.scrollView}
@@ -295,37 +309,39 @@ export function WorkspaceDraftAgentTab({
           )}
         </View>
 
-        <View style={[styles.inputAreaWrapper, { paddingBottom: insets.bottom }]}>
-          <Composer
-            agentId={tabId}
-            serverId={serverId}
-            isPaneFocused={isPaneFocused}
-            onSubmitMessage={handleCreateFromInput}
-            isSubmitLoading={isSubmitting}
-            blurOnSubmit={true}
-            value={draftInput.text}
-            onChangeText={draftInput.setText}
-            attachments={draftInput.attachments}
-            onChangeAttachments={draftInput.setAttachments}
-            cwd={draftInput.cwd}
-            clearDraft={draftInput.clear}
-            autoFocus={shouldAutoFocusWorkspaceDraftComposer({ isPaneFocused, isSubmitting })}
-            onAddImages={handleAddImagesCallback}
-            onFocusInput={handleFocusInputCallback}
-            commandDraftConfig={composerState.commandDraftConfig}
-            statusControls={{
-              ...composerState.statusControls,
-              onSelectProvider: handleProviderSelectWithFocus,
-              onSelectMode: handleModeSelectWithFocus,
-              onSelectModel: handleModelSelectWithFocus,
-              onSelectProviderAndModel: handleProviderAndModelSelectWithFocus,
-              onSelectThinkingOption: handleThinkingOptionSelectWithFocus,
-              onSetFeature: handleSetFeatureWithFocus,
-              onDropdownClose: () => focusInputRef.current?.(),
-              disabled: isSubmitting,
-            }}
-          />
-        </View>
+        {!shouldShowSetupLoading ? (
+          <View style={[styles.inputAreaWrapper, { paddingBottom: insets.bottom }]}>
+            <Composer
+              agentId={tabId}
+              serverId={serverId}
+              isPaneFocused={isPaneFocused}
+              onSubmitMessage={handleCreateFromInput}
+              isSubmitLoading={isSubmitting}
+              blurOnSubmit={true}
+              value={draftInput.text}
+              onChangeText={draftInput.setText}
+              attachments={draftInput.attachments}
+              onChangeAttachments={draftInput.setAttachments}
+              cwd={draftInput.cwd}
+              clearDraft={draftInput.clear}
+              autoFocus={shouldAutoFocusWorkspaceDraftComposer({ isPaneFocused, isSubmitting })}
+              onAddImages={handleAddImagesCallback}
+              onFocusInput={handleFocusInputCallback}
+              commandDraftConfig={composerState.commandDraftConfig}
+              statusControls={{
+                ...composerState.statusControls,
+                onSelectProvider: handleProviderSelectWithFocus,
+                onSelectMode: handleModeSelectWithFocus,
+                onSelectModel: handleModelSelectWithFocus,
+                onSelectProviderAndModel: handleProviderAndModelSelectWithFocus,
+                onSelectThinkingOption: handleThinkingOptionSelectWithFocus,
+                onSetFeature: handleSetFeatureWithFocus,
+                onDropdownClose: () => focusInputRef.current?.(),
+                disabled: isSubmitting,
+              }}
+            />
+          </View>
+        ) : null}
       </View>
     </FileDropZone>
   );
@@ -353,6 +369,33 @@ const styles = StyleSheet.create((theme) => ({
   },
   configSection: {
     gap: theme.spacing[3],
+  },
+  setupLoadingCard: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.surface1,
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[6],
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  setupLoadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[6],
+  },
+  setupLoadingTitle: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+  },
+  setupLoadingText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    textAlign: "center",
+    lineHeight: theme.fontSize.xs * 1.5,
   },
   inputAreaWrapper: {
     width: "100%",

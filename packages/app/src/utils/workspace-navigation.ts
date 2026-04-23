@@ -2,6 +2,10 @@ import { router } from "expo-router";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import { generateDraftId } from "@/stores/draft-keys";
 import {
+  activateNavigationWorkspaceSelection,
+  getNavigationActiveWorkspaceSelection,
+} from "@/stores/navigation-active-workspace-store";
+import {
   buildWorkspaceTabPersistenceKey,
   type WorkspaceTabTarget,
 } from "@/stores/workspace-tabs-store";
@@ -44,6 +48,20 @@ export function prepareWorkspaceTab(input: PrepareWorkspaceTabInput) {
 
 export function navigateToPreparedWorkspaceTab(input: NavigateToPreparedWorkspaceTabInput): string {
   const route = prepareWorkspaceTab(input);
+  if (getNavigationActiveWorkspaceSelection()) {
+    activateNavigationWorkspaceSelection(
+      {
+        serverId: input.serverId,
+        workspaceId: input.workspaceId,
+      },
+      {
+        updateBrowserHistory: true,
+        historyMode: input.navigationMethod === "replace" ? "replace" : "push",
+      },
+    );
+    return route;
+  }
+
   if (input.navigationMethod === "replace") {
     router.replace(route as any);
   } else {

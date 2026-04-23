@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import React from "react";
 import type { ReactElement } from "react";
+import { getSidebarRenderableProjects } from "@/components/sidebar-workspace-list";
 
 vi.hoisted(() => {
   (globalThis as unknown as { __DEV__: boolean }).__DEV__ = false;
@@ -171,6 +172,18 @@ function initializeSidebarState(workspaces: WorkspaceDescriptor[]): void {
   });
 }
 
+function cleanupSidebarState(): void {
+  act(() => {
+    syncNavigationActiveWorkspace({ current: null });
+    getHostRuntimeStore().syncHosts([]);
+    useSessionStore.getState().clearSession(SERVER_ID);
+    useSidebarOrderStore.setState({
+      projectOrderByServerId: {},
+      workspaceOrderByServerAndProject: {},
+    });
+  });
+}
+
 function resetCounts(counts: RenderCounts): void {
   counts.frame = 0;
   counts.headers = {};
@@ -309,6 +322,30 @@ async function renderProbe(counts: RenderCounts): Promise<{ root: Root; containe
   return { root, container };
 }
 
+async function captureSidebarProjects(): Promise<SidebarProjectEntry[]> {
+  let capturedProjects: SidebarProjectEntry[] = [];
+
+  function SidebarProjectsCapture(): null {
+    capturedProjects = useSidebarWorkspacesList({ serverId: SERVER_ID }).projects;
+    return null;
+  }
+
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(<SidebarProjectsCapture />);
+  });
+
+  act(() => {
+    root.unmount();
+  });
+  container.remove();
+
+  return capturedProjects;
+}
+
 describe("sidebar workspace render isolation", () => {
   let root: Root | null = null;
   let container: HTMLElement | null = null;
@@ -326,15 +363,7 @@ describe("sidebar workspace render isolation", () => {
     root = null;
     container?.remove();
     container = null;
-    act(() => {
-      syncNavigationActiveWorkspace({ current: null });
-      getHostRuntimeStore().syncHosts([]);
-      useSessionStore.getState().clearSession(SERVER_ID);
-      useSidebarOrderStore.setState({
-        projectOrderByServerId: {},
-        workspaceOrderByServerAndProject: {},
-      });
-    });
+    cleanupSidebarState();
   });
 
   it("re-renders only the changed workspace row for a status update", async () => {
@@ -450,5 +479,183 @@ describe("sidebar workspace render isolation", () => {
       "a-one": 1,
       "b-two": 1,
     });
+  });
+});
+
+describe("getSidebarRenderableProjects", () => {
+  it("hides creating placeholders when a same-name real workspace exists", () => {
+    const project: SidebarProjectEntry = {
+      projectKey: "project-a",
+      projectName: "Project A",
+      projectKind: "git",
+      iconWorkingDir: "/repo/project-a",
+      workspaces: [
+        {
+          workspaceKey: `${SERVER_ID}:__creating_worktree__:demo`,
+          serverId: SERVER_ID,
+          workspaceId: "__creating_worktree__:demo",
+          projectRootPath: "/repo/project-a",
+          workspaceDirectory: "/repo/project-a/.paseo/pending/demo",
+          projectKind: "git",
+          workspaceKind: "worktree",
+          name: "feature/demo",
+          statusBucket: "running",
+          diffStat: null,
+          scripts: [],
+          hasRunningScripts: false,
+        },
+        {
+          workspaceKey: `${SERVER_ID}:workspace-feature`,
+          serverId: SERVER_ID,
+          workspaceId: "workspace-feature",
+          projectRootPath: "/repo/project-a",
+          workspaceDirectory: "/repo/project-a/workspace-feature",
+          projectKind: "git",
+          workspaceKind: "worktree",
+          name: "feature/demo",
+          statusBucket: "done",
+          diffStat: null,
+          scripts: [],
+          hasRunningScripts: false,
+        },
+      ],
+    };
+
+    const result = getSidebarRenderableProjects([project]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.workspaces).toHaveLength(1);
+    expect(result[0]?.workspaces[0]?.workspaceId).toBe("workspace-feature");
+  });
+
+  it("keeps creating placeholders when there is no same-name real workspace", () => {
+    const project: SidebarProjectEntry = {
+      projectKey: "project-a",
+      projectName: "Project A",
+      projectKind: "git",
+      iconWorkingDir: "/repo/project-a",
+      workspaces: [
+        {
+          workspaceKey: `${SERVER_ID}:__creating_worktree__:demo`,
+          serverId: SERVER_ID,
+          workspaceId: "__creating_worktree__:demo",
+          projectRootPath: "/repo/project-a",
+          workspaceDirectory: "/repo/project-a/.paseo/pending/demo",
+          projectKind: "git",
+          workspaceKind: "worktree",
+          name: "feature/new",
+          statusBucket: "running",
+          diffStat: null,
+          scripts: [],
+          hasRunningScripts: false,
+        },
+        {
+          workspaceKey: `${SERVER_ID}:workspace-main`,
+          serverId: SERVER_ID,
+          workspaceId: "workspace-main",
+          projectRootPath: "/repo/project-a",
+          workspaceDirectory: "/repo/project-a/workspace-main",
+          projectKind: "git",
+          workspaceKind: "local_checkout",
+          name: "main",
+          statusBucket: "done",
+          diffStat: null,
+          scripts: [],
+          hasRunningScripts: false,
+        },
+      ],
+    };
+
+    const result = getSidebarRenderableProjects([project]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.workspaces).toHaveLength(2);
+    expect(result[0]?.workspaces.map((workspace) => workspace.workspaceId)).toEqual([
+      "__creating_worktree__:demo",
+      "workspace-main",
+    ]);
+  });
+
+  it("hides creating placeholders when real workspace directory already points to the same slug", () => {
+    const project: SidebarProjectEntry = {
+      projectKey: "project-a",
+      projectName: "Project A",
+      projectKind: "git",
+      iconWorkingDir: "/repo/project-a",
+      workspaces: [
+        {
+          workspaceKey: `${SERVER_ID}:__creating_worktree__:cowardly-lynx`,
+          serverId: SERVER_ID,
+          workspaceId: "__creating_worktree__:cowardly-lynx",
+          projectRootPath: "/repo/project-a",
+          workspaceDirectory: "/repo/project-a/.paseo/pending/cowardly-lynx",
+          projectKind: "git",
+          workspaceKind: "worktree",
+          name: "pending-cowardly-lynx",
+          statusBucket: "running",
+          diffStat: null,
+          scripts: [],
+          hasRunningScripts: false,
+        },
+        {
+          workspaceKey: `${SERVER_ID}:workspace-real`,
+          serverId: SERVER_ID,
+          workspaceId: "workspace-real",
+          projectRootPath: "/repo/project-a",
+          workspaceDirectory: "/repo/project-a/.paseo/worktrees/cowardly-lynx",
+          projectKind: "git",
+          workspaceKind: "worktree",
+          name: "cowardly-lynx",
+          statusBucket: "running",
+          diffStat: null,
+          scripts: [],
+          hasRunningScripts: false,
+        },
+      ],
+    };
+
+    const result = getSidebarRenderableProjects([project]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.workspaces).toHaveLength(1);
+    expect(result[0]?.workspaces[0]?.workspaceId).toBe("workspace-real");
+  });
+});
+
+describe("useSidebarWorkspacesList", () => {
+  afterEach(() => {
+    cleanupSidebarState();
+  });
+
+  it("keeps real workspace names in live sidebar data so placeholders can be filtered", async () => {
+    initializeSidebarState([
+      {
+        ...workspace({
+          id: "__creating_worktree__:eager-squid",
+          projectId: "project-a",
+          projectDisplayName: "Project A",
+          name: "eager-squid",
+          status: "running",
+        }),
+        workspaceDirectory: "/repo/project-a/.paseo/pending/eager-squid",
+      },
+      {
+        ...workspace({
+          id: "workspace-real",
+          projectId: "project-a",
+          projectDisplayName: "Project A",
+          name: "eager-squid",
+        }),
+        workspaceDirectory: "/repo/project-a/.paseo/worktrees/eager-squid",
+      },
+    ]);
+
+    const projects = await captureSidebarProjects();
+    const renderableProjects = getSidebarRenderableProjects(projects);
+
+    expect(renderableProjects).toHaveLength(1);
+    expect(renderableProjects[0]?.workspaces.map((workspace) => workspace.workspaceId)).toEqual([
+      "workspace-real",
+    ]);
   });
 });

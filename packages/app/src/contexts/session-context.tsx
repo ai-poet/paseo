@@ -58,6 +58,19 @@ import { patchWorkspaceScripts } from "@/contexts/session-workspace-scripts";
 import { isNative } from "@/constants/platform";
 import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
+import { cloudServiceQueryKeys } from "@/hooks/use-sub2api-api";
+
+/** Throttled balance refresh — at most once per 10 seconds across all agents. */
+let _lastBalanceRefreshAt = 0;
+const BALANCE_REFRESH_THROTTLE_MS = 10_000;
+
+function throttledBalanceRefresh(queryClient: ReturnType<typeof useQueryClient>) {
+  const now = Date.now();
+  if (now - _lastBalanceRefreshAt < BALANCE_REFRESH_THROTTLE_MS) return;
+  _lastBalanceRefreshAt = now;
+  void queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.me(undefined) });
+  void queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.usage(undefined, "today") });
+}
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -1061,6 +1074,11 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         event.type === "turn_canceled"
       ) {
         voiceRuntime?.onTurnEvent(serverId, agentId, event.type);
+      }
+
+      // Refresh balance after agent turn completes
+      if (event.type === "turn_completed") {
+        throttledBalanceRefresh(queryClient);
       }
 
       // Attention notification stays in React (not extractable to pure reducer)

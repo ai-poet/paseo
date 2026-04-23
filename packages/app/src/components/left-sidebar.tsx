@@ -75,6 +75,7 @@ import {
 import { useOpenProjectPicker } from "@/hooks/use-open-project-picker";
 import { isWeb } from "@/constants/platform";
 import { resolveActiveHost } from "@/utils/active-host";
+import { SidebarUserMenu } from "@/components/sidebar-user-menu";
 
 const MIN_CHAT_WIDTH = 400;
 
@@ -710,6 +711,7 @@ function MobileSidebar({
                     />
                   )}
                 </Pressable>
+                <SidebarUserMenu onNavigateSettings={handleSettings} />
               </View>
               <Combobox
                 options={hostOptions}
@@ -936,6 +938,7 @@ function DesktopSidebar({
                 />
               )}
             </Pressable>
+            <SidebarUserMenu onNavigateSettings={handleSettings} />
           </View>
           <Combobox
             options={hostOptions}

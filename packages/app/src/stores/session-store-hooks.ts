@@ -23,11 +23,19 @@ export interface WorkspaceStructureProject {
   projectName: string;
   projectKind: WorkspaceDescriptor["projectKind"];
   iconWorkingDir: string;
+  workspaces: WorkspaceStructureWorkspace[];
   workspaceKeys: string[];
 }
 
 export interface WorkspaceStructure {
   projects: WorkspaceStructureProject[];
+}
+
+export interface WorkspaceStructureWorkspace {
+  workspaceId: string;
+  workspaceName: string;
+  workspaceDirectory: string;
+  workspaceKind: WorkspaceDescriptor["workspaceKind"];
 }
 
 type SessionStoreSnapshot = ReturnType<typeof useSessionStore.getState>;
@@ -40,8 +48,8 @@ function getWorkspaceOrderScopeKey(serverId: string, projectKey: string): string
 }
 
 function compareWorkspaceStructureItems(
-  left: { workspaceId: string; workspaceName: string },
-  right: { workspaceId: string; workspaceName: string },
+  left: WorkspaceStructureWorkspace,
+  right: WorkspaceStructureWorkspace,
 ): number {
   const nameDelta = left.workspaceName.localeCompare(right.workspaceName, undefined, {
     numeric: true,
@@ -187,12 +195,14 @@ function selectWorkspaceStructureProjects(
     return EMPTY_WORKSPACE_STRUCTURE.projects;
   }
 
-  const byProject = new Map<
-    string,
-    WorkspaceStructureProject & {
-      workspaces: Array<{ workspaceId: string; workspaceName: string; workspaceKey: string }>;
-    }
-  >();
+  type WorkspaceStructureAccumulator = Omit<
+    WorkspaceStructureProject,
+    "workspaces" | "workspaceKeys"
+  > & {
+    workspaceEntries: Array<WorkspaceStructureWorkspace & { workspaceKey: string }>;
+  };
+
+  const byProject = new Map<string, WorkspaceStructureAccumulator>();
 
   for (const workspace of workspaces.values()) {
     const project =
@@ -203,27 +213,27 @@ function selectWorkspaceStructureProjects(
           workspace.projectDisplayName || projectDisplayNameFromProjectId(workspace.projectId),
         projectKind: workspace.projectKind,
         iconWorkingDir: workspace.projectRootPath,
-        workspaceKeys: [],
-        workspaces: [],
-      } satisfies WorkspaceStructureProject & {
-        workspaces: Array<{ workspaceId: string; workspaceName: string; workspaceKey: string }>;
-      });
+        workspaceEntries: [],
+      } satisfies WorkspaceStructureAccumulator);
 
-    project.workspaces.push({
+    project.workspaceEntries.push({
       workspaceId: workspace.id,
       workspaceName: workspace.name,
+      workspaceDirectory: workspace.workspaceDirectory,
+      workspaceKind: workspace.workspaceKind,
       workspaceKey: `${serverId}:${workspace.id}`,
     });
     byProject.set(workspace.projectId, project);
   }
 
   const projects = Array.from(byProject.values()).map(
-    ({ workspaces: projectWorkspaces, ...project }) => {
-      const sortedWorkspaces = [...projectWorkspaces].sort(compareWorkspaceStructureItems);
+    ({ workspaceEntries, ...project }) => {
+      const sortedWorkspaces = [...workspaceEntries].sort(compareWorkspaceStructureItems);
 
       return {
         ...project,
         workspaceKeys: sortedWorkspaces.map((workspace) => workspace.workspaceId),
+        workspaces: sortedWorkspaces.map(({ workspaceKey: _workspaceKey, ...workspace }) => workspace),
       };
     },
   );
@@ -280,17 +290,19 @@ export function useWorkspaceStructure(serverId: string | null): WorkspaceStructu
         const workspaceOrder =
           workspaceOrderByScope[getWorkspaceOrderScopeKey(serverId, project.projectKey)] ??
           EMPTY_WORKSPACE_KEYS;
-        const workspaceItems = project.workspaceKeys.map((workspaceId) => ({
-          workspaceId,
-          workspaceKey: `${serverId}:${workspaceId}`,
+        const workspaceItems = project.workspaces.map((workspace) => ({
+          ...workspace,
+          workspaceKey: `${serverId}:${workspace.workspaceId}`,
         }));
+        const orderedWorkspaces = applyStoredOrdering({
+          items: workspaceItems,
+          storedOrder: workspaceOrder,
+          getKey: (workspace) => workspace.workspaceKey,
+        }).map(({ workspaceKey: _workspaceKey, ...workspace }) => workspace);
         return {
           ...project,
-          workspaceKeys: applyStoredOrdering({
-            items: workspaceItems,
-            storedOrder: workspaceOrder,
-            getKey: (workspace) => workspace.workspaceKey,
-          }).map((workspace) => workspace.workspaceId),
+          workspaces: orderedWorkspaces,
+          workspaceKeys: orderedWorkspaces.map((workspace) => workspace.workspaceId),
         };
       }),
       storedOrder: projectOrder,

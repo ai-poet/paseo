@@ -46,13 +46,15 @@ import {
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { DraggableList, type DraggableRenderItemInfo } from "./draggable-list";
 import type { DraggableListDragHandleProps } from "./draggable-list.types";
-import { getHostRuntimeStore, isHostRuntimeConnected } from "@/runtime/host-runtime";
+import {
+  getHostRuntimeStore,
+  isHostRuntimeConnected,
+  useHostRuntimeClient,
+  useHostRuntimeIsConnected,
+} from "@/runtime/host-runtime";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { projectIconQueryKey } from "@/hooks/use-project-icon-query";
-import {
-  buildHostNewWorkspaceRoute,
-  parseHostWorkspaceRouteFromPathname,
-} from "@/utils/host-routes";
+import { parseHostWorkspaceRouteFromPathname } from "@/utils/host-routes";
 import { prepareWorkspaceTab } from "@/utils/workspace-navigation";
 import {
   createSidebarWorkspaceEntry,
@@ -108,10 +110,15 @@ import {
   requireWorkspaceExecutionDirectory,
   resolveWorkspaceExecutionDirectory,
 } from "@/utils/workspace-execution";
+import { navigateToPreparedWorkspaceTab } from "@/utils/workspace-navigation";
 import { WorkspaceHoverCard } from "@/components/workspace-hover-card";
 import { GitHubIcon } from "@/components/icons/github-icon";
-import { createNameId } from "mnemonic-id";
+import { generateDraftId } from "@/stores/draft-keys";
 import { isWeb as platformIsWeb, isNative as platformIsNative } from "@/constants/platform";
+import {
+  createWorktreeQuickly,
+  isCreatingWorktreePlaceholderId,
+} from "@/utils/quick-create-worktree";
 
 function toProjectIconDataUri(icon: { mimeType: string; data: string } | null): string | null {
   if (!icon) {
@@ -169,7 +176,6 @@ interface ProjectHeaderRowProps {
   canCreateWorktree: boolean;
   isProjectActive?: boolean;
   onWorkspacePress?: () => void;
-  onWorktreeCreated?: (workspaceId: string) => void;
   shortcutNumber?: number | null;
   showShortcutBadge?: boolean;
   drag: () => void;
@@ -201,6 +207,71 @@ interface WorkspaceRowInnerProps {
   onCopyBranchName?: () => void;
   onCopyPath?: () => void;
   archiveShortcutKeys?: ShortcutKey[][] | null;
+}
+
+export function getSidebarRenderableProjects(
+  projects: SidebarProjectEntry[],
+): SidebarProjectEntry[] {
+  function normalizeWorkspaceName(name: string): string {
+    return name.trim().toLocaleLowerCase();
+  }
+
+  function extractCreatingSlug(workspaceId: string): string | null {
+    const separatorIndex = workspaceId.indexOf(":");
+    if (separatorIndex < 0 || separatorIndex >= workspaceId.length - 1) {
+      return null;
+    }
+    return workspaceId.slice(separatorIndex + 1);
+  }
+
+  function workspaceDirectoryHasSlug(workspaceDirectory: string | undefined, slug: string): boolean {
+    if (!workspaceDirectory) {
+      return false;
+    }
+    const normalizedDirectory = workspaceDirectory.replace(/\\/g, "/");
+    return normalizedDirectory.endsWith(`/${slug}`);
+  }
+
+  let didChange = false;
+  const nextProjects = projects.map((project) => {
+    const realWorkspaces = project.workspaces.filter(
+      (workspace) => !isCreatingWorktreePlaceholderId(workspace.workspaceId),
+    );
+    if (realWorkspaces.length === 0) {
+      return project;
+    }
+    const realWorkspaceNames = new Set(
+      realWorkspaces.map((workspace) => normalizeWorkspaceName(workspace.name)),
+    );
+
+    const filteredWorkspaces = project.workspaces.filter((workspace) => {
+      if (!isCreatingWorktreePlaceholderId(workspace.workspaceId)) {
+        return true;
+      }
+      const normalizedPlaceholderName = normalizeWorkspaceName(workspace.name);
+      if (realWorkspaceNames.has(normalizedPlaceholderName)) {
+        return false;
+      }
+      const placeholderSlug = extractCreatingSlug(workspace.workspaceId);
+      if (!placeholderSlug) {
+        return true;
+      }
+      return !realWorkspaces.some((realWorkspace) =>
+        workspaceDirectoryHasSlug(realWorkspace.workspaceDirectory, placeholderSlug),
+      );
+    });
+
+    if (filteredWorkspaces.length === project.workspaces.length) {
+      return project;
+    }
+    didChange = true;
+    return {
+      ...project,
+      workspaces: filteredWorkspaces,
+    };
+  });
+
+  return didChange ? nextProjects : projects;
 }
 
 function useSidebarWorkspaceEntry(
@@ -797,7 +868,6 @@ function ProjectHeaderRow({
   canCreateWorktree,
   isProjectActive = false,
   onWorkspacePress,
-  onWorktreeCreated,
   shortcutNumber = null,
   showShortcutBadge = false,
   drag,
@@ -812,17 +882,62 @@ function ProjectHeaderRow({
   const { theme } = useUnistyles();
   const [isHovered, setIsHovered] = useState(false);
   const isMobileBreakpoint = useIsCompactFormFactor();
+  const runtimeServerId = serverId ?? "";
+  const client = useHostRuntimeClient(runtimeServerId);
+  const isConnected = useHostRuntimeIsConnected(runtimeServerId);
+  const mergeWorkspaces = useSessionStore((state) => state.mergeWorkspaces);
+  const removeWorkspace = useSessionStore((state) => state.removeWorkspace);
+  const setWorkspaces = useSessionStore((state) => state.setWorkspaces);
+  const toast = useToast();
   const handleBeginWorkspaceSetup = useCallback(() => {
     if (!serverId) {
       return;
     }
-    router.navigate(
-      buildHostNewWorkspaceRoute(serverId, project.iconWorkingDir, { displayName }) as any,
-    );
-    onWorkspacePress?.();
-  }, [displayName, onWorkspacePress, project.iconWorkingDir, serverId]);
-  const mergeWorkspaces = useSessionStore((state) => state.mergeWorkspaces);
-  const toast = useToast();
+    const draftId = generateDraftId();
+    void createWorktreeQuickly({
+      client,
+      isConnected,
+      serverId,
+      sourceDirectory: project.iconWorkingDir,
+      projectId: project.projectKey,
+      projectDisplayName: displayName,
+      projectRootPath: project.iconWorkingDir,
+      mergeWorkspaces,
+      removeWorkspace,
+      setWorkspaces,
+      toast,
+      onPlaceholderCreated: (placeholderWorkspace) => {
+        onWorkspacePress?.();
+        navigateToPreparedWorkspaceTab({
+          serverId,
+          workspaceId: placeholderWorkspace.id,
+          target: { kind: "draft", draftId },
+          navigationMethod: "navigate",
+        });
+      },
+      onCreated: ({ workspace }) => {
+        navigateToPreparedWorkspaceTab({
+          serverId,
+          workspaceId: workspace.id,
+          target: { kind: "draft", draftId },
+          navigationMethod: "replace",
+        });
+      },
+    });
+  }, [
+    client,
+    displayName,
+    isConnected,
+    mergeWorkspaces,
+    navigateToPreparedWorkspaceTab,
+    onWorkspacePress,
+    project.iconWorkingDir,
+    project.projectKey,
+    removeWorkspace,
+    serverId,
+    setWorkspaces,
+    toast,
+  ]);
 
   const interaction = useLongPressDragInteraction({
     drag,
@@ -1192,6 +1307,7 @@ function WorkspaceRowWithMenu({
   const toast = useToast();
   const archiveWorktree = useCheckoutGitActionsStore((state) => state.archiveWorktree);
   const [isArchivingWorkspace, setIsArchivingWorkspace] = useState(false);
+  const isCreatingPlaceholder = isCreatingWorktreePlaceholderId(workspace.workspaceId);
   const workspaceDirectory = resolveWorkspaceExecutionDirectory({
     workspaceDirectory: workspace.workspaceDirectory,
   });
@@ -1341,7 +1457,7 @@ function WorkspaceRowWithMenu({
   useKeyboardActionHandler({
     handlerId: `worktree-archive-${workspace.workspaceKey}`,
     actions: ["worktree.archive"],
-    enabled: selected && !isArchiving,
+    enabled: selected && !isArchiving && !isCreatingPlaceholder,
     priority: 0,
     handle: () => {
       if (isWorktree) {
@@ -1363,16 +1479,24 @@ function WorkspaceRowWithMenu({
       drag={drag}
       isDragging={isDragging}
       isArchiving={isArchiving}
-      isCreating={isCreating}
+      isCreating={isCreating || isCreatingPlaceholder}
       dragHandleProps={dragHandleProps}
       menuController={null}
       archiveLabel={isWorktree ? "Archive worktree" : "Hide from sidebar"}
       archiveStatus={isWorktree ? archiveStatus : isArchivingWorkspace ? "pending" : "idle"}
       archivePendingLabel={isWorktree ? "Archiving..." : "Hiding..."}
-      onArchive={isWorktree ? handleArchiveWorktree : handleArchiveWorkspace}
-      onCopyBranchName={canCopyBranchName ? handleCopyBranchName : undefined}
-      onCopyPath={handleCopyPath}
-      archiveShortcutKeys={selected ? archiveShortcutKeys : null}
+      onArchive={
+        isCreatingPlaceholder
+          ? undefined
+          : isWorktree
+            ? handleArchiveWorktree
+            : handleArchiveWorkspace
+      }
+      onCopyBranchName={
+        canCopyBranchName && !isCreatingPlaceholder ? handleCopyBranchName : undefined
+      }
+      onCopyPath={isCreatingPlaceholder ? undefined : handleCopyPath}
+      archiveShortcutKeys={selected && !isCreatingPlaceholder ? archiveShortcutKeys : null}
     />
   );
 }
@@ -1528,7 +1652,6 @@ function FlattenedProjectRow({
   onPress,
   serverId,
   onWorkspacePress,
-  onWorktreeCreated,
   shortcutNumber,
   showShortcutBadge,
   drag,
@@ -1547,7 +1670,6 @@ function FlattenedProjectRow({
   onPress: () => void;
   serverId: string | null;
   onWorkspacePress?: () => void;
-  onWorktreeCreated?: (workspaceId: string) => void;
   shortcutNumber: number | null;
   showShortcutBadge: boolean;
   drag: () => void;
@@ -1601,7 +1723,6 @@ function FlattenedProjectRow({
       canCreateWorktree={rowModel.trailingAction === "new_worktree"}
       isProjectActive={isProjectActive}
       onWorkspacePress={onWorkspacePress}
-      onWorktreeCreated={onWorktreeCreated}
       shortcutNumber={shortcutNumber}
       showShortcutBadge={showShortcutBadge}
       drag={drag}
@@ -1624,7 +1745,6 @@ function WorkspaceRow({
   isDragging,
   dragHandleProps,
   canCopyBranchName,
-  isCreating = false,
   selectionEnabled,
 }: {
   workspace: SidebarWorkspaceEntry;
@@ -1635,9 +1755,9 @@ function WorkspaceRow({
   isDragging: boolean;
   dragHandleProps?: DraggableListDragHandleProps;
   canCopyBranchName: boolean;
-  isCreating?: boolean;
   selectionEnabled: boolean;
 }) {
+  const isCreatingPlaceholder = isCreatingWorktreePlaceholderId(workspace.workspaceId);
   const hydratedWorkspace = useSidebarWorkspaceEntry(workspace.serverId, workspace.workspaceId);
   const selected = useIsNavigationWorkspaceSelected({
     serverId: workspace.serverId,
@@ -1655,12 +1775,12 @@ function WorkspaceRow({
       selected={selected}
       shortcutNumber={shortcutNumber}
       showShortcutBadge={showShortcutBadge}
-      onPress={onPress}
+      onPress={isCreatingPlaceholder ? () => {} : onPress}
       drag={drag}
       isDragging={isDragging}
       dragHandleProps={dragHandleProps}
-      canCopyBranchName={canCopyBranchName}
-      isCreating={isCreating}
+      canCopyBranchName={canCopyBranchName && !isCreatingPlaceholder}
+      isCreating={isCreatingPlaceholder}
     />
   );
 }
@@ -1678,13 +1798,11 @@ function ProjectBlock({
   onToggleCollapsed,
   onWorkspacePress,
   onWorkspaceReorder,
-  onWorktreeCreated,
   currentPathname,
   drag,
   isDragging,
   dragHandleProps,
   useNestable,
-  creatingWorkspaceIds,
 }: {
   project: SidebarProjectEntry;
   collapsed: boolean;
@@ -1698,13 +1816,11 @@ function ProjectBlock({
   onToggleCollapsed: () => void;
   onWorkspacePress?: () => void;
   onWorkspaceReorder: (projectKey: string, workspaces: SidebarWorkspaceEntry[]) => void;
-  onWorktreeCreated?: (workspaceId: string) => void;
   currentPathname: string | null;
   drag: () => void;
   isDragging: boolean;
   dragHandleProps?: DraggableListDragHandleProps;
   useNestable: boolean;
-  creatingWorkspaceIds: ReadonlySet<string>;
 }) {
   const rowModel = useMemo(
     () =>
@@ -1740,7 +1856,6 @@ function ProjectBlock({
           shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
           showShortcutBadge={showShortcutBadges}
           canCopyBranchName={project.projectKind === "git"}
-          isCreating={creatingWorkspaceIds.has(item.workspaceId)}
           selectionEnabled={selectionEnabled}
           onPress={() => {
             if (!serverId) {
@@ -1757,7 +1872,6 @@ function ProjectBlock({
     },
     [
       project.projectKind,
-      creatingWorkspaceIds,
       currentPathname,
       onWorkspacePress,
       serverId,
@@ -1864,7 +1978,6 @@ function ProjectBlock({
           }}
           serverId={serverId}
           onWorkspacePress={onWorkspacePress}
-          onWorktreeCreated={onWorktreeCreated}
           shortcutNumber={shortcutIndexByWorkspaceKey.get(rowModel.workspace.workspaceKey) ?? null}
           showShortcutBadge={showShortcutBadges}
           drag={drag}
@@ -1890,7 +2003,6 @@ function ProjectBlock({
             canCreateWorktree={rowModel.trailingAction === "new_worktree"}
             isProjectActive={isProjectActive}
             onWorkspacePress={onWorkspacePress}
-            onWorktreeCreated={onWorktreeCreated}
             drag={drag}
             isDragging={isDragging}
             isArchiving={isRemovingProject}
@@ -1935,17 +2047,15 @@ export function SidebarWorkspaceList({
   parentGestureRef,
 }: SidebarWorkspaceListProps) {
   const pathname = usePathname();
-  const [creatingWorkspaceIds, setCreatingWorkspaceIds] = useState<Set<string>>(() => new Set());
   const projectNameOverrides = useSidebarProjectNamesStore((state) => state.namesByProjectKey);
-  const creatingWorkspaceTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
-    new Map(),
-  );
   const showShortcutBadges = useShowShortcutBadges();
+  const projectsForRender = useMemo(() => getSidebarRenderableProjects(projects), [projects]);
 
   const getProjectOrder = useSidebarOrderStore((state) => state.getProjectOrder);
   const setProjectOrder = useSidebarOrderStore((state) => state.setProjectOrder);
   const getWorkspaceOrder = useSidebarOrderStore((state) => state.getWorkspaceOrder);
   const setWorkspaceOrder = useSidebarOrderStore((state) => state.setWorkspaceOrder);
+  const setWorkspaces = useSessionStore((state) => state.setWorkspaces);
 
   const isWorkspaceRoute = useMemo(
     () => Boolean(pathname && parseHostWorkspaceRouteFromPathname(pathname)),
@@ -1958,7 +2068,7 @@ export function SidebarWorkspaceList({
       return [];
     }
     const unique = new Map<string, { serverId: string; cwd: string }>();
-    for (const project of projects) {
+    for (const project of projectsForRender) {
       const cwd = project.iconWorkingDir.trim();
       if (!cwd) {
         continue;
@@ -1966,7 +2076,7 @@ export function SidebarWorkspaceList({
       unique.set(`${serverId}:${cwd}`, { serverId, cwd });
     }
     return Array.from(unique.values());
-  }, [projects, serverId]);
+  }, [projectsForRender, serverId]);
 
   const projectIconQueries = useQueries({
     queries: projectIconRequests.map((request) => ({
@@ -2007,7 +2117,7 @@ export function SidebarWorkspaceList({
     }
 
     const byProject = new Map<string, string | null>();
-    for (const project of projects) {
+    for (const project of projectsForRender) {
       const cwd = project.iconWorkingDir.trim();
       if (!cwd || !serverId) {
         byProject.set(project.projectKey, null);
@@ -2017,52 +2127,44 @@ export function SidebarWorkspaceList({
     }
 
     return byProject;
-  }, [projectIconQueries, projectIconRequests, projects, serverId]);
+  }, [projectIconQueries, projectIconRequests, projectsForRender, serverId]);
 
   useEffect(() => {
-    return () => {
-      for (const timeout of creatingWorkspaceTimeoutsRef.current.values()) {
-        clearTimeout(timeout);
-      }
-      creatingWorkspaceTimeoutsRef.current.clear();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (creatingWorkspaceIds.size === 0) {
+    if (!serverId) {
       return;
     }
 
-    const visibleWorkspaceIds = new Set<string>();
-    for (const project of projects) {
-      for (const workspace of project.workspaces) {
-        visibleWorkspaceIds.add(workspace.workspaceId);
-      }
-    }
-
-    const removedWorkspaceIds = Array.from(creatingWorkspaceIds).filter(
-      (workspaceId) => !visibleWorkspaceIds.has(workspaceId),
+    const duplicatePlaceholderIds: string[] = [];
+    const renderableProjectByKey = new Map(
+      projectsForRender.map((project) => [project.projectKey, project] as const),
     );
-    if (removedWorkspaceIds.length === 0) {
-      return;
-    }
-
-    for (const workspaceId of removedWorkspaceIds) {
-      const timeout = creatingWorkspaceTimeoutsRef.current.get(workspaceId);
-      if (timeout) {
-        clearTimeout(timeout);
-        creatingWorkspaceTimeoutsRef.current.delete(workspaceId);
+    for (const project of projects) {
+      const renderableProject = renderableProjectByKey.get(project.projectKey);
+      const visibleWorkspaceIds = new Set(
+        (renderableProject?.workspaces ?? []).map((workspace) => workspace.workspaceId),
+      );
+      for (const workspace of project.workspaces) {
+        if (
+          isCreatingWorktreePlaceholderId(workspace.workspaceId) &&
+          !visibleWorkspaceIds.has(workspace.workspaceId)
+        ) {
+          duplicatePlaceholderIds.push(workspace.workspaceId);
+        }
       }
     }
 
-    setCreatingWorkspaceIds((current) => {
-      const next = new Set(current);
-      for (const workspaceId of removedWorkspaceIds) {
+    if (duplicatePlaceholderIds.length === 0) {
+      return;
+    }
+
+    setWorkspaces(serverId, (current) => {
+      const next = new Map(current);
+      for (const workspaceId of duplicatePlaceholderIds) {
         next.delete(workspaceId);
       }
       return next;
     });
-  }, [creatingWorkspaceIds, projects]);
+  }, [projects, projectsForRender, serverId, setWorkspaces]);
 
   const handleProjectDragEnd = useCallback(
     (reorderedProjects: SidebarProjectEntry[]) => {
@@ -2121,32 +2223,6 @@ export function SidebarWorkspaceList({
     [getWorkspaceOrder, serverId, setWorkspaceOrder],
   );
 
-  const handleWorktreeCreated = useCallback((workspaceId: string) => {
-    setCreatingWorkspaceIds((current) => {
-      const next = new Set(current);
-      next.add(workspaceId);
-      return next;
-    });
-    const existingTimeout = creatingWorkspaceTimeoutsRef.current.get(workspaceId);
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-    }
-    creatingWorkspaceTimeoutsRef.current.set(
-      workspaceId,
-      setTimeout(() => {
-        creatingWorkspaceTimeoutsRef.current.delete(workspaceId);
-        setCreatingWorkspaceIds((current) => {
-          if (!current.has(workspaceId)) {
-            return current;
-          }
-          const next = new Set(current);
-          next.delete(workspaceId);
-          return next;
-        });
-      }, 3000),
-    );
-  }, []);
-
   const renderProject = useCallback(
     ({ item, drag, isActive, dragHandleProps }: DraggableRenderItemInfo<SidebarProjectEntry>) => {
       return (
@@ -2163,19 +2239,16 @@ export function SidebarWorkspaceList({
           onToggleCollapsed={() => onToggleProjectCollapsed(item.projectKey)}
           onWorkspacePress={onWorkspacePress}
           onWorkspaceReorder={handleWorkspaceReorder}
-          onWorktreeCreated={handleWorktreeCreated}
           currentPathname={pathname}
           drag={drag}
           isDragging={isActive}
           dragHandleProps={dragHandleProps}
           useNestable={platformIsNative}
-          creatingWorkspaceIds={creatingWorkspaceIds}
         />
       );
     },
     [
       collapsedProjectKeys,
-      handleWorktreeCreated,
       handleWorkspaceReorder,
       onWorkspacePress,
       onToggleProjectCollapsed,
@@ -2187,13 +2260,12 @@ export function SidebarWorkspaceList({
       shortcutIndexByWorkspaceKey,
       showShortcutBadges,
       platformIsNative,
-      creatingWorkspaceIds,
     ],
   );
 
   const content = (
     <>
-      {projects.length === 0 ? (
+      {projectsForRender.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyTitle}>No projects yet</Text>
           <Text style={styles.emptyText}>Add a project to get started</Text>
@@ -2204,7 +2276,7 @@ export function SidebarWorkspaceList({
       ) : (
         <DraggableList
           testID="sidebar-project-list"
-          data={projects}
+          data={projectsForRender}
           keyExtractor={projectKeyExtractor}
           renderItem={renderProject}
           onDragEnd={handleProjectDragEnd}
