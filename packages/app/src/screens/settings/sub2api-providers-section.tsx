@@ -14,6 +14,7 @@ import { useAppSettings } from "@/hooks/use-settings";
 import {
   useCreateSub2APIKeyMutation,
   useDeleteSub2APIKeyMutation,
+  useUpdateSub2APIKeyMutation,
   useSub2APIAvailableGroups,
   useSub2APIKeys,
   useSub2APIMe,
@@ -21,6 +22,8 @@ import {
 } from "@/hooks/use-sub2api-api";
 import type { Sub2APIGroup, Sub2APIKey } from "@/lib/sub2api-client";
 import { isValidSub2APIEndpoint } from "./sub2api-auth-bridge";
+import { ComboSelect } from "@/components/agent-form/agent-form-dropdowns";
+import { AdaptiveModalSheet, AdaptiveTextInput } from "@/components/adaptive-modal-sheet";
 import { Sub2APIPayModal } from "./sub2api-pay-modal";
 import { getManagedServiceUrlFromEnv } from "@/config/managed-service-env";
 import type {
@@ -93,13 +96,16 @@ export function Sub2APIProvidersSection() {
   const [editProviderApiKey, setEditProviderApiKey] = useState("");
   const [customTarget, setCustomTarget] = useState<ManagedProviderTarget>("claude");
   const [newKeyName, setNewKeyName] = useState("Paseo Desktop");
+  const [createKeyGroupId, setCreateKeyGroupId] = useState<number | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [switchingGroupId, setSwitchingGroupId] = useState<number | null>(null);
   const [switchingKeyId, setSwitchingKeyId] = useState<number | null>(null);
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [payToken, setPayToken] = useState<string | null>(null);
-  const [groupFilter, setGroupFilter] = useState("");
   const [keyFilter, setKeyFilter] = useState("");
+  const [editingKey, setEditingKey] = useState<Sub2APIKey | null>(null);
+  const [editKeyName, setEditKeyName] = useState("");
+  const [editKeyGroupId, setEditKeyGroupId] = useState<number | null>(null);
 
   const meQuery = useSub2APIMe();
   const keysQuery = useSub2APIKeys(1, 200);
@@ -109,20 +115,20 @@ export function Sub2APIProvidersSection() {
   const usageMonthQuery = useSub2APIUsageStats("month");
   const createKeyMutation = useCreateSub2APIKeyMutation();
   const deleteKeyMutation = useDeleteSub2APIKeyMutation();
+  const updateKeyMutation = useUpdateSub2APIKeyMutation();
 
   const keys = useMemo(() => keysQuery.data?.items ?? [], [keysQuery.data?.items]);
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
 
-  const filteredGroups = useMemo(() => {
-    const q = normalizeFilter(groupFilter);
-    if (!q) return groups;
-    return groups.filter(
-      (g) =>
-        g.name.toLowerCase().includes(q) ||
-        g.platform.toLowerCase().includes(q) ||
-        String(g.rate_multiplier).includes(q),
-    );
-  }, [groups, groupFilter]);
+  const groupSelectOptions = useMemo(
+    () =>
+      groups.map((g) => ({
+        id: String(g.id),
+        label: g.name,
+        description: `${g.platform} · ${g.rate_multiplier}x`,
+      })),
+    [groups],
+  );
 
   const filteredKeys = useMemo(() => {
     const q = normalizeFilter(keyFilter);
@@ -151,6 +157,7 @@ export function Sub2APIProvidersSection() {
     () => providers.find((p) => p.id === activeId) ?? null,
     [providers, activeId],
   );
+  const activeRouteApiKey = activeProvider?.apiKey?.trim() ?? null;
 
   const loadProviders = useCallback(async () => {
     if (!isElectron) {
@@ -239,6 +246,12 @@ export function Sub2APIProvidersSection() {
     }
     setSelectedGroupId(groups[0]?.id ?? null);
   }, [groups, selectedGroupId]);
+
+  useEffect(() => {
+    if (selectedGroupId !== null) {
+      setCreateKeyGroupId(selectedGroupId);
+    }
+  }, [selectedGroupId]);
 
   const handleOpenPayModal = useCallback(async () => {
     try {
@@ -348,9 +361,48 @@ export function Sub2APIProvidersSection() {
     [deleteKeyMutation],
   );
 
-  const handleCreateKeyAndSwitch = useCallback(async () => {
-    if (selectedGroupId === null) {
-      Alert.alert("Missing group", "Select a group from the list below.");
+  const closeEditKey = useCallback(() => {
+    setEditingKey(null);
+    setEditKeyName("");
+    setEditKeyGroupId(null);
+  }, []);
+
+  const openEditKey = useCallback(
+    (key: Sub2APIKey) => {
+      setEditingKey(key);
+      setEditKeyName(key.name);
+      setEditKeyGroupId(key.group_id ?? selectedGroupId ?? groups[0]?.id ?? null);
+    },
+    [groups, selectedGroupId],
+  );
+
+  const handleSaveEditKey = useCallback(async () => {
+    if (!editingKey) {
+      return;
+    }
+    const name = editKeyName.trim();
+    if (!name) {
+      Alert.alert("Missing name", "Please enter a key name.");
+      return;
+    }
+    if (editKeyGroupId == null) {
+      Alert.alert("Missing group", "Select a group for this key.");
+      return;
+    }
+    try {
+      await updateKeyMutation.mutateAsync({
+        id: editingKey.id,
+        patch: { name, group_id: editKeyGroupId },
+      });
+      closeEditKey();
+    } catch (error) {
+      Alert.alert("Update failed", getErrorMessage(error));
+    }
+  }, [closeEditKey, editKeyGroupId, editKeyName, editingKey, updateKeyMutation]);
+
+  const handleCreateKey = useCallback(async () => {
+    if (createKeyGroupId === null) {
+      Alert.alert("Missing group", "Select a group for the new key.");
       return;
     }
     const name = newKeyName.trim();
@@ -359,30 +411,20 @@ export function Sub2APIProvidersSection() {
       return;
     }
 
-    const selectedGroup = groups.find((entry) => entry.id === selectedGroupId) ?? null;
-    setSwitchingGroupId(selectedGroupId);
     try {
-      const created = await createKeyMutation.mutateAsync({
+      await createKeyMutation.mutateAsync({
         name,
-        group_id: selectedGroupId,
+        group_id: createKeyGroupId,
       });
-      await setupDefaultProviderWithKey(created.key, selectedGroup?.name ?? "Default");
       setNewKeyName("Paseo Desktop");
-      await keysQuery.refetch();
-      Alert.alert("Created", `Key "${created.name}" is now active in Claude/Codex.`);
+      Alert.alert(
+        "Created",
+        `Key "${name}" was created. Tap "Use key" or "Use group" below to switch Claude/Codex to it.`,
+      );
     } catch (error) {
       Alert.alert("Create key failed", getErrorMessage(error));
-    } finally {
-      setSwitchingGroupId(null);
     }
-  }, [
-    createKeyMutation,
-    groups,
-    keysQuery,
-    newKeyName,
-    selectedGroupId,
-    setupDefaultProviderWithKey,
-  ]);
+  }, [createKeyGroupId, createKeyMutation, newKeyName]);
 
   const handleQuickSwitchGroup = useCallback(
     async (group: Sub2APIGroup) => {
@@ -412,13 +454,14 @@ export function Sub2APIProvidersSection() {
   if (!isElectron) {
     return null;
   }
-  if (settings.accessMode === "byok") {
-    return null;
-  }
+
+  const isByok = settings.accessMode === "byok";
+  const showManagedCloudPanels = !isByok && isLoggedIn;
 
   return (
     <>
-      <SettingsSection title="Account">
+      {!isByok ? (
+        <SettingsSection title="Account">
         {!isLoggedIn ? (
           <View style={styles.dashedCard}>
             <View style={styles.emptyIconWrap}>
@@ -461,11 +504,20 @@ export function Sub2APIProvidersSection() {
             </View>
           </View>
         )}
-      </SettingsSection>
+        </SettingsSection>
+      ) : (
+        <SettingsSection title="Local providers">
+          <View style={[settingsStyles.card, styles.cardBody]}>
+            <Text style={styles.sectionHint}>
+              BYOK: configure Claude Code and Codex on this device. Add saved endpoints or a custom
+              provider below; the desktop app writes local CLI config files.
+            </Text>
+          </View>
+        </SettingsSection>
+      )}
 
-      {isLoggedIn ? (
-        <>
-          <SettingsSection title="Balance & usage">
+      {showManagedCloudPanels ? (
+        <SettingsSection title="Balance & usage">
             <View style={[settingsStyles.card, styles.cardBody]}>
               {meQuery.error ? (
                 <View style={styles.errorBlock}>
@@ -504,9 +556,11 @@ export function Sub2APIProvidersSection() {
                 {usageMonthQuery.data?.total_requests ?? 0} req)
               </Text>
             </View>
-          </SettingsSection>
+        </SettingsSection>
+      ) : null}
 
-          <SettingsSection title="Active route">
+      {(showManagedCloudPanels || isByok) ? (
+        <SettingsSection title="Active route">
             <View
               style={[
                 settingsStyles.card,
@@ -532,33 +586,26 @@ export function Sub2APIProvidersSection() {
                 <>
                   <Text style={styles.heroName}>No active route</Text>
                   <Text style={styles.sectionHint}>
-                    Choose a group below or pick a saved endpoint. Claude Code and Codex use the
-                    active route according to each entry&apos;s target (see Custom endpoint).
+                    {isByok
+                      ? "Add a custom provider below, or pick a saved endpoint. Each entry can target Claude Code, Codex, or both."
+                      : "Choose a group below or pick a saved endpoint. Claude Code and Codex use the active route according to each entry's target (see Custom endpoint)."}
                   </Text>
                 </>
               )}
             </View>
-          </SettingsSection>
+        </SettingsSection>
+      ) : null}
 
-          <SettingsSection title="Group routing">
+      {showManagedCloudPanels ? (
+        <>
+          <SettingsSection title="Routing & API keys">
             <View style={[settingsStyles.card, styles.cardBody]}>
               <Text style={styles.sectionHint}>
-                Switch reuses an existing key for that group when possible; otherwise a new key is
-                created. Tap a row to select it for “Create new key” below.
+                Choose a <Text style={styles.sectionHintEm}>routing group</Text> below for new keys.{" "}
+                <Text style={styles.sectionHintEm}>Use group</Text> routes through that group (reusing a
+                key when possible). <Text style={styles.sectionHintEm}>Use key</Text> switches the desktop
+                to a specific credential. API keys stay in the list under this block.
               </Text>
-              <Text style={styles.fieldLabel}>Filter groups</Text>
-              <TextInput
-                value={groupFilter}
-                onChangeText={setGroupFilter}
-                placeholder="Search by name or platform"
-                placeholderTextColor={theme.colors.foregroundMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.textInput}
-              />
-              {groupsQuery.isLoading ? (
-                <Text style={styles.usageHint}>Loading groups…</Text>
-              ) : null}
               {groupsQuery.error ? (
                 <View style={styles.errorBlock}>
                   <Text style={styles.errorHint}>{getErrorMessage(groupsQuery.error)}</Text>
@@ -569,150 +616,257 @@ export function Sub2APIProvidersSection() {
                     <Text style={styles.secondaryButtonText}>Retry</Text>
                   </Pressable>
                 </View>
-              ) : filteredGroups.length === 0 && !groupsQuery.isLoading ? (
-                <Text style={styles.usageHint}>No groups match your filter.</Text>
+              ) : groupsQuery.isLoading && groups.length === 0 ? (
+                <Text style={styles.usageHint}>Loading groups…</Text>
+              ) : groups.length === 0 ? (
+                <Text style={styles.usageHint}>No groups available.</Text>
               ) : (
-                <View style={styles.groupRowList}>
-                  {filteredGroups.map((group) => {
-                    const selected = selectedGroupId === group.id;
-                    const busy = switchingGroupId === group.id;
-                    return (
-                      <View
-                        key={group.id}
-                        style={[styles.groupRouteRow, selected && styles.groupRouteRowSelected]}
-                      >
-                        <Pressable
-                          onPress={() => setSelectedGroupId(group.id)}
-                          style={styles.groupRouteRowMain}
-                        >
-                          <Text style={settingsStyles.rowTitle}>{group.name}</Text>
-                          <Text style={settingsStyles.rowHint}>
-                            {group.platform} · {group.rate_multiplier}x
-                          </Text>
-                          {selected ? (
-                            <Text style={styles.selectedPillText}>Selected for new key</Text>
-                          ) : null}
-                        </Pressable>
-                        <Pressable
-                          onPress={() => void handleQuickSwitchGroup(group)}
-                          style={({ pressed }) => [
-                            styles.primaryButton,
-                            pressed && styles.buttonPressed,
-                            busy && styles.disabledButton,
-                          ]}
-                          disabled={busy}
-                        >
-                          <Text style={styles.primaryButtonText}>
-                            {busy ? "Switching…" : "Switch"}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    );
-                  })}
+                <View style={styles.groupPickerBlock}>
+                  <View style={styles.groupComboWrap}>
+                    <ComboSelect
+                      label="Routing group"
+                      title="Select routing group"
+                      value={selectedGroupId != null ? String(selectedGroupId) : ""}
+                      options={groupSelectOptions}
+                      placeholder="Select a group…"
+                      isLoading={groupsQuery.isFetching}
+                      onSelect={(id) => setSelectedGroupId(Number(id))}
+                      showLabel
+                      testID="sub2api-routing-group-select"
+                    />
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      const group =
+                        selectedGroupId != null
+                          ? (groups.find((g) => g.id === selectedGroupId) ?? null)
+                          : null;
+                      if (group) void handleQuickSwitchGroup(group);
+                    }}
+                    style={({ pressed }) => [
+                      styles.primaryButton,
+                      pressed && styles.buttonPressed,
+                      (selectedGroupId === null || switchingGroupId !== null) && styles.disabledButton,
+                    ]}
+                    disabled={selectedGroupId === null || switchingGroupId !== null}
+                  >
+                    <Text style={styles.primaryButtonText}>
+                      {switchingGroupId !== null ? "Routing…" : "Use group"}
+                    </Text>
+                  </Pressable>
                 </View>
               )}
 
               <View style={styles.createKeyBlock}>
-                <Text style={styles.formTitle}>Create new key &amp; switch</Text>
+                <Text style={styles.formTitle}>Create API key</Text>
+                <Text style={styles.usageHint}>
+                  Defaults to the routing group above; change the group here if the new key should
+                  belong elsewhere. Creating does not switch the desktop route.
+                </Text>
+                <Text style={styles.fieldLabel}>Name</Text>
                 <TextInput
                   value={newKeyName}
                   onChangeText={setNewKeyName}
-                  placeholder="Key label (e.g. Paseo Desktop)"
+                  placeholder="Key name (e.g. Paseo Desktop)"
                   placeholderTextColor={theme.colors.foregroundMuted}
                   autoCapitalize="none"
                   autoCorrect={false}
                   style={styles.textInput}
                 />
+                <View style={styles.groupComboWrap}>
+                  <ComboSelect
+                    label="Group"
+                    title="Select group for new key"
+                    value={createKeyGroupId != null ? String(createKeyGroupId) : ""}
+                    options={groupSelectOptions}
+                    placeholder="Select a group…"
+                    isLoading={groupsQuery.isFetching}
+                    onSelect={(id) => setCreateKeyGroupId(Number(id))}
+                    showLabel
+                    testID="sub2api-create-key-group-select"
+                  />
+                </View>
                 <Pressable
-                  onPress={() => void handleCreateKeyAndSwitch()}
+                  onPress={() => void handleCreateKey()}
                   style={({ pressed }) => [
                     styles.primaryButton,
                     pressed && styles.buttonPressed,
-                    (switchingGroupId !== null || createKeyMutation.isPending) && styles.disabledButton,
+                    createKeyMutation.isPending && styles.disabledButton,
                   ]}
-                  disabled={switchingGroupId !== null || createKeyMutation.isPending}
+                  disabled={createKeyMutation.isPending}
                 >
                   <Text style={styles.primaryButtonText}>
-                    {createKeyMutation.isPending ? "Creating…" : "Create key & switch"}
+                    {createKeyMutation.isPending ? "Creating…" : "Create"}
                   </Text>
                 </Pressable>
+              </View>
+
+              <View style={styles.keysSubsection}>
+                {keysQuery.error ? (
+                  <View style={styles.errorBlock}>
+                    <Text style={styles.errorHint}>{getErrorMessage(keysQuery.error)}</Text>
+                    <Pressable
+                      onPress={() => void keysQuery.refetch()}
+                      style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+                    >
+                      <Text style={styles.secondaryButtonText}>Retry</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+                <Text style={styles.fieldLabel}>Filter keys</Text>
+                <TextInput
+                  value={keyFilter}
+                  onChangeText={setKeyFilter}
+                  placeholder="Search by name or group"
+                  placeholderTextColor={theme.colors.foregroundMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.textInput}
+                />
+                {keysQuery.isLoading ? (
+                  <Text style={styles.usageHint}>Loading keys…</Text>
+                ) : filteredKeys.length === 0 ? (
+                  <Text style={styles.usageHint}>
+                    No keys yet — use Create API key above, or tap Use group to route (a key may be
+                    created automatically).
+                  </Text>
+                ) : (
+                  <View style={styles.keyRowList}>
+                    {filteredKeys.map((key) => {
+                      const matchesSelectedGroup =
+                        selectedGroupId != null && key.group_id === selectedGroupId;
+                      const isKeyInUse =
+                        activeRouteApiKey !== null && key.key.trim() === activeRouteApiKey;
+                      return (
+                        <View key={key.id} style={styles.keyRow}>
+                          <View style={settingsStyles.rowContent}>
+                            <Text style={settingsStyles.rowTitle}>{key.name}</Text>
+                            {matchesSelectedGroup ? (
+                              <Text style={styles.keyMatchBadge}>Matches selected group</Text>
+                            ) : null}
+                            <Text style={settingsStyles.rowHint}>
+                              {maskApiKey(key.key)} · Group: {key.group?.name ?? key.group_id ?? "none"}
+                            </Text>
+                            <Text style={settingsStyles.rowHint}>Used: {formatUsd(key.quota_used)}</Text>
+                          </View>
+                          <View style={styles.keyActions}>
+                            <Pressable
+                              onPress={() => openEditKey(key)}
+                              style={({ pressed }) => [
+                                styles.secondaryButton,
+                                pressed && styles.buttonPressed,
+                                updateKeyMutation.isPending && styles.disabledButton,
+                              ]}
+                              disabled={updateKeyMutation.isPending}
+                            >
+                              <Text style={styles.secondaryButtonText}>Edit</Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={() => void handleUseKey(key)}
+                              style={({ pressed }) => [
+                                isKeyInUse ? styles.useKeyButtonUsed : styles.primaryButton,
+                                pressed && !isKeyInUse && styles.buttonPressed,
+                                !isKeyInUse && switchingKeyId === key.id && styles.disabledButton,
+                              ]}
+                              disabled={isKeyInUse || switchingKeyId === key.id}
+                            >
+                              <Text
+                                style={isKeyInUse ? styles.useKeyButtonUsedText : styles.primaryButtonText}
+                              >
+                                {isKeyInUse
+                                  ? "Used"
+                                  : switchingKeyId === key.id
+                                    ? "Applying…"
+                                    : "Use key"}
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={() => void handleDeleteKey(key.id)}
+                              style={({ pressed }) => [styles.removeButton, pressed && styles.buttonPressed]}
+                            >
+                              <Text style={styles.removeButtonText}>Delete</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
             </View>
           </SettingsSection>
 
-          <SettingsSection title="API keys">
-            <View style={[settingsStyles.card, styles.cardBody]}>
-              {keysQuery.error ? (
-                <View style={styles.errorBlock}>
-                  <Text style={styles.errorHint}>{getErrorMessage(keysQuery.error)}</Text>
-                  <Pressable
-                    onPress={() => void keysQuery.refetch()}
-                    style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
-                  >
-                    <Text style={styles.secondaryButtonText}>Retry</Text>
-                  </Pressable>
-                </View>
-              ) : null}
-              <Text style={styles.fieldLabel}>Filter keys</Text>
-              <TextInput
-                value={keyFilter}
-                onChangeText={setKeyFilter}
-                placeholder="Search by name or group"
-                placeholderTextColor={theme.colors.foregroundMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.textInput}
-              />
-              {keysQuery.isLoading ? (
-                <Text style={styles.usageHint}>Loading keys…</Text>
-              ) : filteredKeys.length === 0 ? (
-                <Text style={styles.usageHint}>No keys yet — use group routing to create one.</Text>
-              ) : (
-                <View style={styles.keyRowList}>
-                  {filteredKeys.map((key) => (
-                    <View key={key.id} style={styles.keyRow}>
-                      <View style={settingsStyles.rowContent}>
-                        <Text style={settingsStyles.rowTitle}>{key.name}</Text>
-                        <Text style={settingsStyles.rowHint}>
-                          {maskApiKey(key.key)} · Group: {key.group?.name ?? key.group_id ?? "none"}
-                        </Text>
-                        <Text style={settingsStyles.rowHint}>Used: {formatUsd(key.quota_used)}</Text>
-                      </View>
-                      <View style={styles.keyActions}>
-                        <Pressable
-                          onPress={() => void handleUseKey(key)}
-                          style={({ pressed }) => [
-                            styles.primaryButton,
-                            pressed && styles.buttonPressed,
-                            switchingKeyId === key.id && styles.disabledButton,
-                          ]}
-                          disabled={switchingKeyId === key.id}
-                        >
-                          <Text style={styles.primaryButtonText}>
-                            {switchingKeyId === key.id ? "Using…" : "Use"}
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => void handleDeleteKey(key.id)}
-                          style={({ pressed }) => [styles.removeButton, pressed && styles.buttonPressed]}
-                        >
-                          <Text style={styles.removeButtonText}>Delete</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
+          <AdaptiveModalSheet
+            title="Edit API key"
+            visible={editingKey !== null}
+            onClose={closeEditKey}
+            desktopMaxWidth={440}
+          >
+            <Text style={styles.fieldLabel}>Name</Text>
+            <AdaptiveTextInput
+              value={editKeyName}
+              onChangeText={setEditKeyName}
+              placeholder="Key name"
+              placeholderTextColor={theme.colors.foregroundMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.textInput}
+            />
+            <Text style={styles.fieldLabel}>Group</Text>
+            {groups.map((group) => {
+              const selected = editKeyGroupId === group.id;
+              return (
+                <Pressable
+                  key={group.id}
+                  onPress={() => setEditKeyGroupId(group.id)}
+                  style={({ pressed }) => [
+                    styles.editKeyGroupRow,
+                    selected && styles.editKeyGroupRowSelected,
+                    pressed && styles.buttonPressed,
+                  ]}
+                >
+                  <Text style={settingsStyles.rowTitle}>{group.name}</Text>
+                  <Text style={settingsStyles.rowHint}>
+                    {group.platform} · {group.rate_multiplier}x
+                  </Text>
+                </Pressable>
+              );
+            })}
+            <View style={styles.formActions}>
+              <Pressable
+                onPress={closeEditKey}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+              >
+                <Text style={styles.secondaryButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void handleSaveEditKey()}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  pressed && styles.buttonPressed,
+                  updateKeyMutation.isPending && styles.disabledButton,
+                ]}
+                disabled={updateKeyMutation.isPending}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {updateKeyMutation.isPending ? "Saving…" : "Save"}
+                </Text>
+              </Pressable>
             </View>
-          </SettingsSection>
+          </AdaptiveModalSheet>
+        </>
+      ) : null}
 
+      {(showManagedCloudPanels || isByok) ? (
+        <>
           <SettingsSection title="Saved endpoints">
             {providers.length === 0 ? (
               <View style={styles.dashedCard}>
                 <Text style={styles.emptyTitle}>No saved endpoints</Text>
                 <Text style={styles.emptyBody}>
-                  After sign-in, your default cloud route appears here. Add custom Claude Code or Codex
-                  endpoints below when you use another base URL or wire format.
+                  {isByok
+                    ? "Add a custom provider below. You can keep multiple entries and switch the active route for Claude Code and Codex."
+                    : "After sign-in, your default cloud route appears here. Add custom Claude Code or Codex endpoints below when you use another base URL or wire format."}
                 </Text>
               </View>
             ) : (
@@ -851,13 +1005,15 @@ export function Sub2APIProvidersSection() {
         </>
       ) : null}
 
-      <Sub2APIPayModal
-        visible={isPayModalOpen}
-        endpoint={auth?.endpoint ?? serviceEndpoint}
-        accessToken={payToken}
-        onClose={() => setIsPayModalOpen(false)}
-        onCompleted={handlePayCompleted}
-      />
+      {!isByok ? (
+        <Sub2APIPayModal
+          visible={isPayModalOpen}
+          endpoint={auth?.endpoint ?? serviceEndpoint}
+          accessToken={payToken}
+          onClose={() => setIsPayModalOpen(false)}
+          onCompleted={handlePayCompleted}
+        />
+      ) : null}
     </>
   );
 }
@@ -947,6 +1103,10 @@ const styles = StyleSheet.create((theme) => ({
   sectionHint: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
+  },
+  sectionHintEm: {
+    color: theme.colors.foreground,
+    fontWeight: theme.fontWeight.medium,
   },
   endpointRow: {
     gap: theme.spacing[2],
@@ -1041,32 +1201,12 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
   },
-  groupRowList: {
+  groupPickerBlock: {
     gap: theme.spacing[2],
+    alignSelf: "stretch",
   },
-  groupRouteRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing[2],
-    backgroundColor: theme.colors.surface0,
-  },
-  groupRouteRowSelected: {
-    borderColor: theme.colors.accent,
-    backgroundColor: "rgba(59,130,246,0.08)",
-  },
-  groupRouteRowMain: {
-    flex: 1,
-    gap: theme.spacing[1],
-  },
-  selectedPillText: {
-    color: theme.colors.accent,
-    fontSize: theme.fontSize.xs,
-    fontWeight: theme.fontWeight.medium,
-    marginTop: theme.spacing[1],
+  groupComboWrap: {
+    alignSelf: "stretch",
   },
   createKeyBlock: {
     gap: theme.spacing[2],
@@ -1074,6 +1214,32 @@ const styles = StyleSheet.create((theme) => ({
     paddingTop: theme.spacing[3],
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
+  },
+  keysSubsection: {
+    marginTop: theme.spacing[3],
+    paddingTop: theme.spacing[3],
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    gap: theme.spacing[2],
+  },
+  keyMatchBadge: {
+    color: theme.colors.accent,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    marginTop: theme.spacing[1],
+  },
+  editKeyGroupRow: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing[2],
+    marginBottom: theme.spacing[2],
+    backgroundColor: theme.colors.surface0,
+    gap: theme.spacing[1],
+  },
+  editKeyGroupRowSelected: {
+    borderColor: theme.colors.accent,
+    backgroundColor: "rgba(59,130,246,0.08)",
   },
   keyRowList: {
     gap: theme.spacing[2],
@@ -1098,6 +1264,19 @@ const styles = StyleSheet.create((theme) => ({
   },
   primaryButtonText: {
     color: theme.colors.accentForeground,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  useKeyButtonUsed: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface2,
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+  },
+  useKeyButtonUsedText: {
+    color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.medium,
   },
@@ -1139,6 +1318,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   keyActions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: theme.spacing[2],
   },

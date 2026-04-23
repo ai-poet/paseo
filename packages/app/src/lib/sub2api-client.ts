@@ -126,10 +126,17 @@ export interface Sub2APICreateKeyRequest {
   group_id?: number | null;
 }
 
+/** Subset of user API key update fields (see backend UpdateAPIKeyRequest). */
+export interface Sub2APIUpdateKeyRequest {
+  name: string;
+  group_id: number;
+}
+
 export interface Sub2APIClient {
   getMe: () => Promise<Sub2APIUser>;
   listKeys: (page?: number, pageSize?: number) => Promise<Sub2APIPaginatedData<Sub2APIKey>>;
   createKey: (input: Sub2APICreateKeyRequest) => Promise<Sub2APIKey>;
+  updateKey: (id: number, input: Sub2APIUpdateKeyRequest) => Promise<Sub2APIKey>;
   deleteKey: (id: number) => Promise<void>;
   getAvailableGroups: () => Promise<Sub2APIGroup[]>;
   getModelCatalog: () => Promise<Sub2APIModelCatalog>;
@@ -222,7 +229,7 @@ export function createSub2APIClient(input: {
   async function request<T>(
     path: string,
     init?: {
-      method?: "GET" | "POST" | "DELETE";
+      method?: "GET" | "POST" | "PUT" | "DELETE";
       body?: unknown;
     },
   ): Promise<T> {
@@ -287,6 +294,15 @@ export function createSub2APIClient(input: {
         body: {
           name: payload.name,
           ...(payload.group_id !== undefined ? { group_id: payload.group_id } : {}),
+        },
+      });
+    },
+    async updateKey(id, payload) {
+      return await request<Sub2APIKey>(`/keys/${encodeURIComponent(String(id))}`, {
+        method: "PUT",
+        body: {
+          name: payload.name,
+          group_id: payload.group_id,
         },
       });
     },

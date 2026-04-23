@@ -12,6 +12,7 @@ import {
   type Sub2APIKey,
   type Sub2APIGroup,
   type Sub2APIClient,
+  type Sub2APIUpdateKeyRequest,
 } from "@/lib/sub2api-client";
 
 function normalizeEndpointKey(endpoint: string | null | undefined): string {
@@ -167,6 +168,26 @@ export function useDeleteSub2APIKeyMutation() {
         throw new Error("Service client is unavailable.");
       }
       await client.deleteKey(id);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.keys(endpoint) }),
+        queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.me(endpoint) }),
+      ]);
+    },
+  });
+}
+
+export function useUpdateSub2APIKeyMutation() {
+  const queryClient = useQueryClient();
+  const { client, endpoint, isReady } = useSub2APIClient();
+
+  return useMutation({
+    mutationFn: async (input: { id: number; patch: Sub2APIUpdateKeyRequest }): Promise<Sub2APIKey> => {
+      if (!client || !isReady) {
+        throw new Error("Service client is unavailable.");
+      }
+      return await client.updateKey(input.id, input.patch);
     },
     onSuccess: async () => {
       await Promise.all([
