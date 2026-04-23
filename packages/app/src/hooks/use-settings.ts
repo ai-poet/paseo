@@ -22,6 +22,7 @@ export interface AppSettings {
   sendBehavior: SendBehavior;
   releaseChannel: ReleaseChannel;
   accessMode: AccessMode | null;
+  setupCheckCompleted: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -30,6 +31,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   sendBehavior: "interrupt",
   releaseChannel: "stable",
   accessMode: null,
+  setupCheckCompleted: false,
 };
 
 export interface UseAppSettingsReturn {

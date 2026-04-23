@@ -126,7 +126,7 @@ export function ModeSelectScreen() {
       if (pending) return;
       setPending(mode);
       try {
-        await updateSettings({ accessMode: mode });
+        await updateSettings({ accessMode: mode, setupCheckCompleted: false });
         if (mode === "builtin") {
           router.replace("/login");
         } else {

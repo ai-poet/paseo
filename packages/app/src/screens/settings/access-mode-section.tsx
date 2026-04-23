@@ -22,7 +22,7 @@ export function AccessModeSection() {
         : "Not selected";
 
   const handleSwitchMode = useCallback(async () => {
-    await updateSettings({ accessMode: null });
+    await updateSettings({ accessMode: null, setupCheckCompleted: false });
     router.replace("/mode-select");
   }, [router, updateSettings]);
 

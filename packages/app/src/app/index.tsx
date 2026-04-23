@@ -11,6 +11,7 @@ import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 const WELCOME_ROUTE = "/welcome" as const;
 const LOGIN_ROUTE = "/login" as const;
 const MODE_SELECT_ROUTE = "/mode-select" as const;
+const SETUP_CHECK_ROUTE = "/setup-check" as const;
 
 function useAnyOnlineHostServerId(serverIds: string[]): string | null {
   const runtime = getHostRuntimeStore();
@@ -66,6 +67,12 @@ export default function Index() {
       return;
     }
 
+    // Redirect to setup check if not yet completed
+    if (!settings.setupCheckCompleted) {
+      router.replace(SETUP_CHECK_ROUTE);
+      return;
+    }
+
     if (!storeReady) {
       return;
     }
@@ -79,6 +86,7 @@ export default function Index() {
     pathname,
     router,
     settings.accessMode,
+    settings.setupCheckCompleted,
     settingsLoading,
     storeReady,
   ]);

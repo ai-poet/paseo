@@ -125,7 +125,7 @@ export function LoginScreen() {
   }, [isLoggedIn, router]);
 
   const onSwitchToByok = async () => {
-    await updateSettings({ accessMode: "byok" });
+    await updateSettings({ accessMode: "byok", setupCheckCompleted: false });
     router.replace("/");
   };
 
