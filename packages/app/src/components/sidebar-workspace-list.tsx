@@ -33,13 +33,13 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
-  FolderPlus,
   FolderGit2,
   GitPullRequest,
   Globe,
   SquareTerminal,
   Monitor,
   MoreVertical,
+  Pencil,
   Plus,
   Trash2,
 } from "lucide-react-native";
@@ -60,6 +60,7 @@ import {
   type SidebarWorkspaceEntry,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
+import { useSidebarProjectNamesStore } from "@/stores/sidebar-project-names-store";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import {
   ContextMenu,
@@ -176,6 +177,7 @@ interface ProjectHeaderRowProps {
   isArchiving?: boolean;
   menuController: ReturnType<typeof useContextMenu> | null;
   onRemoveProject?: () => void;
+  onRenameProject?: () => void;
   removeProjectStatus?: "idle" | "pending";
   dragHandleProps?: DraggableListDragHandleProps;
 }
@@ -536,14 +538,14 @@ function NewWorktreeButton({
             }}
             disabled={loading}
             accessibilityRole="button"
-            accessibilityLabel={`Create a new workspace for ${displayName}`}
+            accessibilityLabel={`Create a new worktree for ${displayName}`}
             testID={testID}
           >
             {({ hovered, pressed }) =>
               loading ? (
                 <ActivityIndicator size={14} color={theme.colors.foregroundMuted} />
               ) : (
-                <FolderPlus
+                <Plus
                   size={15}
                   color={
                     hovered || pressed ? theme.colors.foreground : theme.colors.foregroundMuted
@@ -555,7 +557,7 @@ function NewWorktreeButton({
         </TooltipTrigger>
         <TooltipContent side="bottom" align="center" offset={8}>
           <View style={styles.projectActionTooltipRow}>
-            <Text style={styles.projectActionTooltipText}>New workspace</Text>
+            <Text style={styles.projectActionTooltipText}>New worktree</Text>
             {showShortcutHint && newWorktreeKeys ? (
               <Shortcut chord={newWorktreeKeys} style={styles.projectActionTooltipShortcut} />
             ) : null}
@@ -803,6 +805,7 @@ function ProjectHeaderRow({
   isArchiving = false,
   menuController,
   onRemoveProject,
+  onRenameProject,
   removeProjectStatus = "idle",
   dragHandleProps,
 }: ProjectHeaderRowProps) {
@@ -889,14 +892,23 @@ function ProjectHeaderRow({
                 )}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" width={220}>
+                {onRenameProject ? (
+                  <DropdownMenuItem
+                    testID={`sidebar-project-menu-rename-${project.projectKey}`}
+                    leading={<Pencil size={14} color={theme.colors.foregroundMuted} />}
+                    onSelect={onRenameProject}
+                  >
+                    Rename project
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem
                   testID={`sidebar-project-menu-remove-${project.projectKey}`}
                   leading={<Trash2 size={14} color={theme.colors.foregroundMuted} />}
                   status={removeProjectStatus}
-                  pendingLabel="Removing..."
+                  pendingLabel="Deleting..."
                   onSelect={onRemoveProject}
                 >
-                  Remove project
+                  Delete project
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1524,6 +1536,7 @@ function FlattenedProjectRow({
   dragHandleProps,
   isProjectActive = false,
   onRemoveProject,
+  onRenameProject,
   removeProjectStatus,
   selectionEnabled,
 }: {
@@ -1542,6 +1555,7 @@ function FlattenedProjectRow({
   dragHandleProps?: DraggableListDragHandleProps;
   isProjectActive?: boolean;
   onRemoveProject?: () => void;
+  onRenameProject?: () => void;
   removeProjectStatus?: "idle" | "pending";
   selectionEnabled: boolean;
 }) {
@@ -1594,6 +1608,7 @@ function FlattenedProjectRow({
       isDragging={isDragging}
       menuController={null}
       onRemoveProject={onRemoveProject}
+      onRenameProject={onRenameProject}
       removeProjectStatus={removeProjectStatus}
       dragHandleProps={dragHandleProps}
     />
@@ -1777,6 +1792,16 @@ function ProjectBlock({
 
   const toast = useToast();
   const [isRemovingProject, setIsRemovingProject] = useState(false);
+  const setProjectName = useSidebarProjectNamesStore((state) => state.setProjectName);
+
+  const handleRenameProject = useCallback(() => {
+    if (platformIsWeb) {
+      const newName = window.prompt("Rename project", displayName);
+      if (newName && newName.trim() !== "" && newName.trim() !== displayName) {
+        setProjectName(project.projectKey, newName.trim());
+      }
+    }
+  }, [displayName, project.projectKey, setProjectName]);
 
   const handleRemoveProject = useCallback(() => {
     if (isRemovingProject || !serverId) {
@@ -1847,6 +1872,7 @@ function ProjectBlock({
           dragHandleProps={dragHandleProps}
           isProjectActive={isProjectActive}
           onRemoveProject={handleRemoveProject}
+          onRenameProject={handleRenameProject}
           removeProjectStatus={isRemovingProject ? "pending" : "idle"}
           selectionEnabled={selectionEnabled}
         />
@@ -1870,6 +1896,7 @@ function ProjectBlock({
             isArchiving={isRemovingProject}
             menuController={null}
             onRemoveProject={handleRemoveProject}
+            onRenameProject={handleRenameProject}
             removeProjectStatus={isRemovingProject ? "pending" : "idle"}
             dragHandleProps={dragHandleProps}
           />
@@ -1909,6 +1936,7 @@ export function SidebarWorkspaceList({
 }: SidebarWorkspaceListProps) {
   const pathname = usePathname();
   const [creatingWorkspaceIds, setCreatingWorkspaceIds] = useState<Set<string>>(() => new Set());
+  const projectNameOverrides = useSidebarProjectNamesStore((state) => state.namesByProjectKey);
   const creatingWorkspaceTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
@@ -2125,7 +2153,7 @@ export function SidebarWorkspaceList({
         <ProjectBlock
           project={item}
           collapsed={collapsedProjectKeys.has(item.projectKey)}
-          displayName={item.projectName}
+          displayName={projectNameOverrides[item.projectKey] || item.projectName}
           iconDataUri={projectIconByProjectKey.get(item.projectKey) ?? null}
           serverId={serverId}
           selectionEnabled={selectionEnabled}

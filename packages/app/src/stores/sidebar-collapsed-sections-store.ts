@@ -6,6 +6,8 @@ interface SidebarCollapsedSectionsState {
   collapsedProjectKeys: Set<string>;
   toggleProjectCollapsed: (projectKey: string) => void;
   setProjectCollapsed: (projectKey: string, collapsed: boolean) => void;
+  collapseAllProjects: (projectKeys: string[]) => void;
+  expandAllProjects: () => void;
 }
 
 type PersistedSidebarCollapsedSectionsState = {
@@ -62,6 +64,14 @@ export const useSidebarCollapsedSectionsStore = create<SidebarCollapsedSectionsS
           }
           return { collapsedProjectKeys: next };
         }),
+      collapseAllProjects: (projectKeys) =>
+        set(() => ({
+          collapsedProjectKeys: new Set(projectKeys),
+        })),
+      expandAllProjects: () =>
+        set(() => ({
+          collapsedProjectKeys: new Set(),
+        })),
     }),
     {
       name: "sidebar-collapsed-sections",

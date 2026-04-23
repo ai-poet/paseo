@@ -27,7 +27,20 @@ import Animated, {
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { MessagesSquare, Plus, Settings } from "lucide-react-native";
+import {
+  ArrowDownNarrowWide,
+  Check,
+  ChevronsDownUp,
+  FolderPlus,
+  MessageSquarePlus,
+  Settings,
+} from "lucide-react-native";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Shortcut } from "@/components/ui/shortcut";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
@@ -38,7 +51,8 @@ import {
   MIN_SIDEBAR_WIDTH,
   MAX_SIDEBAR_WIDTH,
 } from "@/stores/panel-store";
-import { SidebarHeaderRow } from "@/components/sidebar/sidebar-header-row";
+import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
+import { useSidebarSortStore, type SidebarSortMode } from "@/stores/sidebar-sort-store";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { useSidebarShortcutModel } from "@/hooks/use-sidebar-shortcut-model";
@@ -87,6 +101,9 @@ interface SidebarSharedProps {
   collapsedProjectKeys: SidebarShortcutModel["collapsedProjectKeys"];
   shortcutIndexByWorkspaceKey: SidebarShortcutModel["shortcutIndexByWorkspaceKey"];
   toggleProjectCollapsed: SidebarShortcutModel["toggleProjectCollapsed"];
+  handleToggleCollapseAll: () => void;
+  sortMode: SidebarSortMode;
+  setSortMode: (mode: SidebarSortMode) => void;
   handleRefresh: () => void;
   handleHostSelect: (nextServerId: string) => void;
   handleOpenProject: () => void;
@@ -239,6 +256,24 @@ export const LeftSidebar = memo(function LeftSidebar({
     [pathname],
   );
 
+  const collapseAllProjects = useSidebarCollapsedSectionsStore(
+    (state) => state.collapseAllProjects,
+  );
+  const expandAllProjects = useSidebarCollapsedSectionsStore((state) => state.expandAllProjects);
+
+  const handleToggleCollapseAll = useCallback(() => {
+    const allKeys = projects.map((p) => p.projectKey);
+    const allCollapsed = allKeys.length > 0 && allKeys.every((k) => collapsedProjectKeys.has(k));
+    if (allCollapsed) {
+      expandAllProjects();
+    } else {
+      collapseAllProjects(allKeys);
+    }
+  }, [projects, collapsedProjectKeys, collapseAllProjects, expandAllProjects]);
+
+  const sortMode = useSidebarSortStore((state) => state.sortMode);
+  const setSortMode = useSidebarSortStore((state) => state.setSortMode);
+
   const sharedProps = {
     theme,
     activeServerId,
@@ -255,6 +290,9 @@ export const LeftSidebar = memo(function LeftSidebar({
     collapsedProjectKeys,
     shortcutIndexByWorkspaceKey,
     toggleProjectCollapsed,
+    handleToggleCollapseAll,
+    sortMode,
+    setSortMode,
     handleRefresh,
     handleHostSelect,
     renderHostOption,
@@ -286,6 +324,62 @@ export const LeftSidebar = memo(function LeftSidebar({
     />
   );
 });
+
+function SortFilterDropdown({
+  theme,
+  sortMode,
+  setSortMode,
+}: {
+  theme: SidebarTheme;
+  sortMode: SidebarSortMode;
+  setSortMode: (mode: SidebarSortMode) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        style={({ hovered = false }) => [
+          styles.headerIconButton,
+          hovered && styles.headerIconButtonHovered,
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel="Sort"
+      >
+        {({ hovered }) => (
+          <ArrowDownNarrowWide
+            size={theme.iconSize.md}
+            color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+          />
+        )}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" width={180}>
+        <DropdownMenuItem
+          leading={
+            sortMode === "project" ? (
+              <Check size={14} color={theme.colors.foreground} />
+            ) : (
+              <View style={{ width: 14 }} />
+            )
+          }
+          onSelect={() => setSortMode("project")}
+        >
+          By project
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          leading={
+            sortMode === "time" ? (
+              <Check size={14} color={theme.colors.foreground} />
+            ) : (
+              <View style={{ width: 14 }} />
+            )
+          }
+          onSelect={() => setSortMode("time")}
+        >
+          By time
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function HostSwitchOption({
   serverId,
@@ -330,6 +424,9 @@ function MobileSidebar({
   collapsedProjectKeys,
   shortcutIndexByWorkspaceKey,
   toggleProjectCollapsed,
+  handleToggleCollapseAll,
+  sortMode,
+  setSortMode,
   handleRefresh,
   handleHostSelect,
   renderHostOption,
@@ -494,13 +591,50 @@ function MobileSidebar({
           pointerEvents="auto"
         >
           <View style={styles.sidebarContent} pointerEvents="auto">
-            <SidebarHeaderRow
-              icon={MessagesSquare}
-              label="Sessions"
-              onPress={handleViewMore}
-              isActive={isSessionsActive}
-              testID="sidebar-sessions"
-            />
+            {/* Header: "项目" + 3 always-visible icons */}
+            <View style={styles.sidebarHeader}>
+              <Text style={styles.sidebarHeaderTitle}>项目</Text>
+              <View style={styles.sidebarHeaderIcons}>
+                <Pressable
+                  style={styles.headerIconButton}
+                  accessibilityLabel="Collapse all projects"
+                  accessibilityRole="button"
+                  onPress={handleToggleCollapseAll}
+                >
+                  {({ hovered }) => (
+                    <ChevronsDownUp
+                      size={theme.iconSize.md}
+                      color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+                    />
+                  )}
+                </Pressable>
+                <SortFilterDropdown theme={theme} sortMode={sortMode} setSortMode={setSortMode} />
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <Pressable
+                      style={styles.headerIconButton}
+                      accessibilityLabel="Add project"
+                      accessibilityRole="button"
+                      onPress={handleOpenProject}
+                      testID="sidebar-add-project"
+                    >
+                      {({ hovered }) => (
+                        <FolderPlus
+                          size={theme.iconSize.md}
+                          color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+                        />
+                      )}
+                    </Pressable>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" align="center" offset={8}>
+                    <View style={styles.tooltipRow}>
+                      <Text style={styles.tooltipText}>Add project</Text>
+                      {newAgentKeys ? <Shortcut chord={newAgentKeys} /> : null}
+                    </View>
+                  </TooltipContent>
+                </Tooltip>
+              </View>
+            </View>
 
             {isInitialLoad ? (
               <SidebarAgentListSkeleton />
@@ -518,6 +652,28 @@ function MobileSidebar({
                 parentGestureRef={closeGestureRef}
               />
             )}
+
+            {/* Chat section */}
+            <View style={styles.chatSection}>
+              <Text style={styles.chatSectionTitle}>聊天</Text>
+              <View style={styles.chatSectionIcons}>
+                <SortFilterDropdown theme={theme} sortMode={sortMode} setSortMode={setSortMode} />
+                <Pressable
+                  style={styles.headerIconButton}
+                  accessibilityLabel="New chat"
+                  accessibilityRole="button"
+                  onPress={handleViewMore}
+                  testID="sidebar-new-chat"
+                >
+                  {({ hovered }) => (
+                    <MessageSquarePlus
+                      size={theme.iconSize.md}
+                      color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+                    />
+                  )}
+                </Pressable>
+              </View>
+            </View>
 
             <View style={styles.sidebarFooter}>
               <View style={styles.footerHostSlot}>
@@ -537,33 +693,6 @@ function MobileSidebar({
                 </Pressable>
               </View>
               <View style={styles.footerIconRow}>
-                <Tooltip delayDuration={300}>
-                  <TooltipTrigger asChild>
-                    <Pressable
-                      style={styles.footerIconButton}
-                      testID="sidebar-add-project"
-                      nativeID="sidebar-add-project"
-                      collapsable={false}
-                      accessible
-                      accessibilityLabel="Add project"
-                      accessibilityRole="button"
-                      onPress={handleOpenProject}
-                    >
-                      {({ hovered }) => (
-                        <Plus
-                          size={theme.iconSize.md}
-                          color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
-                        />
-                      )}
-                    </Pressable>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" align="center" offset={8}>
-                    <View style={styles.tooltipRow}>
-                      <Text style={styles.tooltipText}>Add project</Text>
-                      {newAgentKeys ? <Shortcut chord={newAgentKeys} /> : null}
-                    </View>
-                  </TooltipContent>
-                </Tooltip>
                 <Pressable
                   style={styles.footerIconButton}
                   testID="sidebar-settings"
@@ -618,6 +747,9 @@ function DesktopSidebar({
   collapsedProjectKeys,
   shortcutIndexByWorkspaceKey,
   toggleProjectCollapsed,
+  handleToggleCollapseAll,
+  sortMode,
+  setSortMode,
   handleRefresh,
   handleHostSelect,
   renderHostOption,
@@ -686,13 +818,50 @@ function DesktopSidebar({
         <View style={styles.sidebarDragArea}>
           <TitlebarDragRegion />
           {padding.top > 0 ? <View style={{ height: padding.top }} /> : null}
-          <SidebarHeaderRow
-            icon={MessagesSquare}
-            label="Sessions"
-            onPress={handleViewMore}
-            isActive={isSessionsActive}
-            testID="sidebar-sessions"
-          />
+          {/* Header: "项目" + 3 always-visible icons */}
+          <View style={styles.sidebarHeader}>
+            <Text style={styles.sidebarHeaderTitle}>项目</Text>
+            <View style={styles.sidebarHeaderIcons}>
+              <Pressable
+                style={styles.headerIconButton}
+                accessibilityLabel="Collapse all projects"
+                accessibilityRole="button"
+                onPress={handleToggleCollapseAll}
+              >
+                {({ hovered }) => (
+                  <ChevronsDownUp
+                    size={theme.iconSize.md}
+                    color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+                  />
+                )}
+              </Pressable>
+              <SortFilterDropdown theme={theme} sortMode={sortMode} setSortMode={setSortMode} />
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <Pressable
+                    style={styles.headerIconButton}
+                    accessibilityLabel="Add project"
+                    accessibilityRole="button"
+                    onPress={handleOpenProject}
+                    testID="sidebar-add-project"
+                  >
+                    {({ hovered }) => (
+                      <FolderPlus
+                        size={theme.iconSize.md}
+                        color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+                      />
+                    )}
+                  </Pressable>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="center" offset={8}>
+                  <View style={styles.tooltipRow}>
+                    <Text style={styles.tooltipText}>Add project</Text>
+                    {newAgentKeys ? <Shortcut chord={newAgentKeys} /> : null}
+                  </View>
+                </TooltipContent>
+              </Tooltip>
+            </View>
+          </View>
         </View>
 
         {isInitialLoad ? (
@@ -709,6 +878,28 @@ function DesktopSidebar({
             onAddProject={handleOpenProject}
           />
         )}
+
+        {/* Chat section */}
+        <View style={styles.chatSection}>
+          <Text style={styles.chatSectionTitle}>聊天</Text>
+          <View style={styles.chatSectionIcons}>
+            <SortFilterDropdown theme={theme} sortMode={sortMode} setSortMode={setSortMode} />
+            <Pressable
+              style={styles.headerIconButton}
+              accessibilityLabel="New chat"
+              accessibilityRole="button"
+              onPress={handleViewMore}
+              testID="sidebar-new-chat"
+            >
+              {({ hovered }) => (
+                <MessageSquarePlus
+                  size={theme.iconSize.md}
+                  color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+                />
+              )}
+            </Pressable>
+          </View>
+        </View>
 
         <View style={styles.sidebarFooter}>
           <View style={styles.footerHostSlot}>
@@ -728,33 +919,6 @@ function DesktopSidebar({
             </Pressable>
           </View>
           <View style={styles.footerIconRow}>
-            <Tooltip delayDuration={300}>
-              <TooltipTrigger asChild>
-                <Pressable
-                  style={styles.footerIconButton}
-                  testID="sidebar-add-project"
-                  nativeID="sidebar-add-project"
-                  collapsable={false}
-                  accessible
-                  accessibilityLabel="Add project"
-                  accessibilityRole="button"
-                  onPress={handleOpenProject}
-                >
-                  {({ hovered }) => (
-                    <Plus
-                      size={theme.iconSize.md}
-                      color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
-                    />
-                  )}
-                </Pressable>
-              </TooltipTrigger>
-              <TooltipContent side="top" align="center" offset={8}>
-                <View style={styles.tooltipRow}>
-                  <Text style={styles.tooltipText}>Add project</Text>
-                  {newAgentKeys ? <Shortcut chord={newAgentKeys} /> : null}
-                </View>
-              </TooltipContent>
-            </Tooltip>
             <Pressable
               style={styles.footerIconButton}
               testID="sidebar-settings"
@@ -836,6 +1000,55 @@ const styles = StyleSheet.create((theme) => ({
   },
   sidebarDragArea: {
     position: "relative",
+  },
+  sidebarHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[2],
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    userSelect: "none",
+  },
+  sidebarHeaderTitle: {
+    fontSize: theme.fontSize.base,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.foreground,
+  },
+  sidebarHeaderIcons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+  },
+  headerIconButton: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.md,
+  },
+  headerIconButtonHovered: {
+    backgroundColor: theme.colors.surfaceSidebarHover,
+  },
+  chatSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[2],
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  chatSectionTitle: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.foregroundMuted,
+  },
+  chatSectionIcons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
   },
   hostTrigger: {
     flexDirection: "row",
