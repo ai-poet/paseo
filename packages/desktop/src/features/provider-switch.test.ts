@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildClaudeSettings,
   buildCodexConfig,
-  DEFAULT_CLAUDE_MODEL,
   DEFAULT_PROVIDER_ID,
   DEFAULT_PROVIDER_NAME,
+  PASEO_MANAGED_CLAUDE_PROVIDER_ID,
   PASEO_MANAGED_CODEX_PROVIDER_ID,
   type Provider,
 } from "./provider-switch";
@@ -22,17 +22,71 @@ function createProvider(overrides: Partial<Provider> = {}): Provider {
 }
 
 describe("provider-switch", () => {
-  it("writes Anthropic settings with normalized endpoint and Claude Code guide flags", () => {
+  it("writes default Claude rows with only minimal integration-guide env keys", () => {
     const settings = buildClaudeSettings(createProvider(), {});
+
+    expect(settings).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: "https://api.example.com",
+        ANTHROPIC_AUTH_TOKEN: "sk-live-example",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+        CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+      },
+    });
+  });
+
+  it("writes managed Claude settings using only the minimal integration-guide env keys", () => {
+    const settings = buildClaudeSettings(
+      createProvider({
+        id: PASEO_MANAGED_CLAUDE_PROVIDER_ID,
+        target: "claude",
+        claudeConfig: {
+          env: {
+            ANTHROPIC_MODEL: "claude-opus-4-7",
+          },
+        },
+      }),
+      {
+        env: {
+          SOME_OTHER_KEY: "keep-me",
+        },
+        random: true,
+      },
+    );
+
+    expect(settings).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: "https://api.example.com",
+        ANTHROPIC_AUTH_TOKEN: "sk-live-example",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+        CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+      },
+    });
+  });
+
+  it("keeps explicit model env overrides for custom Claude rows", () => {
+    const settings = buildClaudeSettings(
+      createProvider({
+        id: "custom-claude",
+        type: "custom",
+        isDefault: false,
+        target: "claude",
+        claudeConfig: {
+          env: {
+            ANTHROPIC_MODEL: "claude-sonnet-4-5",
+            ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-7",
+          },
+        },
+      }),
+      {},
+    );
 
     expect(settings).toMatchObject({
       env: {
         ANTHROPIC_BASE_URL: "https://api.example.com",
         ANTHROPIC_AUTH_TOKEN: "sk-live-example",
-        ANTHROPIC_MODEL: DEFAULT_CLAUDE_MODEL,
-        ANTHROPIC_DEFAULT_OPUS_MODEL: DEFAULT_CLAUDE_MODEL,
-        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-        CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+        ANTHROPIC_MODEL: "claude-sonnet-4-5",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-7",
       },
     });
   });

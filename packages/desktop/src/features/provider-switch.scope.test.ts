@@ -49,8 +49,17 @@ describe("setupDefaultProvider scoped writes", () => {
     expect(existsSync(codexConfigPath)).toBe(false);
     expect(existsSync(codexAuthPath)).toBe(false);
 
-    const claudeSettings = await readFile(claudePath, "utf8");
-    expect(claudeSettings).toContain('"ANTHROPIC_AUTH_TOKEN": "sk-claude"');
+    const claudeSettings = JSON.parse(await readFile(claudePath, "utf8")) as {
+      env?: Record<string, unknown>;
+    };
+    expect(claudeSettings).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: "https://api.example.com",
+        ANTHROPIC_AUTH_TOKEN: "sk-claude",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+        CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+      },
+    });
 
     const store = JSON.parse(await readFile(storePath, "utf8")) as {
       activeClaudeProviderId: string | null;

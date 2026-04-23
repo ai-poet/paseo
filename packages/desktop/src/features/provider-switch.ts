@@ -469,6 +469,21 @@ export function buildClaudeSettings(
   provider: StoredProvider,
   existing: Record<string, unknown>,
 ): Record<string, unknown> {
+  const shouldUseMinimalClaudeEnv =
+    provider.id === PASEO_MANAGED_CLAUDE_PROVIDER_ID ||
+    (provider.isDefault && (provider.target === undefined || provider.target === "claude"));
+
+  if (shouldUseMinimalClaudeEnv) {
+    return {
+      env: {
+        ANTHROPIC_BASE_URL: normalizeProviderEndpoint(provider.endpoint),
+        ANTHROPIC_AUTH_TOKEN: provider.apiKey,
+        [CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC_KEY]: "1",
+        [CLAUDE_CODE_ATTRIBUTION_HEADER_KEY]: "0",
+      },
+    };
+  }
+
   const providerConfig = isRecord(provider.claudeConfig) ? provider.claudeConfig : {};
   const existingEnv = isRecord(existing.env) ? existing.env : {};
   const providerEnv = isRecord(providerConfig.env) ? providerConfig.env : {};
@@ -697,12 +712,6 @@ export function buildPaseoManagedClaudeProvider(params: {
     isDefault: true,
     target: "claude",
     claudeApiFormat: "anthropic",
-    claudeConfig: {
-      env: {
-        ANTHROPIC_MODEL: DEFAULT_CLAUDE_MODEL,
-        ANTHROPIC_DEFAULT_OPUS_MODEL: DEFAULT_CLAUDE_MODEL,
-      },
-    },
   });
 }
 
