@@ -101,6 +101,35 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
   },
+  waitingBlock: {
+    width: "100%",
+    alignItems: "center",
+    gap: theme.spacing[3],
+  },
+  waitingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing[2],
+  },
+  waitingText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.base,
+    fontWeight: theme.fontWeight.medium,
+  },
+  retryAuthLink: {
+    paddingVertical: theme.spacing[1],
+    paddingHorizontal: theme.spacing[2],
+  },
+  retryAuthLinkText: {
+    color: theme.colors.accent,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    textDecorationLine: "underline",
+  },
+  retryAuthLinkDisabled: {
+    opacity: 0.5,
+  },
 }));
 
 export function LoginScreen() {
@@ -152,8 +181,8 @@ export function LoginScreen() {
           <View style={styles.copyBlock}>
             <Text style={styles.title}>Sign in to Paseo</Text>
             <Text style={styles.subtitle}>
-              Sign in with GitHub for Paseo Cloud. We configure Claude Code and Codex routes for
-              you.
+              Complete sign-in in your browser for Paseo Cloud. We configure Claude Code and Codex
+              routes for you.
             </Text>
           </View>
 
@@ -165,25 +194,40 @@ export function LoginScreen() {
               </Text>
             ) : null}
 
-            <Pressable
-              onPress={() => void handleGitHubLogin()}
-              disabled={loginDisabled}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed && styles.primaryButtonPressed,
-                loginDisabled && styles.primaryButtonDisabled,
-              ]}
-              testID="login-github-button"
-            >
-              {isInFlight ? (
-                <ActivityIndicator size="small" color={theme.colors.accentForeground} />
-              ) : (
+            {isInFlight ? (
+              <View style={styles.waitingBlock} testID="login-waiting-browser">
+                <View style={styles.waitingRow}>
+                  <ActivityIndicator size="small" color={theme.colors.accent} />
+                  <Text style={styles.waitingText}>Waiting for browser…</Text>
+                </View>
+                <Pressable
+                  onPress={() => void handleGitHubLogin()}
+                  disabled={!canStartLogin || envUrlInvalid}
+                  style={({ pressed }) => [
+                    styles.retryAuthLink,
+                    (!canStartLogin || envUrlInvalid) && styles.retryAuthLinkDisabled,
+                    pressed && { opacity: 0.85 },
+                  ]}
+                  testID="login-retry-auth"
+                >
+                  <Text style={styles.retryAuthLinkText}>Request authentication again</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => void handleGitHubLogin()}
+                disabled={loginDisabled}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  pressed && styles.primaryButtonPressed,
+                  loginDisabled && styles.primaryButtonDisabled,
+                ]}
+                testID="login-managed-service-button"
+              >
                 <LogIn size={18} color={theme.colors.accentForeground} />
-              )}
-              <Text style={styles.primaryButtonText}>
-                {isInFlight ? "Waiting for browser…" : "Sign in with GitHub"}
-              </Text>
-            </Pressable>
+                <Text style={styles.primaryButtonText}>登录</Text>
+              </Pressable>
+            )}
           </View>
 
           <View style={styles.divider} />
