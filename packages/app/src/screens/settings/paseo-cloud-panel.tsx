@@ -9,10 +9,7 @@ import { getManagedServiceUrlFromEnv } from "@/config/managed-service-env";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { useSub2APILoginFlow } from "@/hooks/use-sub2api-login-flow";
 import { useAppSettings } from "@/hooks/use-settings";
-import {
-  useSub2APIMe,
-  useSub2APIUsageStats,
-} from "@/hooks/use-sub2api-api";
+import { useSub2APIMe, useSub2APIUsageStats } from "@/hooks/use-sub2api-api";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { useDesktopProvidersStore } from "@/screens/settings/desktop-providers-context";
 import { managedProviderSettingsStyles as styles } from "@/screens/settings/managed-provider-settings-styles";
@@ -20,16 +17,18 @@ import { Sub2APIPayModal } from "@/screens/settings/sub2api-pay-modal";
 import { Sub2APIModelsSection } from "@/screens/settings/sub2api-models-section";
 import { PaseoCloudApiKeysSection } from "@/screens/settings/paseo-cloud-api-keys-section";
 import { PaseoCloudRoutingSection } from "@/screens/settings/paseo-cloud-routing-section";
+import { PaseoCloudReferralSection } from "@/screens/settings/paseo-cloud-referral-section";
 import { settingsStyles } from "@/styles/settings";
 import { formatUsd, getErrorMessage } from "./managed-provider-settings-shared";
 
-type PaseoCloudSection = "overview" | "keys" | "routing" | "catalog";
+type PaseoCloudSection = "overview" | "keys" | "routing" | "catalog" | "referral";
 
 const SECTION_OPTIONS: Array<{ id: PaseoCloudSection; label: string; testID: string }> = [
   { id: "overview", label: "Overview", testID: "paseo-cloud-section-overview" },
   { id: "keys", label: "API Keys", testID: "paseo-cloud-section-keys" },
   { id: "routing", label: "Routing", testID: "paseo-cloud-section-routing" },
   { id: "catalog", label: "Model Catalog", testID: "paseo-cloud-section-catalog" },
+  { id: "referral", label: "Referral", testID: "paseo-cloud-section-referral" },
 ];
 
 function PaseoCloudOverviewSection(props: {
@@ -236,8 +235,8 @@ export function PaseoCloudPanel() {
           <View style={styles.dashedCard}>
             <Text style={styles.emptyTitle}>Sign in required</Text>
             <Text style={styles.emptyBody}>
-              Open <Text style={styles.sectionHintEm}>Overview</Text> to sign in before managing
-              API keys, routing, or the model catalog.
+              Open <Text style={styles.sectionHintEm}>Overview</Text> to sign in before managing API
+              keys, routing, or the model catalog.
             </Text>
             <Pressable
               onPress={() => setActiveSection("overview")}
@@ -267,6 +266,8 @@ export function PaseoCloudPanel() {
         );
       case "catalog":
         return <Sub2APIModelsSection />;
+      case "referral":
+        return <PaseoCloudReferralSection />;
       case "overview":
       default:
         return (

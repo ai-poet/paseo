@@ -13,6 +13,10 @@ import {
   type Sub2APIGroup,
   type Sub2APIClient,
   type Sub2APIUpdateKeyRequest,
+  type Sub2APIGroupStatusItem,
+  type Sub2APIReferralInfo,
+  type Sub2APIUserReferral,
+  type Sub2APIRedeemResult,
 } from "@/lib/sub2api-client";
 
 function normalizeEndpointKey(endpoint: string | null | undefined): string {
@@ -34,6 +38,12 @@ export const cloudServiceQueryKeys = {
     [CLOUD_SERVICE_QUERY_ROOT, normalizeEndpointKey(endpoint), "usage", period] as const,
   models: (endpoint: string | null | undefined) =>
     [CLOUD_SERVICE_QUERY_ROOT, normalizeEndpointKey(endpoint), "models"] as const,
+  groupStatuses: (endpoint: string | null | undefined) =>
+    [CLOUD_SERVICE_QUERY_ROOT, normalizeEndpointKey(endpoint), "groupStatuses"] as const,
+  referralInfo: (endpoint: string | null | undefined) =>
+    [CLOUD_SERVICE_QUERY_ROOT, normalizeEndpointKey(endpoint), "referralInfo"] as const,
+  referralHistory: (endpoint: string | null | undefined) =>
+    [CLOUD_SERVICE_QUERY_ROOT, normalizeEndpointKey(endpoint), "referralHistory"] as const,
 };
 
 export function useSub2APIClient(): {
@@ -183,7 +193,10 @@ export function useUpdateSub2APIKeyMutation() {
   const { client, endpoint, isReady } = useSub2APIClient();
 
   return useMutation({
-    mutationFn: async (input: { id: number; patch: Sub2APIUpdateKeyRequest }): Promise<Sub2APIKey> => {
+    mutationFn: async (input: {
+      id: number;
+      patch: Sub2APIUpdateKeyRequest;
+    }): Promise<Sub2APIKey> => {
       if (!client || !isReady) {
         throw new Error("Service client is unavailable.");
       }
@@ -193,6 +206,71 @@ export function useUpdateSub2APIKeyMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.keys(endpoint) }),
         queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.me(endpoint) }),
+      ]);
+    },
+  });
+}
+
+export function useSub2APIGroupStatuses() {
+  const { client, endpoint, isReady } = useSub2APIClient();
+  return useQuery({
+    queryKey: cloudServiceQueryKeys.groupStatuses(endpoint),
+    enabled: isReady && client !== null,
+    staleTime: 30_000,
+    queryFn: async (): Promise<Sub2APIGroupStatusItem[]> => {
+      if (!client) {
+        throw new Error("Service client is unavailable.");
+      }
+      return await client.getGroupStatuses();
+    },
+  });
+}
+
+export function useSub2APIReferralInfo() {
+  const { client, endpoint, isReady } = useSub2APIClient();
+  return useQuery({
+    queryKey: cloudServiceQueryKeys.referralInfo(endpoint),
+    enabled: isReady && client !== null,
+    staleTime: 60_000,
+    queryFn: async (): Promise<Sub2APIReferralInfo> => {
+      if (!client) {
+        throw new Error("Service client is unavailable.");
+      }
+      return await client.getReferralInfo();
+    },
+  });
+}
+
+export function useSub2APIReferralHistory(page = 1, pageSize = 20) {
+  const { client, endpoint, isReady } = useSub2APIClient();
+  return useQuery({
+    queryKey: [...cloudServiceQueryKeys.referralHistory(endpoint), page, pageSize] as const,
+    enabled: isReady && client !== null,
+    staleTime: 30_000,
+    queryFn: async (): Promise<Sub2APIPaginatedData<Sub2APIUserReferral>> => {
+      if (!client) {
+        throw new Error("Service client is unavailable.");
+      }
+      return await client.getReferralHistory(page, pageSize);
+    },
+  });
+}
+
+export function useRedeemCodeMutation() {
+  const queryClient = useQueryClient();
+  const { client, endpoint, isReady } = useSub2APIClient();
+
+  return useMutation({
+    mutationFn: async (code: string): Promise<Sub2APIRedeemResult> => {
+      if (!client || !isReady) {
+        throw new Error("Service client is unavailable.");
+      }
+      return await client.redeemCode(code);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.me(endpoint) }),
+        queryClient.invalidateQueries({ queryKey: cloudServiceQueryKeys.referralInfo(endpoint) }),
       ]);
     },
   });

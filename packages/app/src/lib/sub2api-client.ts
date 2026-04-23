@@ -104,6 +104,31 @@ export interface Sub2APIModelCatalogComparison {
   delta_per_image_usd: number | null;
 }
 
+export interface Sub2APIModelCatalogPriceInterval {
+  min_tokens: number;
+  max_tokens: number | null;
+  tier_label: string;
+  input_per_mtok_usd: number | null;
+  output_per_mtok_usd: number | null;
+  cache_write_per_mtok_usd: number | null;
+  cache_read_per_mtok_usd: number | null;
+  per_request_usd: number | null;
+  per_image_usd: number | null;
+}
+
+export interface Sub2APIModelCatalogPricingDetails {
+  supports_prompt_caching: boolean;
+  has_long_context_multiplier: boolean;
+  long_context_input_threshold: number;
+  intervals: Sub2APIModelCatalogPriceInterval[];
+}
+
+export interface Sub2APIModelCatalogGroupCompanion {
+  group: Sub2APIModelCatalogGroupRef;
+  effective_pricing_usd: Sub2APIModelCatalogPrice;
+  comparison: Sub2APIModelCatalogComparison;
+}
+
 export interface Sub2APIModelCatalogItem {
   model: string;
   display_name: string;
@@ -114,11 +139,67 @@ export interface Sub2APIModelCatalogItem {
   official_pricing: Sub2APIModelCatalogPrice;
   effective_pricing_usd: Sub2APIModelCatalogPrice;
   comparison: Sub2APIModelCatalogComparison;
+  pricing_details: Sub2APIModelCatalogPricingDetails;
+  other_groups: Sub2APIModelCatalogGroupCompanion[];
 }
 
 export interface Sub2APIModelCatalog {
   items: Sub2APIModelCatalogItem[];
   summary: Sub2APIModelCatalogSummary;
+}
+
+export interface Sub2APIGroupStatusItem {
+  group_id: number;
+  group_name: string;
+  latest_status: string;
+  stable_status: string;
+  latency_ms: number | null;
+  availability_24h: number | null;
+  availability_7d: number | null;
+  observed_at: string | null;
+}
+
+export interface Sub2APIReferralStats {
+  total_count: number;
+  rewarded_count: number;
+  pending_count: number;
+  total_balance_earn: number;
+}
+
+export interface Sub2APIReferralRewards {
+  enabled: boolean;
+  referrer_balance_reward: number;
+  referee_balance_reward: number;
+  referrer_subscription_days: number;
+  referee_subscription_days: number;
+}
+
+export interface Sub2APIReferralInfo {
+  referral_code: string;
+  referral_link: string;
+  stats: Sub2APIReferralStats;
+  rewards: Sub2APIReferralRewards | null;
+}
+
+export interface Sub2APIUserReferral {
+  id: number;
+  referrer_id: number;
+  referee_id: number;
+  referee_username: string;
+  status: string;
+  referrer_balance_reward: number;
+  referee_balance_reward: number;
+  referrer_rewarded_at: string | null;
+  referee_rewarded_at: string | null;
+  created_at: string;
+}
+
+export interface Sub2APIRedeemResult {
+  message: string;
+  type: string;
+  value: number;
+  new_balance?: number;
+  new_concurrency?: number;
 }
 
 export interface Sub2APICreateKeyRequest {
@@ -141,6 +222,13 @@ export interface Sub2APIClient {
   getAvailableGroups: () => Promise<Sub2APIGroup[]>;
   getModelCatalog: () => Promise<Sub2APIModelCatalog>;
   getUsageStats: (period: Sub2APIUsagePeriod) => Promise<Sub2APIUsageStats>;
+  getGroupStatuses: () => Promise<Sub2APIGroupStatusItem[]>;
+  getReferralInfo: () => Promise<Sub2APIReferralInfo>;
+  getReferralHistory: (
+    page?: number,
+    pageSize?: number,
+  ) => Promise<Sub2APIPaginatedData<Sub2APIUserReferral>>;
+  redeemCode: (code: string) => Promise<Sub2APIRedeemResult>;
 }
 
 export class Sub2APIClientError extends Error {
@@ -319,6 +407,23 @@ export function createSub2APIClient(input: {
     },
     async getUsageStats(period) {
       return await request<Sub2APIUsageStats>(`/usage/stats?period=${encodeURIComponent(period)}`);
+    },
+    async getGroupStatuses() {
+      return await request<Sub2APIGroupStatusItem[]>("/group-status");
+    },
+    async getReferralInfo() {
+      return await request<Sub2APIReferralInfo>("/referral/info");
+    },
+    async getReferralHistory(page = 1, pageSize = 20) {
+      return await request<Sub2APIPaginatedData<Sub2APIUserReferral>>(
+        `/referral/history?page=${encodeURIComponent(String(page))}&page_size=${encodeURIComponent(String(pageSize))}`,
+      );
+    },
+    async redeemCode(code) {
+      return await request<Sub2APIRedeemResult>("/redeem", {
+        method: "POST",
+        body: { code },
+      });
     },
   };
 }

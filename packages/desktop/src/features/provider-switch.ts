@@ -122,6 +122,157 @@ export function normalizeProvider(input: StoredProvider): StoredProvider {
   };
 }
 
+type LegacyDualTargetIdMapping = {
+  claudeId: string;
+  codexId: string;
+};
+
+type LegacyDualTargetMigrationResult = {
+  providers: StoredProvider[];
+  idMappings: Map<string, LegacyDualTargetIdMapping>;
+  changed: boolean;
+};
+
+type ManagedScopedDedupResult = {
+  providers: StoredProvider[];
+  idMappings: Map<string, string>;
+  changed: boolean;
+};
+
+function nextUniqueProviderId(baseId: string, usedIds: Set<string>): string {
+  if (!usedIds.has(baseId)) {
+    usedIds.add(baseId);
+    return baseId;
+  }
+  let n = 2;
+  while (usedIds.has(`${baseId}-${n}`)) {
+    n += 1;
+  }
+  const id = `${baseId}-${n}`;
+  usedIds.add(id);
+  return id;
+}
+
+function scopedProviderName(name: string, scope: ManagedProviderTarget): string {
+  const base = name.trim().replace(/\s+\((Claude Code|Codex)\)\s*$/u, "");
+  return scope === "claude" ? `${base} (Claude Code)` : `${base} (Codex)`;
+}
+
+/**
+ * Legacy store rows without `target` behaved as dual-CLI rows.
+ * We no longer support one row writing both CLIs, so we split them into scoped rows.
+ */
+function migrateLegacyDualTargetProviders(
+  providers: StoredProvider[],
+): LegacyDualTargetMigrationResult {
+  const usedIds = new Set<string>();
+  const migrated: StoredProvider[] = [];
+  const idMappings = new Map<string, LegacyDualTargetIdMapping>();
+  let changed = false;
+
+  for (const provider of providers) {
+    if (provider.target === "claude" || provider.target === "codex") {
+      const id = nextUniqueProviderId(provider.id, usedIds);
+      if (id !== provider.id) {
+        changed = true;
+      }
+      migrated.push(id === provider.id ? provider : { ...provider, id });
+      continue;
+    }
+
+    changed = true;
+    const legacyId = provider.id;
+    const claudeBaseId =
+      legacyId === DEFAULT_PROVIDER_ID ? PASEO_MANAGED_CLAUDE_PROVIDER_ID : `${legacyId}-claude`;
+    const codexBaseId =
+      legacyId === DEFAULT_PROVIDER_ID ? PASEO_MANAGED_CODEX_PROVIDER_ID : `${legacyId}-codex`;
+
+    const claudeId = nextUniqueProviderId(claudeBaseId, usedIds);
+    const codexId = nextUniqueProviderId(codexBaseId, usedIds);
+    idMappings.set(legacyId, { claudeId, codexId });
+
+    migrated.push(
+      normalizeProvider({
+        ...provider,
+        id: claudeId,
+        name: scopedProviderName(provider.name, "claude"),
+        target: "claude",
+        claudeApiFormat: provider.claudeApiFormat ?? "anthropic",
+      }),
+      normalizeProvider({
+        ...provider,
+        id: codexId,
+        name: scopedProviderName(provider.name, "codex"),
+        target: "codex",
+        codexWireApi: provider.codexWireApi ?? "responses",
+      }),
+    );
+  }
+
+  return {
+    providers: migrated,
+    idMappings,
+    changed,
+  };
+}
+
+function dedupeManagedScopedProviders(providers: StoredProvider[]): ManagedScopedDedupResult {
+  const result: StoredProvider[] = [];
+  const idMappings = new Map<string, string>();
+  let changed = false;
+
+  const nonManagedProviders = providers.filter(
+    (provider) =>
+      !(provider.isDefault && (provider.target === "claude" || provider.target === "codex")),
+  );
+  const nonManagedIds = new Set(nonManagedProviders.map((provider) => provider.id));
+
+  for (const provider of nonManagedProviders) {
+    result.push(provider);
+  }
+
+  const dedupeScope = (scope: ManagedProviderTarget, canonicalId: string): void => {
+    const scoped = providers.filter((provider) => provider.isDefault && provider.target === scope);
+    if (scoped.length === 0) {
+      return;
+    }
+
+    const canonicalExisting = scoped.find((provider) => provider.id === canonicalId) ?? null;
+    const winner = canonicalExisting ?? scoped[0]!;
+    let winnerId = winner.id;
+    let winnerOut = winner;
+
+    if (winner.id !== canonicalId && !nonManagedIds.has(canonicalId)) {
+      winnerId = canonicalId;
+      winnerOut = normalizeProvider({
+        ...winner,
+        id: canonicalId,
+      });
+      idMappings.set(winner.id, canonicalId);
+      changed = true;
+    }
+
+    result.push(winnerOut);
+
+    for (const provider of scoped) {
+      if (provider.id === winner.id) {
+        continue;
+      }
+      idMappings.set(provider.id, winnerId);
+      changed = true;
+    }
+  };
+
+  dedupeScope("claude", PASEO_MANAGED_CLAUDE_PROVIDER_ID);
+  dedupeScope("codex", PASEO_MANAGED_CODEX_PROVIDER_ID);
+
+  return {
+    providers: result,
+    idMappings,
+    changed,
+  };
+}
+
 function providerEndpointBaseUrl(endpoint: string): string {
   const normalized = normalizeProviderEndpoint(endpoint);
   if (!normalized) {
@@ -381,28 +532,59 @@ async function loadStore(): Promise<ProviderStore> {
     const parsed: unknown = JSON.parse(raw);
     const parsedRecord = isRecord(parsed) ? parsed : {};
     const providersInput = Array.isArray(parsedRecord.providers) ? parsedRecord.providers : [];
-    const providers = providersInput.map((p) => normalizeProvider(p as StoredProvider));
-    const legacyActive =
-      typeof parsedRecord.activeProviderId === "string" &&
-      providers.some((provider) => provider.id === parsedRecord.activeProviderId)
-        ? parsedRecord.activeProviderId
-        : null;
+    const normalizedProviders = providersInput.map((p) => normalizeProvider(p as StoredProvider));
+    const migration = migrateLegacyDualTargetProviders(normalizedProviders);
+    const deduped = dedupeManagedScopedProviders(migration.providers);
+    const providers = deduped.providers;
 
-    const readScopedActive = (key: string): string | null => {
-      const raw = parsedRecord[key];
-      if (typeof raw !== "string" || !providers.some((p) => p.id === raw)) {
-        return null;
-      }
-      return raw;
+    const mapManagedScopedId = (id: string): string => deduped.idMappings.get(id) ?? id;
+
+    const mapLegacyIdForScope = (id: string, scope: ManagedProviderTarget): string => {
+      const mapping = migration.idMappings.get(id);
+      const migratedId = mapping ? (scope === "claude" ? mapping.claudeId : mapping.codexId) : id;
+      return mapManagedScopedId(migratedId);
     };
 
-    const scopedClaudeActive = readScopedActive("activeClaudeProviderId");
-    const scopedCodexActive = readScopedActive("activeCodexProviderId");
-    const hasScopedActive = scopedClaudeActive !== null || scopedCodexActive !== null;
-    const legacyFallback = hasScopedActive ? null : legacyActive;
+    const legacyActiveRaw =
+      typeof parsedRecord.activeProviderId === "string" ? parsedRecord.activeProviderId : null;
+    const legacyActiveMapping = legacyActiveRaw
+      ? (migration.idMappings.get(legacyActiveRaw) ?? null)
+      : null;
+    const legacyActive =
+      legacyActiveRaw !== null
+        ? (() => {
+            const mapped = mapLegacyIdForScope(legacyActiveRaw, "claude");
+            return providers.some((provider) => provider.id === mapped) ? mapped : null;
+          })()
+        : null;
 
-    let activeClaudeProviderId = scopedClaudeActive ?? legacyFallback;
-    let activeCodexProviderId = scopedCodexActive ?? legacyFallback;
+    const readScopedActive = (key: string, scope: ManagedProviderTarget): string | null => {
+      const rawId = parsedRecord[key];
+      if (typeof rawId !== "string") {
+        return null;
+      }
+      const mappedId = mapLegacyIdForScope(rawId, scope);
+      if (!providers.some((p) => p.id === mappedId)) {
+        return null;
+      }
+      return mappedId;
+    };
+
+    const scopedClaudeActive = readScopedActive("activeClaudeProviderId", "claude");
+    const scopedCodexActive = readScopedActive("activeCodexProviderId", "codex");
+    const hasScopedActive = scopedClaudeActive !== null || scopedCodexActive !== null;
+    let activeClaudeProviderId: string | null;
+    let activeCodexProviderId: string | null;
+    if (hasScopedActive) {
+      activeClaudeProviderId = scopedClaudeActive;
+      activeCodexProviderId = scopedCodexActive;
+    } else if (legacyActiveMapping !== null) {
+      activeClaudeProviderId = mapManagedScopedId(legacyActiveMapping.claudeId);
+      activeCodexProviderId = mapManagedScopedId(legacyActiveMapping.codexId);
+    } else {
+      activeClaudeProviderId = legacyActive;
+      activeCodexProviderId = legacyActive;
+    }
 
     const diskClaudeId = await inferActiveClaudeProviderIdFromDisk(
       providers,
@@ -430,10 +612,13 @@ async function loadStore(): Promise<ProviderStore> {
       activeCodexProviderId,
     };
     const shouldPersistNormalizedStore =
+      migration.changed ||
+      deduped.changed ||
       !Array.isArray(parsedRecord.providers) ||
       parsedRecord.activeProviderId !== activeProviderId ||
       parsedRecord.activeClaudeProviderId !== activeClaudeProviderId ||
       parsedRecord.activeCodexProviderId !== activeCodexProviderId ||
+      providers.length !== providersInput.length ||
       providers.some((provider, index) => {
         const original = providersInput[index];
         return providerNeedsReNormalize(original, provider);

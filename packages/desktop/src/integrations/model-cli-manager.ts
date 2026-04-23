@@ -234,12 +234,11 @@ async function readNodeStatus(
       npmVersion,
       satisfies: major !== null && major >= REQUIRED_NODE_MAJOR,
       manager,
-      error:
-        nodeVersion
-          ? null
-          : trimToNull(nodeProbe?.stderr) ??
-            trimToNull(npmProbe?.stderr) ??
-            "Node.js was not found.",
+      error: nodeVersion
+        ? null
+        : (trimToNull(nodeProbe?.stderr) ??
+          trimToNull(npmProbe?.stderr) ??
+          "Node.js was not found."),
     };
   }
 
@@ -409,7 +408,10 @@ async function ensureWindowsGitBash(options?: ShellOptions): Promise<{
     attempts.push({ name: "scoop", command: buildWindowsGitBashScoopInstallCommand() });
   }
   if (await commandExists("powershell")) {
-    attempts.push({ name: "powershell-direct", command: buildWindowsGitBashDirectInstallCommand() });
+    attempts.push({
+      name: "powershell-direct",
+      command: buildWindowsGitBashDirectInstallCommand(),
+    });
   }
 
   if (attempts.length === 0) {

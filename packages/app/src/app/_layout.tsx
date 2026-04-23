@@ -868,8 +868,7 @@ function RootStack() {
   const { settings } = useAppSettings();
   const { isLoggedIn } = useSub2APIAuth();
   const accessGranted =
-    settings.accessMode === "byok" ||
-    (settings.accessMode === "builtin" && isLoggedIn);
+    settings.accessMode === "byok" || (settings.accessMode === "builtin" && isLoggedIn);
   return (
     <Stack
       screenOptions={{

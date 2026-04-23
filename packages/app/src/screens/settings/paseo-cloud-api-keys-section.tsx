@@ -73,8 +73,8 @@ export function PaseoCloudApiKeysSection({
   const scopeMeta = getManagedCloudMetaForScope(activeScope);
   const activeScopeApiKey =
     activeScope === "claude"
-      ? activeClaudeProvider?.apiKey?.trim() ?? null
-      : activeCodexProvider?.apiKey?.trim() ?? null;
+      ? (activeClaudeProvider?.apiKey?.trim() ?? null)
+      : (activeCodexProvider?.apiKey?.trim() ?? null);
 
   const groupsByScope = useMemo(
     () => ({
@@ -223,14 +223,7 @@ export function PaseoCloudApiKeysSection({
     } catch (error) {
       Alert.alert(editingKey ? "Update failed" : "Create key failed", getErrorMessage(error));
     }
-  }, [
-    closeModal,
-    createKeyMutation,
-    draftGroupId,
-    draftName,
-    editingKey,
-    updateKeyMutation,
-  ]);
+  }, [closeModal, createKeyMutation, draftGroupId, draftName, editingKey, updateKeyMutation]);
 
   const handleUseKey = useCallback(
     async (key: Sub2APIKey) => {
@@ -261,7 +254,14 @@ export function PaseoCloudApiKeysSection({
         setSwitchingKeyId(null);
       }
     },
-    [activeScope, groups, keyRoutes, scopeMeta.cliLabel, scopeMeta.configTarget, setupDefaultProviderWithKey],
+    [
+      activeScope,
+      groups,
+      keyRoutes,
+      scopeMeta.cliLabel,
+      scopeMeta.configTarget,
+      setupDefaultProviderWithKey,
+    ],
   );
 
   const handleDeleteKey = useCallback(
@@ -364,7 +364,8 @@ export function PaseoCloudApiKeysSection({
           ) : (
             <View style={styles.keyRowList}>
               {filteredKeys.map((key) => {
-                const keyRoute = keyRoutes.get(key.id) ?? resolveManagedCloudRouteForKey(key, groups);
+                const keyRoute =
+                  keyRoutes.get(key.id) ?? resolveManagedCloudRouteForKey(key, groups);
                 const trimmedKey = key.key.trim();
                 const activeForScope = activeScopeApiKey === trimmedKey;
                 const applying = switchingKeyId === key.id;
@@ -409,13 +410,21 @@ export function PaseoCloudApiKeysSection({
                           (applying || switchingKeyId !== null || !keyRoute.ok) &&
                             styles.disabledButton,
                         ]}
-                        disabled={activeForScope || applying || switchingKeyId !== null || !keyRoute.ok}
+                        disabled={
+                          activeForScope || applying || switchingKeyId !== null || !keyRoute.ok
+                        }
                         testID={`sub2api-use-key-${activeScope}-${key.id}`}
                       >
                         <Text
-                          style={activeForScope ? styles.useKeyButtonUsedText : styles.primaryButtonText}
+                          style={
+                            activeForScope ? styles.useKeyButtonUsedText : styles.primaryButtonText
+                          }
                         >
-                          {applying ? "Applying…" : activeForScope ? `Active · ${scopeMeta.cliLabel}` : "Use key"}
+                          {applying
+                            ? "Applying…"
+                            : activeForScope
+                              ? `Active · ${scopeMeta.cliLabel}`
+                              : "Use key"}
                         </Text>
                       </Pressable>
                       <Pressable
@@ -492,7 +501,9 @@ export function PaseoCloudApiKeysSection({
                 updateKeyMutation.isPending) &&
                 styles.disabledButton,
             ]}
-            disabled={draftGroupId === null || createKeyMutation.isPending || updateKeyMutation.isPending}
+            disabled={
+              draftGroupId === null || createKeyMutation.isPending || updateKeyMutation.isPending
+            }
           >
             <Text style={styles.primaryButtonText}>
               {createKeyMutation.isPending || updateKeyMutation.isPending

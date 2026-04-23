@@ -12,8 +12,8 @@ export function ManagedProviderSettingsPage() {
       <SettingsSection title="This device">
         <View style={[settingsStyles.card, { padding: theme.spacing[4], gap: theme.spacing[2] }]}>
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm }}>
-            Active Claude Code and Codex API routes on this computer, plus saved and custom endpoints.
-            You can point each CLI at a different saved entry.
+            Active Claude Code and Codex API routes on this computer, plus saved and custom
+            endpoints. You can point each CLI at a different saved entry.
           </Text>
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs }}>
             Paseo Cloud (account, keys, billing) lives in the sidebar under{" "}

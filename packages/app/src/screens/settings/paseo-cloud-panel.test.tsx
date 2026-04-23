@@ -105,12 +105,7 @@ vi.mock("@/screens/settings/desktop-providers-context", () => ({
 
 vi.mock("@/screens/settings/settings-section", () => ({
   SettingsSection: ({ title, children }: any) =>
-    React.createElement(
-      "section",
-      null,
-      React.createElement("h2", null, title),
-      children,
-    ),
+    React.createElement("section", null, React.createElement("h2", null, title), children),
 }));
 
 vi.mock("@/screens/settings/paseo-cloud-api-keys-section", () => ({
@@ -122,8 +117,7 @@ vi.mock("@/screens/settings/paseo-cloud-routing-section", () => ({
 }));
 
 vi.mock("@/screens/settings/sub2api-models-section", () => ({
-  Sub2APIModelsSection: () =>
-    React.createElement("div", null, "Model catalog section content"),
+  Sub2APIModelsSection: () => React.createElement("div", null, "Model catalog section content"),
 }));
 
 vi.mock("@/screens/settings/sub2api-pay-modal", () => ({

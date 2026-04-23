@@ -49,7 +49,8 @@ export function resolveScopedActiveProviderIds(store: ProviderStore): {
   claude: string | null;
   codex: string | null;
 } {
-  const hasScopedIds = store.activeClaudeProviderId !== null || store.activeCodexProviderId !== null;
+  const hasScopedIds =
+    store.activeClaudeProviderId !== null || store.activeCodexProviderId !== null;
   const legacyFallback = hasScopedIds ? null : (store.activeProviderId ?? null);
   return {
     claude: store.activeClaudeProviderId ?? legacyFallback,
@@ -238,7 +239,9 @@ export function DesktopProvidersStoreProvider({ children }: { children: ReactNod
     ],
   );
 
-  return <DesktopProvidersContext.Provider value={value}>{children}</DesktopProvidersContext.Provider>;
+  return (
+    <DesktopProvidersContext.Provider value={value}>{children}</DesktopProvidersContext.Provider>
+  );
 }
 
 export function useDesktopProvidersStore(): DesktopProvidersStoreValue {

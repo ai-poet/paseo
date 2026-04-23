@@ -146,7 +146,10 @@ export function ModeSelectScreen() {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.container,
-          { paddingTop: theme.spacing[6] + insets.top, paddingBottom: theme.spacing[6] + insets.bottom },
+          {
+            paddingTop: theme.spacing[6] + insets.top,
+            paddingBottom: theme.spacing[6] + insets.bottom,
+          },
         ]}
         showsVerticalScrollIndicator={false}
         testID="mode-select-screen"

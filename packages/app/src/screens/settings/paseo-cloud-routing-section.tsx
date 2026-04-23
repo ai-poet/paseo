@@ -43,11 +43,7 @@ export function PaseoCloudRoutingSection({
   authEndpoint,
   serviceEndpoint,
 }: PaseoCloudRoutingSectionProps) {
-  const {
-    loadProviders,
-    activeClaudeProvider,
-    activeCodexProvider,
-  } = useDesktopProvidersStore();
+  const { loadProviders, activeClaudeProvider, activeCodexProvider } = useDesktopProvidersStore();
   const [activeScope, setActiveScope] = useState<ManagedCloudDesktopScope>("claude");
   const [switchingGroupId, setSwitchingGroupId] = useState<number | null>(null);
   const groupsQuery = useSub2APIAvailableGroups();
@@ -59,8 +55,8 @@ export function PaseoCloudRoutingSection({
   const scopeMeta = getManagedCloudMetaForScope(activeScope);
   const activeScopeApiKey =
     activeScope === "claude"
-      ? activeClaudeProvider?.apiKey?.trim() ?? null
-      : activeCodexProvider?.apiKey?.trim() ?? null;
+      ? (activeClaudeProvider?.apiKey?.trim() ?? null)
+      : (activeCodexProvider?.apiKey?.trim() ?? null);
 
   const scopedGroups = useMemo(
     () =>
@@ -87,7 +83,7 @@ export function PaseoCloudRoutingSection({
         const activeKey =
           activeScopeApiKey == null
             ? null
-            : groupKeys.find((key) => key.key.trim() === activeScopeApiKey) ?? null;
+            : (groupKeys.find((key) => key.key.trim() === activeScopeApiKey) ?? null);
         return {
           group,
           groupKeys,
@@ -159,7 +155,16 @@ export function PaseoCloudRoutingSection({
         setSwitchingGroupId(null);
       }
     },
-    [activeScope, createKeyMutation, groups, keys, keysQuery, scopeMeta.cliLabel, scopeMeta.configTarget, setupDefaultProviderWithKey],
+    [
+      activeScope,
+      createKeyMutation,
+      groups,
+      keys,
+      keysQuery,
+      scopeMeta.cliLabel,
+      scopeMeta.configTarget,
+      setupDefaultProviderWithKey,
+    ],
   );
 
   return (
@@ -218,7 +223,8 @@ export function PaseoCloudRoutingSection({
                       </Text>
                     ) : groupKeys.length > 0 ? (
                       <Text style={styles.usageHint}>
-                        {groupKeys.length} key{groupKeys.length === 1 ? "" : "s"} available for reuse
+                        {groupKeys.length} key{groupKeys.length === 1 ? "" : "s"} available for
+                        reuse
                       </Text>
                     ) : (
                       <Text style={styles.usageHint}>
@@ -234,7 +240,8 @@ export function PaseoCloudRoutingSection({
                     style={({ pressed }) => [
                       activeKey ? styles.useKeyButtonUsed : styles.primaryButton,
                       pressed && !activeKey && styles.buttonPressed,
-                      (activeKey || isApplying || switchingGroupId !== null) && styles.disabledButton,
+                      (activeKey || isApplying || switchingGroupId !== null) &&
+                        styles.disabledButton,
                     ]}
                     disabled={activeKey !== null || isApplying || switchingGroupId !== null}
                     testID={`sub2api-use-group-${activeScope}-${group.id}`}
@@ -242,7 +249,11 @@ export function PaseoCloudRoutingSection({
                     <Text
                       style={activeKey ? styles.useKeyButtonUsedText : styles.primaryButtonText}
                     >
-                      {isApplying ? "Applying…" : activeKey ? `Active · ${scopeMeta.cliLabel}` : "Use group"}
+                      {isApplying
+                        ? "Applying…"
+                        : activeKey
+                          ? `Active · ${scopeMeta.cliLabel}`
+                          : "Use group"}
                     </Text>
                   </Pressable>
                 </View>

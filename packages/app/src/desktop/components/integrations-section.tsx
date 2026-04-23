@@ -205,7 +205,8 @@ export function IntegrationsSection() {
       ? RUNTIME_STATUS_UNAVAILABLE
       : modelCliStatus?.codex.installed
         ? `Codex ${modelCliStatus.codex.version ?? "installed"}`
-        : (modelCliStatus?.codex.error ?? "Install the Codex CLI into the managed Node 22 runtime.");
+        : (modelCliStatus?.codex.error ??
+          "Install the Codex CLI into the managed Node 22 runtime.");
   const claudeHint = integrationCheckPending
     ? CHECKING_ENV_MESSAGE
     : modelRuntimeUnavailable

@@ -111,12 +111,7 @@ export function LoginScreen() {
   const injectedServiceUrl = getManagedServiceUrlFromEnv();
   const explicitServiceUrlEnv = hasExplicitManagedServiceUrlEnv();
 
-  const {
-    canStartLogin,
-    isLoggedIn,
-    handleGitHubLogin,
-    isInFlight,
-  } = useSub2APILoginFlow({
+  const { canStartLogin, isLoggedIn, handleGitHubLogin, isInFlight } = useSub2APILoginFlow({
     defaultEndpoint: injectedServiceUrl,
     onLoginSuccess: () => {
       router.replace("/");
@@ -143,7 +138,10 @@ export function LoginScreen() {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.container,
-          { paddingTop: theme.spacing[6] + insets.top, paddingBottom: theme.spacing[6] + insets.bottom },
+          {
+            paddingTop: theme.spacing[6] + insets.top,
+            paddingBottom: theme.spacing[6] + insets.bottom,
+          },
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -154,7 +152,8 @@ export function LoginScreen() {
           <View style={styles.copyBlock}>
             <Text style={styles.title}>Sign in to Paseo</Text>
             <Text style={styles.subtitle}>
-              Sign in with GitHub for Paseo Cloud. We configure Claude Code and Codex routes for you.
+              Sign in with GitHub for Paseo Cloud. We configure Claude Code and Codex routes for
+              you.
             </Text>
           </View>
 

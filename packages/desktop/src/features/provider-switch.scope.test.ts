@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -126,6 +126,118 @@ describe("setupDefaultProvider scoped writes", () => {
 
     const providers = await mod.getProviders();
     expect(providers.activeClaudeProviderId).toBeNull();
+    expect(providers.activeCodexProviderId).toBe(mod.PASEO_MANAGED_CODEX_PROVIDER_ID);
+  });
+
+  it("migrates legacy unscoped default rows into scoped Claude/Codex rows", async () => {
+    const mod = await import("./provider-switch");
+    const storePath = join(mockedHome.dir, ".paseo", "providers.json");
+    await mkdir(join(mockedHome.dir, ".paseo"), { recursive: true });
+    await writeFile(
+      storePath,
+      JSON.stringify(
+        {
+          providers: [
+            {
+              id: mod.DEFAULT_PROVIDER_ID,
+              name: "Legacy Route",
+              type: "default",
+              endpoint: "https://api.example.com",
+              apiKey: "sk-legacy",
+              isDefault: true,
+            },
+          ],
+          activeProviderId: mod.DEFAULT_PROVIDER_ID,
+          activeClaudeProviderId: null,
+          activeCodexProviderId: null,
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const providers = await mod.getProviders();
+    expect(providers.providers.some((p) => p.target === undefined)).toBe(false);
+    expect(providers.providers.some((p) => p.id === mod.PASEO_MANAGED_CLAUDE_PROVIDER_ID)).toBe(
+      true,
+    );
+    expect(providers.providers.some((p) => p.id === mod.PASEO_MANAGED_CODEX_PROVIDER_ID)).toBe(
+      true,
+    );
+    expect(providers.activeClaudeProviderId).toBe(mod.PASEO_MANAGED_CLAUDE_PROVIDER_ID);
+    expect(providers.activeCodexProviderId).toBe(mod.PASEO_MANAGED_CODEX_PROVIDER_ID);
+  });
+
+  it("deduplicates duplicated managed scoped rows into one row per CLI", async () => {
+    const mod = await import("./provider-switch");
+    const storePath = join(mockedHome.dir, ".paseo", "providers.json");
+    await mkdir(join(mockedHome.dir, ".paseo"), { recursive: true });
+    await writeFile(
+      storePath,
+      JSON.stringify(
+        {
+          providers: [
+            {
+              id: "dup-claude",
+              name: "OpenAI (Claude Code)",
+              type: "default",
+              endpoint: "https://api.example.com",
+              apiKey: "sk-dup-claude",
+              isDefault: true,
+              target: "claude",
+            },
+            {
+              id: mod.PASEO_MANAGED_CLAUDE_PROVIDER_ID,
+              name: "Anthropic",
+              type: "default",
+              endpoint: "https://api.example.com",
+              apiKey: "sk-main-claude",
+              isDefault: true,
+              target: "claude",
+            },
+            {
+              id: "dup-codex",
+              name: "OpenAI",
+              type: "default",
+              endpoint: "https://api.example.com",
+              apiKey: "sk-dup-codex",
+              isDefault: true,
+              target: "codex",
+            },
+            {
+              id: mod.PASEO_MANAGED_CODEX_PROVIDER_ID,
+              name: "OpenAI",
+              type: "default",
+              endpoint: "https://api.example.com",
+              apiKey: "sk-main-codex",
+              isDefault: true,
+              target: "codex",
+            },
+          ],
+          activeProviderId: null,
+          activeClaudeProviderId: "dup-claude",
+          activeCodexProviderId: "dup-codex",
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const providers = await mod.getProviders();
+    const claudeRows = providers.providers.filter(
+      (provider) => provider.isDefault && provider.target === "claude",
+    );
+    const codexRows = providers.providers.filter(
+      (provider) => provider.isDefault && provider.target === "codex",
+    );
+
+    expect(claudeRows).toHaveLength(1);
+    expect(codexRows).toHaveLength(1);
+    expect(claudeRows[0]?.id).toBe(mod.PASEO_MANAGED_CLAUDE_PROVIDER_ID);
+    expect(codexRows[0]?.id).toBe(mod.PASEO_MANAGED_CODEX_PROVIDER_ID);
+    expect(providers.activeClaudeProviderId).toBe(mod.PASEO_MANAGED_CLAUDE_PROVIDER_ID);
     expect(providers.activeCodexProviderId).toBe(mod.PASEO_MANAGED_CODEX_PROVIDER_ID);
   });
 });

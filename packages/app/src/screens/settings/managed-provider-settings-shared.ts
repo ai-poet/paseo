@@ -1,12 +1,15 @@
 import type { SegmentedControlOption } from "@/components/ui/segmented-control";
-import type { DesktopProviderPayload, ManagedProviderTarget } from "@/screens/settings/sub2api-provider-types";
+import type {
+  DesktopProviderPayload,
+  ManagedProviderTarget,
+} from "@/screens/settings/sub2api-provider-types";
 
 export function providerWritesClaude(p: { target?: ManagedProviderTarget }): boolean {
-  return p.target === undefined || p.target === "claude";
+  return p.target === "claude";
 }
 
 export function providerWritesCodex(p: { target?: ManagedProviderTarget }): boolean {
-  return p.target === undefined || p.target === "codex";
+  return p.target === "codex";
 }
 
 export function providerTargetHint(p: DesktopProviderPayload): string {
@@ -16,7 +19,7 @@ export function providerTargetHint(p: DesktopProviderPayload): string {
   if (p.target === "codex") {
     return "Codex · Responses";
   }
-  return "Claude Code + Codex";
+  return "Legacy unscoped endpoint";
 }
 
 export const CUSTOM_TARGET_SEGMENT_OPTIONS: SegmentedControlOption<ManagedProviderTarget>[] = [

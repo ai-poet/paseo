@@ -25,13 +25,7 @@ function RouteHeroCard({
   provider: DesktopProviderPayload | null;
 }) {
   return (
-    <View
-      style={[
-        settingsStyles.card,
-        styles.cardBody,
-        provider ? styles.heroCardActive : null,
-      ]}
-    >
+    <View style={[settingsStyles.card, styles.cardBody, provider ? styles.heroCardActive : null]}>
       {provider ? (
         <>
           <View style={styles.heroTitleRow}>
@@ -91,10 +85,9 @@ export function DesktopProvidersPanel() {
 
       <SettingsSection title="Active routes">
         <Text style={[styles.sectionHint, { marginBottom: theme.spacing[2] }]}>
-          Claude Code and Codex are switched independently. An entry that targets both CLIs updates
-          both when you use the matching button. On each load we reconcile these rows with your
-          on-disk CLI config (~/.claude/settings.json and ~/.codex/) so the highlighted entry matches
-          what Codex and Claude would actually use.
+          Claude Code and Codex are switched independently. Each saved endpoint targets one CLI. On
+          each load we reconcile rows with your on-disk CLI config (~/.claude/settings.json and
+          ~/.codex/) so the highlighted entry matches what Codex and Claude would actually use.
         </Text>
         <View style={styles.routeHeroStack}>
           <RouteHeroCard label="Claude Code" provider={activeClaudeProvider} />
@@ -108,7 +101,7 @@ export function DesktopProvidersPanel() {
             <Text style={styles.emptyTitle}>No saved endpoints</Text>
             <Text style={styles.emptyBody}>
               {isByok
-                ? "Add a custom provider below. Each entry can target Claude Code only, Codex only, or both."
+                ? "Add a custom provider below. Each entry targets Claude Code only or Codex only."
                 : "After you apply a cloud key, your default route appears here. Add custom endpoints below when you use another base URL or wire format."}
             </Text>
           </View>
@@ -129,12 +122,8 @@ export function DesktopProvidersPanel() {
                     <Text style={settingsStyles.rowHint}>{provider.endpoint}</Text>
                     <Text style={styles.providerMetaHint}>{providerTargetHint(provider)}</Text>
                     <View style={[styles.scopeActionsRow, { marginTop: theme.spacing[1] }]}>
-                      {claudeActive ? (
-                        <Text style={styles.scopeBadge}>Claude active</Text>
-                      ) : null}
-                      {codexActive ? (
-                        <Text style={styles.scopeBadge}>Codex active</Text>
-                      ) : null}
+                      {claudeActive ? <Text style={styles.scopeBadge}>Claude active</Text> : null}
+                      {codexActive ? <Text style={styles.scopeBadge}>Codex active</Text> : null}
                     </View>
                   </View>
                   <View style={[styles.providerActions, { flexWrap: "wrap", maxWidth: 200 }]}>
@@ -169,7 +158,10 @@ export function DesktopProvidersPanel() {
                     {!provider.isDefault ? (
                       <Pressable
                         onPress={() => void handleRemoveProvider(provider.id)}
-                        style={({ pressed }) => [styles.removeButton, pressed && styles.buttonPressed]}
+                        style={({ pressed }) => [
+                          styles.removeButton,
+                          pressed && styles.buttonPressed,
+                        ]}
                       >
                         <Text style={styles.removeButtonText}>Remove</Text>
                       </Pressable>

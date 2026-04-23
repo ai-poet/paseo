@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { normalizeProviderEndpoint, resolveActiveCodexIdFromDiskState, type StoredProvider } from "./provider-switch";
+import {
+  normalizeProviderEndpoint,
+  resolveActiveCodexIdFromDiskState,
+  type StoredProvider,
+} from "./provider-switch";
 
 describe("resolveActiveCodexIdFromDiskState", () => {
   const mkProvider = (overrides: Partial<StoredProvider>): StoredProvider => ({

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { DesktopProviderPayload } from "@/screens/settings/sub2api-provider-types";
-import { providerTargetHint } from "./managed-provider-settings-shared";
+import {
+  providerTargetHint,
+  providerWritesClaude,
+  providerWritesCodex,
+} from "./managed-provider-settings-shared";
 
 function createProvider(overrides: Partial<DesktopProviderPayload> = {}): DesktopProviderPayload {
   return {
@@ -25,7 +29,26 @@ describe("providerTargetHint", () => {
     expect(providerTargetHint(createProvider({ target: "codex" }))).toBe("Codex · Responses");
   });
 
-  it("keeps legacy unscoped rows as dual-CLI", () => {
-    expect(providerTargetHint(createProvider({ target: undefined }))).toBe("Claude Code + Codex");
+  it("flags legacy unscoped rows", () => {
+    expect(providerTargetHint(createProvider({ target: undefined }))).toBe(
+      "Legacy unscoped endpoint",
+    );
+  });
+});
+
+describe("provider write scopes", () => {
+  it("writes Claude only when target is claude", () => {
+    expect(providerWritesClaude(createProvider({ target: "claude" }))).toBe(true);
+    expect(providerWritesCodex(createProvider({ target: "claude" }))).toBe(false);
+  });
+
+  it("writes Codex only when target is codex", () => {
+    expect(providerWritesClaude(createProvider({ target: "codex" }))).toBe(false);
+    expect(providerWritesCodex(createProvider({ target: "codex" }))).toBe(true);
+  });
+
+  it("does not expose legacy unscoped rows as usable write targets", () => {
+    expect(providerWritesClaude(createProvider({ target: undefined }))).toBe(false);
+    expect(providerWritesCodex(createProvider({ target: undefined }))).toBe(false);
   });
 });

@@ -17,7 +17,7 @@ export interface DesktopProviderPayload {
   endpoint: string;
   apiKey: string;
   isDefault: boolean;
-  /** Omitted on managed default = applies to both CLIs. */
+  /** Legacy rows may omit this before migration; new rows are always scoped. */
   target?: ManagedProviderTarget;
   claudeApiFormat?: ClaudeApiFormat;
   codexWireApi?: CodexWireApi;
