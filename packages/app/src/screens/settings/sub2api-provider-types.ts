@@ -7,7 +7,8 @@ export type ManagedProviderTarget = "claude" | "codex";
 /** Claude Code is Anthropic-native only in settings we write; OpenAI-shaped upstreams are out of scope for now. */
 export type ClaudeApiFormat = "anthropic";
 
-export type CodexWireApi = "responses" | "chat";
+/** Codex is wired for OpenAI Responses only; chat-completions is out of scope for now. */
+export type CodexWireApi = "responses";
 
 export interface DesktopProviderPayload {
   id: string;

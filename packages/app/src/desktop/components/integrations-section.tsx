@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Alert, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { ArrowUpRight, Terminal, Blocks, Check, Cpu, Wrench } from "lucide-react-native";
@@ -25,6 +25,10 @@ import {
 const CLI_DOCS_URL = "https://paseo.sh/docs/cli";
 const SKILLS_DOCS_URL = "https://paseo.sh/docs/skills";
 
+const CHECKING_ENV_MESSAGE = "Checking environment…";
+const RUNTIME_STATUS_UNAVAILABLE =
+  "Couldn't read managed Node / Codex / Claude status. You can still try Install below.";
+
 export function IntegrationsSection() {
   const { theme } = useUnistyles();
   const showSection = shouldUseDesktopDaemon();
@@ -38,24 +42,48 @@ export function IntegrationsSection() {
   const [isInstallingCodex, setIsInstallingCodex] = useState(false);
   const [isInstallingClaudeCode, setIsInstallingClaudeCode] = useState(false);
   const [isInstallingAll, setIsInstallingAll] = useState(false);
+  const [integrationCheckPending, setIntegrationCheckPending] = useState(true);
+  const [modelRuntimeUnavailable, setModelRuntimeUnavailable] = useState(false);
 
   const loadStatus = useCallback(() => {
     if (!showSection) return;
+    setIntegrationCheckPending(true);
+    setModelRuntimeUnavailable(false);
+    let remaining = 3;
+    const markDone = () => {
+      remaining -= 1;
+      if (remaining === 0) {
+        setIntegrationCheckPending(false);
+      }
+    };
+
     void getCliInstallStatus()
       .then(setCliStatus)
       .catch((error) => {
         console.error("[Integrations] Failed to load CLI status", error);
-      });
+        setCliStatus(null);
+      })
+      .finally(markDone);
+
     void getSkillsInstallStatus()
       .then(setSkillsStatus)
       .catch((error) => {
         console.error("[Integrations] Failed to load skills status", error);
-      });
+        setSkillsStatus(null);
+      })
+      .finally(markDone);
+
     void getModelCliRuntimeStatus()
-      .then(setModelCliStatus)
+      .then((status) => {
+        setModelCliStatus(status);
+        setModelRuntimeUnavailable(false);
+      })
       .catch((error) => {
         console.error("[Integrations] Failed to load model CLI runtime status", error);
-      });
+        setModelCliStatus(null);
+        setModelRuntimeUnavailable(true);
+      })
+      .finally(markDone);
   }, [showSection]);
 
   useFocusEffect(
@@ -162,20 +190,33 @@ export function IntegrationsSection() {
     return null;
   }
 
-  const nodeRuntimeHint = modelCliStatus?.node.installed
-    ? modelCliStatus.node.satisfies
-      ? `Node.js ${modelCliStatus.node.version} · npm ${modelCliStatus.node.npmVersion ?? "unknown"}`
-      : `Detected Node.js ${modelCliStatus.node.version}. Use Node 22 for Codex and Claude Code installs.`
-    : (modelCliStatus?.node.error ?? "Node.js was not detected yet.");
-  const codexHint = modelCliStatus?.codex.installed
-    ? `Codex ${modelCliStatus.codex.version ?? "installed"}`
-    : (modelCliStatus?.codex.error ?? "Install the Codex CLI into the managed Node 22 runtime.");
-  const claudeHint = modelCliStatus?.claude.installed
-    ? `Claude Code ${modelCliStatus.claude.version ?? "installed"}`
-    : (modelCliStatus?.claude.error ??
-      "Install the Claude Code CLI into the managed Node 22 runtime.");
+  const nodeRuntimeHint = integrationCheckPending
+    ? CHECKING_ENV_MESSAGE
+    : modelRuntimeUnavailable
+      ? RUNTIME_STATUS_UNAVAILABLE
+      : modelCliStatus?.node.installed
+        ? modelCliStatus.node.satisfies
+          ? `Node.js ${modelCliStatus.node.version} · npm ${modelCliStatus.node.npmVersion ?? "unknown"}`
+          : `Detected Node.js ${modelCliStatus.node.version}. Use Node 22 for Codex and Claude Code installs.`
+        : (modelCliStatus?.node.error ?? "Node.js was not detected yet.");
+  const codexHint = integrationCheckPending
+    ? CHECKING_ENV_MESSAGE
+    : modelRuntimeUnavailable
+      ? RUNTIME_STATUS_UNAVAILABLE
+      : modelCliStatus?.codex.installed
+        ? `Codex ${modelCliStatus.codex.version ?? "installed"}`
+        : (modelCliStatus?.codex.error ?? "Install the Codex CLI into the managed Node 22 runtime.");
+  const claudeHint = integrationCheckPending
+    ? CHECKING_ENV_MESSAGE
+    : modelRuntimeUnavailable
+      ? RUNTIME_STATUS_UNAVAILABLE
+      : modelCliStatus?.claude.installed
+        ? `Claude Code ${modelCliStatus.claude.version ?? "installed"}`
+        : (modelCliStatus?.claude.error ??
+          "Install the Claude Code CLI into the managed Node 22 runtime.");
   const isRuntimeBusy =
     isInstallingNodeRuntime || isInstallingCodex || isInstallingClaudeCode || isInstallingAll;
+  const runtimeActionsDisabled = isRuntimeBusy || integrationCheckPending;
 
   const trailing = (
     <View style={styles.headerLinks}>
@@ -217,7 +258,9 @@ export function IntegrationsSection() {
               Control and script agents from your terminal.
             </Text>
           </View>
-          {cliStatus?.installed ? (
+          {integrationCheckPending ? (
+            <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
+          ) : cliStatus?.installed ? (
             <View style={styles.installedLabel}>
               <Check size={14} color={theme.colors.foregroundMuted} />
               <Text style={styles.mutedText}>Installed</Text>
@@ -227,7 +270,7 @@ export function IntegrationsSection() {
               variant="outline"
               size="sm"
               onPress={handleInstallCli}
-              disabled={isInstallingCli}
+              disabled={isInstallingCli || integrationCheckPending}
             >
               {isInstallingCli ? "Installing..." : "Install"}
             </Button>
@@ -243,7 +286,9 @@ export function IntegrationsSection() {
               Teach your agents to orchestrate through the CLI.
             </Text>
           </View>
-          {skillsStatus?.installed ? (
+          {integrationCheckPending ? (
+            <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
+          ) : skillsStatus?.installed ? (
             <View style={styles.installedLabel}>
               <Check size={14} color={theme.colors.foregroundMuted} />
               <Text style={styles.mutedText}>Installed</Text>
@@ -253,7 +298,7 @@ export function IntegrationsSection() {
               variant="outline"
               size="sm"
               onPress={handleInstallSkills}
-              disabled={isInstallingSkills}
+              disabled={isInstallingSkills || integrationCheckPending}
             >
               {isInstallingSkills ? "Installing..." : "Install"}
             </Button>
@@ -270,7 +315,9 @@ export function IntegrationsSection() {
             </View>
             <Text style={settingsStyles.rowHint}>{nodeRuntimeHint}</Text>
           </View>
-          {modelCliStatus?.node.satisfies ? (
+          {integrationCheckPending ? (
+            <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
+          ) : modelCliStatus?.node.satisfies ? (
             <View style={styles.installedLabel}>
               <Check size={14} color={theme.colors.foregroundMuted} />
               <Text style={styles.mutedText}>Ready</Text>
@@ -280,7 +327,7 @@ export function IntegrationsSection() {
               variant="outline"
               size="sm"
               onPress={handleInstallNodeRuntime}
-              disabled={isRuntimeBusy}
+              disabled={runtimeActionsDisabled}
             >
               {isInstallingNodeRuntime ? "Installing..." : "Install"}
             </Button>
@@ -294,7 +341,12 @@ export function IntegrationsSection() {
             </View>
             <Text style={settingsStyles.rowHint}>{codexHint}</Text>
           </View>
-          <Button variant="outline" size="sm" onPress={handleInstallCodex} disabled={isRuntimeBusy}>
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={handleInstallCodex}
+            disabled={runtimeActionsDisabled}
+          >
             {isInstallingCodex
               ? "Installing..."
               : modelCliStatus?.codex.installed
@@ -314,7 +366,7 @@ export function IntegrationsSection() {
             variant="outline"
             size="sm"
             onPress={handleInstallClaudeCode}
-            disabled={isRuntimeBusy}
+            disabled={runtimeActionsDisabled}
           >
             {isInstallingClaudeCode
               ? "Installing..."
@@ -333,7 +385,12 @@ export function IntegrationsSection() {
               Install Node.js 22, Codex, and Claude Code in one pass.
             </Text>
           </View>
-          <Button variant="outline" size="sm" onPress={handleInstallAll} disabled={isRuntimeBusy}>
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={handleInstallAll}
+            disabled={runtimeActionsDisabled}
+          >
             {isInstallingAll ? "Installing..." : "Install all"}
           </Button>
         </View>

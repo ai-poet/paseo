@@ -17,7 +17,7 @@ export interface Sub2APIPayModalProps {
 
 function buildPayUrl(endpoint: string, accessToken: string): string {
   const base = normalizeSub2APIEndpoint(endpoint);
-  return `${base}/pay?token=${encodeURIComponent(accessToken)}&theme=dark&ui_mode=embedded&lang=zh`;
+  return `${base}/pay?token=${encodeURIComponent(accessToken)}&theme=dark&ui_mode=embedded&lang=en`;
 }
 
 function isPayResultUrl(rawUrl: string): boolean {
@@ -74,7 +74,7 @@ export function Sub2APIPayModal({
     <AdaptiveModalSheet
       visible={visible}
       onClose={onClose}
-      title="充值"
+      title="Add balance"
       scrollable={false}
       snapPoints={["80%", "95%"]}
     >
@@ -84,7 +84,7 @@ export function Sub2APIPayModal({
             {isLoading ? (
               <View style={styles.loadingOverlay}>
                 <ActivityIndicator />
-                <Text style={styles.loadingText}>加载支付页面中...</Text>
+                <Text style={styles.loadingText}>Loading checkout…</Text>
               </View>
             ) : null}
             <WebView
@@ -97,16 +97,18 @@ export function Sub2APIPayModal({
           </View>
         ) : (
           <View style={styles.errorBox}>
-            <Text style={styles.errorText}>无法生成支付链接，请确认登录状态和服务地址。</Text>
+            <Text style={styles.errorText}>
+              Could not build the payment URL. Check that you are signed in.
+            </Text>
           </View>
         )}
 
         <View style={styles.footer}>
           <Button variant="outline" size="sm" onPress={onClose}>
-            关闭
+            Close
           </Button>
           <Button size="sm" onPress={() => void handleOpenExternal()} disabled={!payUrl}>
-            在浏览器中打开
+            Open in browser
           </Button>
         </View>
       </View>

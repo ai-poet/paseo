@@ -154,18 +154,18 @@ export function ModeSelectScreen() {
         <View style={styles.content}>
           <PaseoLogo size={96} />
           <View style={styles.copyBlock}>
-            <Text style={styles.title}>选择你的使用方式</Text>
+            <Text style={styles.title}>How do you want to connect?</Text>
             <Text style={styles.subtitle}>
-              可选 Paseo 云端托管方案，或由您自备 API Key（BYOK）接入模型服务。
+              Use Paseo Cloud, or bring your own API keys (BYOK) for model access.
             </Text>
           </View>
 
           <View style={styles.cards}>
             <ModeCard
               icon={<Cloud size={20} color={theme.colors.accent} />}
-              title="Paseo 云端"
-              description="登录后自动为 Claude Code / Codex 配置线路，按需计费，开箱即用。"
-              metaText="登录 · 推荐"
+              title="Paseo Cloud"
+              description="Sign in for managed Claude Code / Codex routing, usage-based billing, and quick setup."
+              metaText="Sign in · Recommended"
               metaAccent
               recommended
               disabled={pending !== null && pending !== "builtin"}
@@ -175,9 +175,9 @@ export function ModeSelectScreen() {
             />
             <ModeCard
               icon={<KeyRound size={20} color={theme.colors.foreground} />}
-              title="BYOK（自带 API Key）"
-              description="已有 Anthropic / OpenAI 等官方 Key，可在设置页手动添加 Provider。无需登录。"
-              metaText="无需登录"
+              title="BYOK"
+              description="Use your own Anthropic / OpenAI keys and add providers in Settings. No cloud sign-in."
+              metaText="No sign-in"
               disabled={pending !== null && pending !== "byok"}
               loading={pending === "byok"}
               testID="mode-select-byok"
@@ -233,7 +233,7 @@ function ModeCard({
         <Text style={styles.cardTitle}>{title}</Text>
         {recommended ? (
           <View style={styles.cardBadge}>
-            <Text style={styles.cardBadgeText}>推荐</Text>
+            <Text style={styles.cardBadgeText}>Recommended</Text>
           </View>
         ) : null}
       </View>

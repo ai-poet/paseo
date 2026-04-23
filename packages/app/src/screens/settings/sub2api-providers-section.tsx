@@ -24,7 +24,6 @@ import { isValidSub2APIEndpoint } from "./sub2api-auth-bridge";
 import { Sub2APIPayModal } from "./sub2api-pay-modal";
 import { getManagedServiceUrlFromEnv } from "@/config/managed-service-env";
 import type {
-  CodexWireApi,
   DesktopProviderPayload,
   ManagedProviderTarget,
   ProviderStore,
@@ -37,7 +36,7 @@ function providerTargetHint(p: DesktopProviderPayload): string {
   if (p.target === "claude") {
     return "Claude Code · Anthropic";
   }
-  return `Codex · ${p.codexWireApi === "chat" ? "Chat" : "Responses"}`;
+  return "Codex · Responses";
 }
 
 const CUSTOM_TARGET_SEGMENT_OPTIONS: SegmentedControlOption<ManagedProviderTarget>[] = [
@@ -45,10 +44,8 @@ const CUSTOM_TARGET_SEGMENT_OPTIONS: SegmentedControlOption<ManagedProviderTarge
   { value: "codex", label: "Codex" },
 ];
 
-const CODEX_WIRE_SEGMENT_OPTIONS: SegmentedControlOption<CodexWireApi>[] = [
-  { value: "responses", label: "Responses" },
-  { value: "chat", label: "Chat" },
-];
+const ENDPOINT_PLACEHOLDER =
+  "https://api.example.com — omit /v1 (a trailing /v1 is stripped if present)";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -95,7 +92,6 @@ export function Sub2APIProvidersSection() {
   const [editProviderEndpoint, setEditProviderEndpoint] = useState("");
   const [editProviderApiKey, setEditProviderApiKey] = useState("");
   const [customTarget, setCustomTarget] = useState<ManagedProviderTarget>("claude");
-  const [codexWireApi, setCodexWireApi] = useState<CodexWireApi>("responses");
   const [newKeyName, setNewKeyName] = useState("Paseo Desktop");
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [switchingGroupId, setSwitchingGroupId] = useState<number | null>(null);
@@ -227,7 +223,6 @@ export function Sub2APIProvidersSection() {
     setEditProviderEndpoint("");
     setEditProviderApiKey("");
     setCustomTarget("claude");
-    setCodexWireApi("responses");
   }, []);
 
   const closeCustomProviderForm = useCallback(() => {
@@ -236,7 +231,6 @@ export function Sub2APIProvidersSection() {
     setEditProviderEndpoint("");
     setEditProviderApiKey("");
     setCustomTarget("claude");
-    setCodexWireApi("responses");
   }, []);
 
   useEffect(() => {
@@ -297,7 +291,7 @@ export function Sub2APIProvidersSection() {
       target: customTarget,
       ...(customTarget === "claude"
         ? { claudeApiFormat: "anthropic" as const }
-        : { codexWireApi }),
+        : { codexWireApi: "responses" as const }),
     };
 
     try {
@@ -309,7 +303,6 @@ export function Sub2APIProvidersSection() {
     }
   }, [
     closeCustomProviderForm,
-    codexWireApi,
     customTarget,
     editProviderApiKey,
     editProviderEndpoint,
@@ -785,18 +778,9 @@ export function Sub2APIProvidersSection() {
                       OpenAI-compatible upstreams will be supported via a separate gateway later.
                     </Text>
                   ) : (
-                    <>
-                      <Text style={styles.fieldLabel}>Wire API</Text>
-                      <SegmentedControl
-                        options={CODEX_WIRE_SEGMENT_OPTIONS}
-                        value={codexWireApi}
-                        onValueChange={setCodexWireApi}
-                        size="sm"
-                      />
-                      <Text style={styles.usageHint}>
-                        Matches Codex CLI wire expectations (OpenAI-compatible).
-                      </Text>
-                    </>
+                    <Text style={styles.usageHint}>
+                      Codex is configured for the OpenAI Responses wire only (not Chat Completions).
+                    </Text>
                   )}
                   <Text style={styles.fieldLabel}>Name</Text>
                   <TextInput
@@ -809,10 +793,15 @@ export function Sub2APIProvidersSection() {
                     style={styles.textInput}
                   />
                   <Text style={styles.fieldLabel}>Endpoint</Text>
+                  <Text style={styles.usageHint}>
+                    Enter the API gateway origin (scheme + host) only. Do not include /v1; if you do,
+                    we strip a trailing /v1 on save. Claude uses a base without /v1; Codex config adds
+                    /v1 automatically.
+                  </Text>
                   <TextInput
                     value={editProviderEndpoint}
                     onChangeText={setEditProviderEndpoint}
-                    placeholder="https://api.example.com"
+                    placeholder={ENDPOINT_PLACEHOLDER}
                     placeholderTextColor={theme.colors.foregroundMuted}
                     autoCapitalize="none"
                     autoCorrect={false}

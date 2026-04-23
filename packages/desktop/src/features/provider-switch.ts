@@ -20,7 +20,8 @@ export type ManagedProviderTarget = "claude" | "codex";
 /** Claude Code is written as native Anthropic Messages only; other wire shapes belong in a future gateway layer. */
 export type ClaudeApiFormat = "anthropic";
 
-export type CodexWireApi = "responses" | "chat";
+/** Codex config uses OpenAI Responses wire only until chat support is added. */
+export type CodexWireApi = "responses";
 
 const PASEO_UPSTREAM_FORMAT_KEY = "PASEO_ANTHROPIC_UPSTREAM_FORMAT";
 
@@ -83,9 +84,10 @@ function normalizeClaudeApiFormat(raw: unknown): ClaudeApiFormat | undefined {
 }
 
 function normalizeCodexWireApi(raw: unknown): CodexWireApi | undefined {
-  if (raw === "responses" || raw === "chat") {
-    return raw;
+  if (raw === "responses") {
+    return "responses";
   }
+  // Legacy "chat" is dropped on load until we implement chat-completions wiring.
   return undefined;
 }
 
@@ -258,14 +260,13 @@ export function buildCodexConfig(provider: StoredProvider): string {
     return provider.codexConfig;
   }
   const defaultCodexModel = provider.type === "default" ? DEFAULT_CLAUDE_MODEL : "gpt-4o";
-  const wireApi: CodexWireApi = provider.codexWireApi ?? "responses";
   return `model_provider = "default"
 model = "${defaultCodexModel}"
 
 [model_providers.default]
 name = "${provider.name}"
 base_url = "${providerEndpointBaseUrl(provider.endpoint)}"
-wire_api = "${wireApi}"
+wire_api = "responses"
 requires_openai_auth = true
 `;
 }

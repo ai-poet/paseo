@@ -152,16 +152,17 @@ export function LoginScreen() {
         <View style={styles.content}>
           <PaseoLogo size={96} />
           <View style={styles.copyBlock}>
-            <Text style={styles.title}>登录 Paseo</Text>
+            <Text style={styles.title}>Sign in to Paseo</Text>
             <Text style={styles.subtitle}>
-              使用 GitHub 登录 Paseo 云端账户，自动完成 Claude Code / Codex 线路配置。
+              Sign in with GitHub for Paseo Cloud. We configure Claude Code and Codex routes for you.
             </Text>
           </View>
 
           <View style={styles.form}>
             {envUrlInvalid ? (
               <Text style={styles.errorHint}>
-                环境变量中的服务地址不是合法的 http(s) URL，请修正后重新打包或启动。
+                EXPO_PUBLIC_MANAGED_SERVICE_URL is not a valid http(s) URL. Fix it and rebuild or
+                restart.
               </Text>
             ) : null}
 
@@ -181,7 +182,7 @@ export function LoginScreen() {
                 <LogIn size={18} color={theme.colors.accentForeground} />
               )}
               <Text style={styles.primaryButtonText}>
-                {isInFlight ? "等待浏览器授权…" : "Sign in with GitHub"}
+                {isInFlight ? "Waiting for browser…" : "Sign in with GitHub"}
               </Text>
             </Pressable>
           </View>
@@ -189,13 +190,13 @@ export function LoginScreen() {
           <View style={styles.divider} />
 
           <View style={styles.byokRow}>
-            <Text style={styles.byokCaption}>已经有自己的 API Key？</Text>
+            <Text style={styles.byokCaption}>Already have your own API keys?</Text>
             <Pressable
               onPress={() => void onSwitchToByok()}
               style={styles.byokLink}
               testID="login-switch-byok"
             >
-              <Text style={styles.byokLinkText}>改用 BYOK 模式 →</Text>
+              <Text style={styles.byokLinkText}>Use BYOK instead →</Text>
             </Pressable>
           </View>
         </View>
