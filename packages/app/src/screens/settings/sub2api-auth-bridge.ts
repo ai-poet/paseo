@@ -9,21 +9,21 @@ export interface Sub2APIAuthCallback {
 function normalizeEndpoint(endpoint: string): string {
   const trimmed = endpoint.trim();
   if (!trimmed) {
-    throw new Error("Sub2API endpoint is required.");
+    throw new Error("Service endpoint is required.");
   }
 
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    throw new Error("Sub2API endpoint must be an absolute URL.");
+    throw new Error("Endpoint must be an absolute URL.");
   }
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Sub2API endpoint must use http or https.");
+    throw new Error("Endpoint must use http or https.");
   }
   if (!parsed.host.trim()) {
-    throw new Error("Sub2API endpoint is missing a host.");
+    throw new Error("Endpoint is missing a host.");
   }
 
   const normalizedPath = parsed.pathname.replace(/\/+$/, "");
@@ -62,7 +62,7 @@ export function parseSub2APIAuthCallback(url: string): Sub2APIAuthCallback {
     !Number.isFinite(expiresIn) ||
     expiresIn <= 0
   ) {
-    throw new Error("OAuth callback did not include a complete Sub2API session.");
+    throw new Error("OAuth callback did not include a complete session.");
   }
 
   return {

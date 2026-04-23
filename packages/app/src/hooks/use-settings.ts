@@ -10,15 +10,18 @@ import { THEME_TO_UNISTYLES, type ThemeName } from "@/styles/theme";
 
 export type SendBehavior = "interrupt" | "queue";
 export type ReleaseChannel = "stable" | "beta";
+export type AccessMode = "builtin" | "byok";
 
 const VALID_THEMES = new Set<string>([...Object.keys(THEME_TO_UNISTYLES), "auto"]);
 const VALID_RELEASE_CHANNELS = new Set<string>(["stable", "beta"]);
+const VALID_ACCESS_MODES = new Set<string>(["builtin", "byok"]);
 
 export interface AppSettings {
   theme: ThemeName | "auto";
   manageBuiltInDaemon: boolean;
   sendBehavior: SendBehavior;
   releaseChannel: ReleaseChannel;
+  accessMode: AccessMode | null;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -26,6 +29,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   manageBuiltInDaemon: true,
   sendBehavior: "interrupt",
   releaseChannel: "stable",
+  accessMode: null,
 };
 
 export interface UseAppSettingsReturn {
@@ -91,6 +95,13 @@ export async function loadSettingsFromStorage(): Promise<AppSettings> {
       }
       if (parsed.releaseChannel && !VALID_RELEASE_CHANNELS.has(parsed.releaseChannel)) {
         parsed.releaseChannel = DEFAULT_APP_SETTINGS.releaseChannel;
+      }
+      if (
+        parsed.accessMode !== null &&
+        parsed.accessMode !== undefined &&
+        !VALID_ACCESS_MODES.has(parsed.accessMode)
+      ) {
+        parsed.accessMode = DEFAULT_APP_SETTINGS.accessMode;
       }
       return { ...DEFAULT_APP_SETTINGS, ...parsed };
     }

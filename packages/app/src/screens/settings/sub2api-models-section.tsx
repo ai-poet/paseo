@@ -6,6 +6,7 @@ import { settingsStyles } from "@/styles/settings";
 import { getIsElectron } from "@/constants/platform";
 import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
+import { useAppSettings } from "@/hooks/use-settings";
 import {
   useCreateSub2APIKeyMutation,
   useSub2APIKeys,
@@ -41,6 +42,7 @@ function pickUsableKey(keys: Sub2APIKey[], groupId: number): Sub2APIKey | null {
 
 export function Sub2APIModelsSection() {
   const isElectron = getIsElectron();
+  const { settings } = useAppSettings();
   const { isLoggedIn, auth } = useSub2APIAuth();
   const modelsQuery = useSub2APIModelCatalog();
   const keysQuery = useSub2APIKeys(1, 200);
@@ -53,7 +55,7 @@ export function Sub2APIModelsSection() {
   const handleSwitchBestGroup = useCallback(
     async (item: Sub2APIModelCatalogItem) => {
       if (!auth?.endpoint) {
-        Alert.alert("Missing endpoint", "Please log in to Sub2API first.");
+        Alert.alert("Missing endpoint", "Please sign in to the managed service first.");
         return;
       }
 
@@ -87,12 +89,15 @@ export function Sub2APIModelsSection() {
   if (!isElectron) {
     return null;
   }
+  if (settings.accessMode === "byok") {
+    return null;
+  }
 
   return (
     <SettingsSection title="Model Catalog">
       {!isLoggedIn ? (
         <View style={[settingsStyles.card, styles.cardBody]}>
-          <Text style={styles.hintText}>Log in to Sub2API to browse available models.</Text>
+          <Text style={styles.hintText}>Sign in to browse the model catalog.</Text>
         </View>
       ) : null}
 

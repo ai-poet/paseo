@@ -97,7 +97,7 @@ export function Sub2APIPayModal({
           </View>
         ) : (
           <View style={styles.errorBox}>
-            <Text style={styles.errorText}>无法生成支付链接，请确认登录状态和 Sub2API Endpoint。</Text>
+            <Text style={styles.errorText}>无法生成支付链接，请确认登录状态和服务地址。</Text>
           </View>
         )}
 

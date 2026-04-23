@@ -5,7 +5,7 @@ import {
   parseSub2APIAuthCallback,
 } from "./sub2api-auth-bridge";
 
-describe("sub2api-auth-bridge", () => {
+describe("auth-bridge", () => {
   it("builds the web auth bridge url from the configured endpoint", () => {
     expect(buildSub2APILoginBridgeUrl("https://api.example.com/")).toBe(
       "https://api.example.com/auth/paseo?endpoint=https%3A%2F%2Fapi.example.com",

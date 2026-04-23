@@ -152,7 +152,7 @@ export class Sub2APIClientError extends Error {
     },
   ) {
     super(message);
-    this.name = "Sub2APIClientError";
+    this.name = "CloudClientError";
     this.status = options.status;
     this.code = options.code;
     this.reason = options.reason;
@@ -171,21 +171,21 @@ function trimToNull(value: string | null | undefined): string | null {
 export function normalizeSub2APIEndpoint(endpoint: string): string {
   const trimmed = trimToNull(endpoint);
   if (!trimmed) {
-    throw new Error("Sub2API endpoint is required.");
+    throw new Error("Service endpoint is required.");
   }
 
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    throw new Error("Sub2API endpoint must be an absolute URL.");
+    throw new Error("Endpoint must be an absolute URL.");
   }
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Sub2API endpoint must use http or https.");
+    throw new Error("Endpoint must use http or https.");
   }
   if (!trimToNull(parsed.host)) {
-    throw new Error("Sub2API endpoint is missing a host.");
+    throw new Error("Endpoint is missing a host.");
   }
 
   const normalizedPath = parsed.pathname.replace(/\/+$/, "");
@@ -228,7 +228,7 @@ export function createSub2APIClient(input: {
   ): Promise<T> {
     const accessToken = await input.getAccessToken();
     if (!accessToken) {
-      throw new Sub2APIClientError("Sub2API session is not available.", { status: 401 });
+      throw new Sub2APIClientError("Session is not available.", { status: 401 });
     }
 
     const url = `${baseUrl}/api/v1${path}`;
@@ -251,13 +251,13 @@ export function createSub2APIClient(input: {
           metadata: payload.metadata,
         });
       }
-      throw new Sub2APIClientError(`Sub2API request failed with status ${response.status}.`, {
+      throw new Sub2APIClientError(`Request failed with status ${response.status}.`, {
         status: response.status,
       });
     }
 
     if (!isEnvelope(payload)) {
-      throw new Sub2APIClientError("Sub2API returned an invalid response payload.", {
+      throw new Sub2APIClientError("Server returned an invalid response payload.", {
         status: response.status,
       });
     }

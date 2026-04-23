@@ -1,20 +1,19 @@
 /**
- * Sub2API authentication hook for Paseo desktop.
+ * Managed cloud-service authentication for Paseo desktop.
  *
- * Manages GitHub OAuth tokens obtained from the sub2api backend.
- * Tokens are persisted in AsyncStorage and auto-refreshed before expiry.
+ * Persists OAuth tokens in AsyncStorage and auto-refreshes before expiry.
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const AUTH_STORAGE_KEY = "@paseo:sub2api-auth";
+const AUTH_STORAGE_KEY = "@paseo:managed-service-auth";
 
 export interface Sub2APIAuthState {
   accessToken: string;
   refreshToken: string;
   expiresAt: number; // ms timestamp
-  endpoint: string; // sub2api base URL
+  endpoint: string; // service base URL
 }
 
 export interface Sub2APIUser {
@@ -91,7 +90,7 @@ async function refreshAccessToken(auth: Sub2APIAuthState): Promise<Sub2APIAuthSt
   }
 }
 
-const AUTH_QUERY_KEY = ["sub2api-auth"] as const;
+const AUTH_QUERY_KEY = ["managed-service-auth"] as const;
 
 export function useSub2APIAuth(): UseAuthReturn {
   const queryClient = useQueryClient();

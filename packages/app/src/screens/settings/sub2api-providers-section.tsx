@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { getIsElectron } from "@/constants/platform";
 import { settingsStyles } from "@/styles/settings";
 import { invokeDesktopCommand } from "@/desktop/electron/invoke";
-import { getDesktopHost } from "@/desktop/host";
-import { openExternalUrl } from "@/utils/open-external-url";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
+import { useSub2APILoginFlow } from "@/hooks/use-sub2api-login-flow";
+import { useAppSettings } from "@/hooks/use-settings";
 import {
   useCreateSub2APIKeyMutation,
   useDeleteSub2APIKeyMutation,
@@ -17,11 +18,7 @@ import {
   useSub2APIUsageStats,
 } from "@/hooks/use-sub2api-api";
 import type { Sub2APIGroup, Sub2APIKey } from "@/lib/sub2api-client";
-import {
-  buildSub2APILoginBridgeUrl,
-  isValidSub2APIEndpoint,
-  parseSub2APIAuthCallback,
-} from "./sub2api-auth-bridge";
+import { isValidSub2APIEndpoint } from "./sub2api-auth-bridge";
 import { Sub2APIPayModal } from "./sub2api-pay-modal";
 
 interface Provider {
@@ -36,10 +33,6 @@ interface Provider {
 interface ProviderStore {
   providers: Provider[];
   activeProviderId: string | null;
-}
-
-interface AuthCallbackPayload {
-  url: string;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -61,14 +54,6 @@ function maskApiKey(value: string): string {
   return `${trimmed.slice(0, 8)}...${trimmed.slice(-4)}`;
 }
 
-function extractAuthCallbackUrl(payload: unknown): string | null {
-  if (typeof payload !== "object" || payload === null) {
-    return null;
-  }
-  const url = (payload as AuthCallbackPayload).url;
-  return typeof url === "string" && url.length > 0 ? url : null;
-}
-
 function findReusableKey(keys: Sub2APIKey[], groupId: number): Sub2APIKey | null {
   return (
     keys.find((entry) => entry.group_id === groupId && entry.status === "active") ??
@@ -79,7 +64,9 @@ function findReusableKey(keys: Sub2APIKey[], groupId: number): Sub2APIKey | null
 
 export function Sub2APIProvidersSection() {
   const { theme } = useUnistyles();
-  const { isLoggedIn, auth, login, logout, getAccessToken } = useSub2APIAuth();
+  const router = useRouter();
+  const { settings } = useAppSettings();
+  const { getAccessToken } = useSub2APIAuth();
   const isElectron = getIsElectron();
 
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -88,14 +75,12 @@ export function Sub2APIProvidersSection() {
   const [editProviderName, setEditProviderName] = useState("");
   const [editProviderEndpoint, setEditProviderEndpoint] = useState("");
   const [editProviderApiKey, setEditProviderApiKey] = useState("");
-  const [sub2apiEndpoint, setSub2apiEndpoint] = useState("");
   const [newKeyName, setNewKeyName] = useState("Paseo Desktop");
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [switchingGroupId, setSwitchingGroupId] = useState<number | null>(null);
   const [switchingKeyId, setSwitchingKeyId] = useState<number | null>(null);
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [payToken, setPayToken] = useState<string | null>(null);
-  const lastHandledCallbackUrlRef = useRef<string | null>(null);
 
   const meQuery = useSub2APIMe();
   const keysQuery = useSub2APIKeys(1, 200);
@@ -108,7 +93,6 @@ export function Sub2APIProvidersSection() {
 
   const keys = useMemo(() => keysQuery.data?.items ?? [], [keysQuery.data?.items]);
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
-  const canStartLogin = isValidSub2APIEndpoint(sub2apiEndpoint);
 
   const loadProviders = useCallback(async () => {
     if (!isElectron) {
@@ -124,11 +108,42 @@ export function Sub2APIProvidersSection() {
     }
   }, [isElectron]);
 
+  const {
+    endpoint: serviceEndpoint,
+    setEndpoint: setServiceEndpoint,
+    canStartLogin,
+    isLoggedIn,
+    auth,
+    handleGitHubLogin,
+    logout,
+  } = useSub2APILoginFlow({
+    onLoginSuccess: () => {
+      void loadProviders();
+      void Promise.all([
+        keysQuery.refetch(),
+        groupsQuery.refetch(),
+        meQuery.refetch(),
+        usageTodayQuery.refetch(),
+        usageWeekQuery.refetch(),
+        usageMonthQuery.refetch(),
+      ]);
+    },
+  });
+
+  const handleLogout = useCallback(async () => {
+    await logout();
+    // In builtin mode the app is unusable without a session — kick the user
+    // back to the login screen so they can re-auth or switch modes.
+    if (settings.accessMode === "builtin") {
+      router.replace("/login");
+    }
+  }, [logout, router, settings.accessMode]);
+
   const setupDefaultProviderWithKey = useCallback(
     async (apiKey: string, name?: string) => {
-      const targetEndpoint = auth?.endpoint ?? sub2apiEndpoint;
+      const targetEndpoint = auth?.endpoint ?? serviceEndpoint;
       if (!isValidSub2APIEndpoint(targetEndpoint)) {
-        throw new Error("Sub2API endpoint is invalid.");
+        throw new Error("Service endpoint is invalid.");
       }
 
       await invokeDesktopCommand("setup_default_provider", {
@@ -138,55 +153,7 @@ export function Sub2APIProvidersSection() {
       });
       await loadProviders();
     },
-    [auth?.endpoint, loadProviders, sub2apiEndpoint],
-  );
-
-  const handleAuthCallback = useCallback(
-    async (payload: unknown) => {
-      const url = extractAuthCallbackUrl(payload);
-      if (!url) {
-        return;
-      }
-      if (lastHandledCallbackUrlRef.current === url) {
-        return;
-      }
-      lastHandledCallbackUrlRef.current = url;
-
-      try {
-        const session = parseSub2APIAuthCallback(url);
-        await login({
-          accessToken: session.accessToken,
-          refreshToken: session.refreshToken,
-          expiresIn: session.expiresIn,
-          endpoint: session.endpoint,
-        });
-
-        await setupDefaultProviderWithKey(session.apiKey, "Default");
-        setSub2apiEndpoint(session.endpoint);
-
-        await Promise.all([
-          keysQuery.refetch(),
-          groupsQuery.refetch(),
-          meQuery.refetch(),
-          usageTodayQuery.refetch(),
-          usageWeekQuery.refetch(),
-          usageMonthQuery.refetch(),
-        ]);
-      } catch (error) {
-        console.error("[sub2api-auth] callback failed:", error);
-        Alert.alert("Login failed", getErrorMessage(error));
-      }
-    },
-    [
-      groupsQuery,
-      keysQuery,
-      login,
-      meQuery,
-      setupDefaultProviderWithKey,
-      usageMonthQuery,
-      usageTodayQuery,
-      usageWeekQuery,
-    ],
+    [auth?.endpoint, loadProviders, serviceEndpoint],
   );
 
   useEffect(() => {
@@ -194,79 +161,11 @@ export function Sub2APIProvidersSection() {
   }, [loadProviders]);
 
   useEffect(() => {
-    if (!auth?.endpoint) {
-      return;
-    }
-    setSub2apiEndpoint(auth.endpoint);
-  }, [auth?.endpoint]);
-
-  useEffect(() => {
-    if (!isElectron) {
-      return;
-    }
-
-    const subscribe = getDesktopHost()?.events?.on;
-    if (typeof subscribe !== "function") {
-      return;
-    }
-
-    let disposed = false;
-    let cleanup: (() => void) | null = null;
-
-    void Promise.resolve(subscribe("auth-callback", handleAuthCallback))
-      .then((unsubscribe) => {
-        if (disposed) {
-          unsubscribe();
-          return;
-        }
-        cleanup = unsubscribe;
-      })
-      .catch((error) => {
-        console.error("[sub2api-auth] subscribe failed:", error);
-      });
-
-    return () => {
-      disposed = true;
-      cleanup?.();
-    };
-  }, [handleAuthCallback, isElectron]);
-
-  useEffect(() => {
-    if (!isElectron) {
-      return;
-    }
-    const getPendingAuthCallback = getDesktopHost()?.getPendingAuthCallback;
-    if (typeof getPendingAuthCallback !== "function") {
-      return;
-    }
-
-    void getPendingAuthCallback()
-      .then((url) => {
-        if (!url) {
-          return;
-        }
-        void handleAuthCallback({ url });
-      })
-      .catch((error) => {
-        console.error("[sub2api-auth] pending callback failed:", error);
-      });
-  }, [handleAuthCallback, isElectron]);
-
-  useEffect(() => {
     if (selectedGroupId !== null || groups.length === 0) {
       return;
     }
     setSelectedGroupId(groups[0]?.id ?? null);
   }, [groups, selectedGroupId]);
-
-  const handleGitHubLogin = useCallback(async () => {
-    try {
-      const startURL = buildSub2APILoginBridgeUrl(sub2apiEndpoint);
-      await openExternalUrl(startURL);
-    } catch (error) {
-      Alert.alert("Unable to start login", getErrorMessage(error));
-    }
-  }, [sub2apiEndpoint]);
 
   const handleOpenPayModal = useCallback(async () => {
     try {
@@ -431,20 +330,24 @@ export function Sub2APIProvidersSection() {
   if (!isElectron) {
     return null;
   }
+  // In BYOK mode the user manages their own API keys; hide this section.
+  if (settings.accessMode === "byok") {
+    return null;
+  }
 
   return (
-    <SettingsSection title="Sub2API Providers">
+    <SettingsSection title="Cloud providers">
       <View style={[settingsStyles.card, styles.cardBody]}>
         <Text style={styles.sectionHint}>
           OAuth login, key management, group switching and payment are managed here.
         </Text>
 
         <View style={styles.endpointRow}>
-          <Text style={styles.fieldLabel}>Sub2API Endpoint</Text>
+          <Text style={styles.fieldLabel}>Service URL</Text>
           <TextInput
-            value={sub2apiEndpoint}
-            onChangeText={setSub2apiEndpoint}
-            placeholder="https://your-sub2api.com"
+            value={serviceEndpoint}
+            onChangeText={setServiceEndpoint}
+            placeholder="https://api.example.com"
             placeholderTextColor={theme.colors.foregroundMuted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -462,7 +365,7 @@ export function Sub2APIProvidersSection() {
               <Text style={styles.statusText}>Logged in to {auth?.endpoint}</Text>
             </View>
             <Pressable
-              onPress={() => void logout()}
+              onPress={() => void handleLogout()}
               style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
             >
               <Text style={styles.secondaryButtonText}>Logout</Text>
@@ -730,7 +633,7 @@ export function Sub2APIProvidersSection() {
 
       <Sub2APIPayModal
         visible={isPayModalOpen}
-        endpoint={auth?.endpoint ?? sub2apiEndpoint}
+        endpoint={auth?.endpoint ?? serviceEndpoint}
         accessToken={payToken}
         onClose={() => setIsPayModalOpen(false)}
         onCompleted={handlePayCompleted}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { ChevronRight, Globe, Monitor, Pencil, RotateCw, Trash2 } from "lucide-react-native";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
@@ -27,6 +28,8 @@ import { Sub2APIProvidersSection } from "@/screens/settings/sub2api-providers-se
 import { Sub2APIModelsSection } from "@/screens/settings/sub2api-models-section";
 import { PairDeviceModal } from "@/desktop/components/pair-device-modal";
 import { LocalDaemonSection } from "@/desktop/components/desktop-updates-section";
+import { getIsElectron } from "@/constants/platform";
+import { useAppSettings } from "@/hooks/use-settings";
 
 const RESTART_CONFIRMATION_MESSAGE =
   "This will restart the daemon. Agents running on it will keep going; the app will reconnect automatically.";
@@ -73,6 +76,45 @@ function formatDaemonVersionBadge(version: string | null): string | null {
 export interface HostPageProps {
   serverId: string;
   onHostRemoved?: () => void;
+}
+
+function AccessModeSection() {
+  const router = useRouter();
+  const { theme } = useUnistyles();
+  const { settings, updateSettings } = useAppSettings();
+  const isElectron = getIsElectron();
+
+  const modeLabel =
+    settings.accessMode === "builtin"
+      ? "内置服务"
+      : settings.accessMode === "byok"
+        ? "BYOK（自带 API Key）"
+        : "未选择";
+
+  const handleSwitchMode = useCallback(async () => {
+    await updateSettings({ accessMode: null });
+    router.replace("/mode-select");
+  }, [router, updateSettings]);
+
+  if (!isElectron) {
+    return null;
+  }
+
+  return (
+    <SettingsSection title="访问模式">
+      <View style={[settingsStyles.card, { gap: theme.spacing[3], padding: theme.spacing[4] }]}>
+        <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm }}>
+          当前：{modeLabel}
+        </Text>
+        <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs }}>
+          重新选择内置服务或 BYOK。选择内置服务后需重新登录。
+        </Text>
+        <Button variant="secondary" size="sm" onPress={() => void handleSwitchMode()}>
+          切换访问模式
+        </Button>
+      </View>
+    </SettingsSection>
+  );
 }
 
 export function HostPage({ serverId, onHostRemoved }: HostPageProps) {
@@ -152,6 +194,8 @@ export function HostPage({ serverId, onHostRemoved }: HostPageProps) {
       <DaemonSection host={host} isLocalDaemon={isLocalDaemon} />
 
       <ProvidersSection serverId={serverId} />
+
+      <AccessModeSection />
 
       <Sub2APIProvidersSection />
 

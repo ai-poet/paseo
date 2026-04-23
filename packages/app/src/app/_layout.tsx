@@ -96,6 +96,7 @@ import {
   syncNavigationActiveWorkspace,
 } from "@/stores/navigation-active-workspace-store";
 import { isWeb, isNative } from "@/constants/platform";
+import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 
 polyfillCrypto();
 
@@ -864,6 +865,11 @@ function FaviconStatusSync() {
 function RootStack() {
   const storeReady = useStoreReady();
   const { theme } = useUnistyles();
+  const { settings } = useAppSettings();
+  const { isLoggedIn } = useSub2APIAuth();
+  const accessGranted =
+    settings.accessMode === "byok" ||
+    (settings.accessMode === "builtin" && isLoggedIn);
   return (
     <Stack
       screenOptions={{
@@ -874,27 +880,29 @@ function RootStack() {
         },
       }}
     >
-      <Stack.Protected guard={storeReady}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="mode-select" />
+      <Stack.Screen name="login" />
+      <Stack.Protected guard={storeReady && accessGranted}>
         <Stack.Screen name="welcome" />
         <Stack.Screen name="settings/index" />
         <Stack.Screen name="settings/[section]" />
         <Stack.Screen name="pair-scan" />
+        {/*
+          Do not add getId or dangerouslySingular back to the workspace route.
+          Expo Router maps dangerouslySingular to React Navigation getId, and
+          getId repeatedly breaks Android native-stack/Fabric by reordering an
+          already-mounted workspace screen. Keep workspace identity/retention
+          outside this route-level native-stack API.
+        */}
+        <Stack.Screen name="h/[serverId]/workspace/[workspaceId]" />
+        <Stack.Screen name="h/[serverId]/agent/[agentId]" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="h/[serverId]/index" />
+        <Stack.Screen name="h/[serverId]/sessions" />
+        <Stack.Screen name="h/[serverId]/open-project" />
+        <Stack.Screen name="h/[serverId]/settings" />
+        <Stack.Screen name="settings/hosts/[serverId]" />
       </Stack.Protected>
-      {/*
-        Do not add getId or dangerouslySingular back to the workspace route.
-        Expo Router maps dangerouslySingular to React Navigation getId, and
-        getId repeatedly breaks Android native-stack/Fabric by reordering an
-        already-mounted workspace screen. Keep workspace identity/retention
-        outside this route-level native-stack API.
-      */}
-      <Stack.Screen name="h/[serverId]/workspace/[workspaceId]" />
-      <Stack.Screen name="h/[serverId]/agent/[agentId]" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="h/[serverId]/index" />
-      <Stack.Screen name="h/[serverId]/sessions" />
-      <Stack.Screen name="h/[serverId]/open-project" />
-      <Stack.Screen name="h/[serverId]/settings" />
-      <Stack.Screen name="index" />
-      <Stack.Screen name="settings/hosts/[serverId]" />
     </Stack>
   );
 }
