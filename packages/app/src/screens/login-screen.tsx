@@ -7,6 +7,11 @@ import { LogIn } from "lucide-react-native";
 import { PaseoLogo } from "@/components/icons/paseo-logo";
 import { useSub2APILoginFlow } from "@/hooks/use-sub2api-login-flow";
 import { useAppSettings } from "@/hooks/use-settings";
+import {
+  getManagedServiceUrlFromEnv,
+  hasManagedServiceUrlEnv,
+  isManagedServiceUrlEnvValid,
+} from "@/config/managed-service-env";
 
 const styles = StyleSheet.create((theme) => ({
   root: {
@@ -120,6 +125,8 @@ export function LoginScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { updateSettings } = useAppSettings();
+  const injectedServiceUrl = getManagedServiceUrlFromEnv();
+  const serviceUrlFromEnv = hasManagedServiceUrlEnv();
 
   const {
     endpoint,
@@ -129,7 +136,7 @@ export function LoginScreen() {
     handleGitHubLogin,
     isInFlight,
   } = useSub2APILoginFlow({
-    defaultEndpoint: "",
+    defaultEndpoint: injectedServiceUrl,
     onLoginSuccess: () => {
       router.replace("/");
     },
@@ -146,7 +153,8 @@ export function LoginScreen() {
     router.replace("/");
   };
 
-  const loginDisabled = !canStartLogin || isInFlight;
+  const envUrlInvalid = serviceUrlFromEnv && !isManagedServiceUrlEnvValid();
+  const loginDisabled = !canStartLogin || isInFlight || envUrlInvalid;
 
   return (
     <View style={styles.root}>
@@ -168,20 +176,36 @@ export function LoginScreen() {
           </View>
 
           <View style={styles.form}>
-            <Text style={styles.fieldLabel}>服务地址</Text>
-            <TextInput
-              value={endpoint}
-              onChangeText={setEndpoint}
-              placeholder="https://api.example.com"
-              placeholderTextColor={theme.colors.foregroundMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.textInput}
-              testID="login-endpoint-input"
-            />
-            {!canStartLogin ? (
-              <Text style={styles.errorHint}>请填写合法的 http(s) 地址后再登录。</Text>
-            ) : null}
+            {serviceUrlFromEnv ? (
+              <>
+                <Text style={styles.fieldLabel}>服务地址</Text>
+                <Text style={[styles.subtitle, { textAlign: "left" as const, width: "100%" }]}>
+                  已由当前构建环境自动配置，无需填写。
+                </Text>
+                {envUrlInvalid ? (
+                  <Text style={styles.errorHint}>
+                    环境变量中的地址不是合法的 http(s) URL，请修正后重新打包或启动。
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Text style={styles.fieldLabel}>服务地址</Text>
+                <TextInput
+                  value={endpoint}
+                  onChangeText={setEndpoint}
+                  placeholder="https://api.example.com"
+                  placeholderTextColor={theme.colors.foregroundMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.textInput}
+                  testID="login-endpoint-input"
+                />
+                {!canStartLogin ? (
+                  <Text style={styles.errorHint}>请填写合法的 http(s) 地址后再登录。</Text>
+                ) : null}
+              </>
+            )}
 
             <Pressable
               onPress={() => void handleGitHubLogin()}

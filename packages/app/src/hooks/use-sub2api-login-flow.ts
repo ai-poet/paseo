@@ -94,6 +94,15 @@ export function useSub2APILoginFlow(
     setEndpoint(auth.endpoint);
   }, [auth?.endpoint]);
 
+  // After logout (or before first login), prefer build-time default when set.
+  useEffect(() => {
+    if (auth) return;
+    const trimmed = defaultEndpoint.trim();
+    if (trimmed.length > 0) {
+      setEndpoint(trimmed);
+    }
+  }, [auth, defaultEndpoint]);
+
   const canStartLogin = isValidSub2APIEndpoint(endpoint);
 
   const setupDefaultProviderWithKey = useCallback(

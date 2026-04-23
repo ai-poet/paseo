@@ -9,7 +9,8 @@
       "distribution": "internal",
       "channel": "development",
       "env": {
-        "APP_VARIANT": "development"
+        "APP_VARIANT": "development",
+        "EXPO_PUBLIC_MANAGED_SERVICE_URL": "https://ai-coding.cyberspirit.io"
       },
       "android": {
         "gradleCommand": ":app:assembleDebug"
@@ -18,7 +19,8 @@
     "production": {
       "channel": "production",
       "env": {
-        "APP_VARIANT": "production"
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_MANAGED_SERVICE_URL": "https://ai-coding.cyberspirit.io"
       },
       "android": {
         "autoIncrement": "versionCode"

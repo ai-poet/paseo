@@ -20,6 +20,7 @@ import {
 import type { Sub2APIGroup, Sub2APIKey } from "@/lib/sub2api-client";
 import { isValidSub2APIEndpoint } from "./sub2api-auth-bridge";
 import { Sub2APIPayModal } from "./sub2api-pay-modal";
+import { getManagedServiceUrlFromEnv, hasManagedServiceUrlEnv } from "@/config/managed-service-env";
 
 interface Provider {
   id: string;
@@ -117,6 +118,7 @@ export function Sub2APIProvidersSection() {
     handleGitHubLogin,
     logout,
   } = useSub2APILoginFlow({
+    defaultEndpoint: getManagedServiceUrlFromEnv(),
     onLoginSuccess: () => {
       void loadProviders();
       void Promise.all([
@@ -342,21 +344,28 @@ export function Sub2APIProvidersSection() {
           OAuth login, key management, group switching and payment are managed here.
         </Text>
 
-        <View style={styles.endpointRow}>
-          <Text style={styles.fieldLabel}>Service URL</Text>
-          <TextInput
-            value={serviceEndpoint}
-            onChangeText={setServiceEndpoint}
-            placeholder="https://api.example.com"
-            placeholderTextColor={theme.colors.foregroundMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.textInput}
-          />
-          {!canStartLogin ? (
-            <Text style={styles.errorHint}>Enter a valid http(s) endpoint before login.</Text>
-          ) : null}
-        </View>
+        {hasManagedServiceUrlEnv() ? (
+          <View style={styles.endpointRow}>
+            <Text style={styles.fieldLabel}>Service URL</Text>
+            <Text style={styles.sectionHint}>Configured from build environment. Manual entry is disabled.</Text>
+          </View>
+        ) : (
+          <View style={styles.endpointRow}>
+            <Text style={styles.fieldLabel}>Service URL</Text>
+            <TextInput
+              value={serviceEndpoint}
+              onChangeText={setServiceEndpoint}
+              placeholder="https://api.example.com"
+              placeholderTextColor={theme.colors.foregroundMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.textInput}
+            />
+            {!canStartLogin ? (
+              <Text style={styles.errorHint}>Enter a valid http(s) endpoint before login.</Text>
+            ) : null}
+          </View>
+        )}
 
         {isLoggedIn ? (
           <View style={styles.statusRow}>
