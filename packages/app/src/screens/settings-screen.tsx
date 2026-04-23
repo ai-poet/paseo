@@ -88,8 +88,8 @@ interface SidebarSectionItem {
 
 const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
   { id: "general", label: "General", icon: Settings },
-  { id: "managed-provider", label: "Provider", icon: Server, desktopOnly: true },
   { id: "paseo-cloud", label: "Paseo Cloud", icon: Cloud, desktopOnly: true },
+  { id: "managed-provider", label: "Provider", icon: Server, desktopOnly: true },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard, desktopOnly: true },
   { id: "integrations", label: "Integrations", icon: Puzzle, desktopOnly: true },
   { id: "permissions", label: "Permissions", icon: Shield, desktopOnly: true },
@@ -773,10 +773,10 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
               handleSendBehaviorChange={handleSendBehaviorChange}
             />
           );
-        case "managed-provider":
-          return isDesktopApp ? <ManagedProviderSettingsPage /> : null;
         case "paseo-cloud":
           return isDesktopApp ? <PaseoCloudSettingsPage /> : null;
+        case "managed-provider":
+          return isDesktopApp ? <ManagedProviderSettingsPage /> : null;
         case "shortcuts":
           return isDesktopApp ? <KeyboardShortcutsSection /> : null;
         case "integrations":
@@ -802,7 +802,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
   const needsDesktopProvidersStore =
     isDesktopApp &&
     view.kind === "section" &&
-    (view.section === "managed-provider" || view.section === "paseo-cloud");
+    (view.section === "paseo-cloud" || view.section === "managed-provider");
 
   const renderedContent = needsDesktopProvidersStore ? (
     <DesktopProvidersStoreProvider>{content}</DesktopProvidersStoreProvider>

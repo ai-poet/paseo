@@ -179,6 +179,185 @@ function providerNeedsReNormalize(original: unknown, normalized: StoredProvider)
   );
 }
 
+function normalizeUrlForProviderMatch(url: string): string {
+  return normalizeProviderEndpoint(url).replace(/\/+$/, "").toLowerCase();
+}
+
+/** Codex may store base_url with or without a trailing /v1; we accept either vs our saved row. */
+function codexDiskBaseUrlMatchKeys(diskRaw: string): Set<string> {
+  const trimmed = diskRaw.trim().replace(/\/+$/, "");
+  const keys = new Set<string>();
+  keys.add(normalizeUrlForProviderMatch(trimmed));
+  if (!trimmed.toLowerCase().endsWith("/v1")) {
+    keys.add(normalizeUrlForProviderMatch(`${trimmed}/v1`));
+  }
+  return keys;
+}
+
+function listCodexModelProviderSectionNames(toml: string): string[] {
+  const names: string[] = [];
+  const re = /^\[model_providers\.([^\]]+)\]\s*$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(toml)) !== null) {
+    names.push(m[1]);
+  }
+  return names;
+}
+
+function extractCodexModelProviderKey(toml: string): string | null {
+  const line =
+    /^\s*model_provider\s*=\s*"([^"]+)"/m.exec(toml) ??
+    /^\s*model_provider\s*=\s*'([^']+)'/m.exec(toml) ??
+    /^\s*model_provider\s*=\s*([A-Za-z0-9_-]+)/m.exec(toml);
+  return line ? line[1] : null;
+}
+
+function extractCodexBaseUrlForSection(toml: string, sectionName: string): string | null {
+  const header = `[model_providers.${sectionName}]`;
+  let inSection = false;
+  for (const line of toml.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      if (inSection) {
+        break;
+      }
+      if (trimmed === header) {
+        inSection = true;
+        continue;
+      }
+      inSection = false;
+      continue;
+    }
+    if (!inSection) {
+      continue;
+    }
+    const quoted =
+      /^\s*base_url\s*=\s*"([^"]*)"/.exec(line) ?? /^\s*base_url\s*=\s*'([^']*)'/.exec(line);
+    if (quoted) {
+      return quoted[1].trim();
+    }
+    const bare = /^\s*base_url\s*=\s*(\S+)/.exec(line);
+    if (bare) {
+      return bare[1].trim();
+    }
+  }
+  return null;
+}
+
+function parseCodexAuthOpenAiKey(authJsonText: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(authJsonText);
+    if (!isRecord(parsed)) {
+      return null;
+    }
+    return readString(parsed.OPENAI_API_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function resolveCodexDiskBaseUrl(configToml: string): string | null {
+  const named = extractCodexModelProviderKey(configToml);
+  if (named) {
+    const fromNamed = extractCodexBaseUrlForSection(configToml, named);
+    if (fromNamed) {
+      return fromNamed;
+    }
+  }
+  const sections = listCodexModelProviderSectionNames(configToml);
+  if (sections.length === 1) {
+    return extractCodexBaseUrlForSection(configToml, sections[0]!);
+  }
+  return null;
+}
+
+/**
+ * Match ~/.codex files to a saved provider row. Returns undefined when files are missing or
+ * unreadable so callers keep JSON state; null when disk is readable but matches nothing.
+ */
+export function resolveActiveCodexIdFromDiskState(
+  authJsonText: string,
+  configTomlText: string,
+  providers: StoredProvider[],
+  preferId: string | null,
+): string | null | undefined {
+  const apiKey = parseCodexAuthOpenAiKey(authJsonText);
+  const baseUrl = resolveCodexDiskBaseUrl(configTomlText);
+  if (!apiKey || !baseUrl) {
+    return undefined;
+  }
+  const diskKeys = codexDiskBaseUrlMatchKeys(baseUrl);
+
+  const candidates = providers.filter(shouldWriteCodex);
+  const matches = candidates.filter((p) => {
+    const expected = normalizeUrlForProviderMatch(providerEndpointBaseUrl(p.endpoint));
+    return diskKeys.has(expected) && p.apiKey.trim() === apiKey;
+  });
+  if (matches.length === 0) {
+    return null;
+  }
+  if (matches.length === 1) {
+    return matches[0]!.id;
+  }
+  if (preferId && matches.some((m) => m.id === preferId)) {
+    return preferId;
+  }
+  return matches[0]!.id;
+}
+
+async function inferActiveClaudeProviderIdFromDisk(
+  providers: StoredProvider[],
+  preferId: string | null,
+): Promise<string | null | undefined> {
+  const raw = await readFileOrNull(claudeSettingsPath());
+  if (!raw?.trim()) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed)) {
+    return undefined;
+  }
+  const env = isRecord(parsed.env) ? parsed.env : {};
+  const baseUrl = readString(env.ANTHROPIC_BASE_URL);
+  const token = readString(env.ANTHROPIC_AUTH_TOKEN);
+  if (!baseUrl || !token) {
+    return undefined;
+  }
+  const diskEp = normalizeProviderEndpoint(baseUrl);
+
+  const candidates = providers.filter(shouldWriteClaude);
+  const matches = candidates.filter(
+    (p) => normalizeProviderEndpoint(p.endpoint) === diskEp && p.apiKey.trim() === token.trim(),
+  );
+  if (matches.length === 0) {
+    return null;
+  }
+  if (matches.length === 1) {
+    return matches[0]!.id;
+  }
+  if (preferId && matches.some((m) => m.id === preferId)) {
+    return preferId;
+  }
+  return matches[0]!.id;
+}
+
+async function inferActiveCodexProviderIdFromDisk(
+  providers: StoredProvider[],
+  preferId: string | null,
+): Promise<string | null | undefined> {
+  const authRaw = await readFileOrNull(codexAuthPath());
+  const configRaw = await readFileOrNull(codexConfigPath());
+  if (!authRaw?.trim() || !configRaw?.trim()) {
+    return undefined;
+  }
+  return resolveActiveCodexIdFromDiskState(authRaw, configRaw, providers, preferId);
+}
+
 async function loadStore(): Promise<ProviderStore> {
   try {
     if (!existsSync(PROVIDERS_FILE)) {
@@ -210,8 +389,17 @@ async function loadStore(): Promise<ProviderStore> {
       return raw;
     };
 
-    const activeClaudeProviderId = readScopedActive("activeClaudeProviderId") ?? legacyActive;
-    const activeCodexProviderId = readScopedActive("activeCodexProviderId") ?? legacyActive;
+    let activeClaudeProviderId = readScopedActive("activeClaudeProviderId") ?? legacyActive;
+    let activeCodexProviderId = readScopedActive("activeCodexProviderId") ?? legacyActive;
+
+    const diskClaudeId = await inferActiveClaudeProviderIdFromDisk(providers, activeClaudeProviderId);
+    if (diskClaudeId !== undefined) {
+      activeClaudeProviderId = diskClaudeId;
+    }
+    const diskCodexId = await inferActiveCodexProviderIdFromDisk(providers, activeCodexProviderId);
+    if (diskCodexId !== undefined) {
+      activeCodexProviderId = diskCodexId;
+    }
 
     const activeProviderId =
       activeClaudeProviderId !== null &&

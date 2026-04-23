@@ -92,7 +92,9 @@ export function DesktopProvidersPanel() {
       <SettingsSection title="Active routes">
         <Text style={[styles.sectionHint, { marginBottom: theme.spacing[2] }]}>
           Claude Code and Codex are switched independently. An entry that targets both CLIs updates
-          both when you use the matching button.
+          both when you use the matching button. On each load we reconcile these rows with your
+          on-disk CLI config (~/.claude/settings.json and ~/.codex/) so the highlighted entry matches
+          what Codex and Claude would actually use.
         </Text>
         <View style={styles.routeHeroStack}>
           <RouteHeroCard label="Claude Code" provider={activeClaudeProvider} />
