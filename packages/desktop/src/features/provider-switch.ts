@@ -46,7 +46,10 @@ export type Provider = StoredProvider;
 
 export interface ProviderStore {
   providers: StoredProvider[];
+  /** Legacy field: equals both ids when they match; otherwise Claude id for older readers. */
   activeProviderId: string | null;
+  activeClaudeProviderId: string | null;
+  activeCodexProviderId: string | null;
 }
 
 const PROVIDERS_FILE = join(homedir(), ".paseo", "providers.json");
@@ -179,7 +182,12 @@ function providerNeedsReNormalize(original: unknown, normalized: StoredProvider)
 async function loadStore(): Promise<ProviderStore> {
   try {
     if (!existsSync(PROVIDERS_FILE)) {
-      return { providers: [], activeProviderId: null };
+      return {
+        providers: [],
+        activeProviderId: null,
+        activeClaudeProviderId: null,
+        activeCodexProviderId: null,
+      };
     }
     const raw = await readFile(PROVIDERS_FILE, "utf-8");
     const parsed: unknown = JSON.parse(raw);
@@ -188,15 +196,41 @@ async function loadStore(): Promise<ProviderStore> {
     const providers = providersInput.map((p) =>
       normalizeProvider(p as StoredProvider),
     );
-    const activeProviderId =
+    const legacyActive =
       typeof parsedRecord.activeProviderId === "string" &&
       providers.some((provider) => provider.id === parsedRecord.activeProviderId)
         ? parsedRecord.activeProviderId
         : null;
-    const normalizedStore: ProviderStore = { providers, activeProviderId };
+
+    const readScopedActive = (key: string): string | null => {
+      const raw = parsedRecord[key];
+      if (typeof raw !== "string" || !providers.some((p) => p.id === raw)) {
+        return null;
+      }
+      return raw;
+    };
+
+    const activeClaudeProviderId = readScopedActive("activeClaudeProviderId") ?? legacyActive;
+    const activeCodexProviderId = readScopedActive("activeCodexProviderId") ?? legacyActive;
+
+    const activeProviderId =
+      activeClaudeProviderId !== null &&
+      activeCodexProviderId !== null &&
+      activeClaudeProviderId === activeCodexProviderId
+        ? activeClaudeProviderId
+        : legacyActive;
+
+    const normalizedStore: ProviderStore = {
+      providers,
+      activeProviderId,
+      activeClaudeProviderId,
+      activeCodexProviderId,
+    };
     const shouldPersistNormalizedStore =
       !Array.isArray(parsedRecord.providers) ||
       parsedRecord.activeProviderId !== activeProviderId ||
+      parsedRecord.activeClaudeProviderId !== activeClaudeProviderId ||
+      parsedRecord.activeCodexProviderId !== activeCodexProviderId ||
       providers.some((provider, index) => {
         const original = providersInput[index];
         return providerNeedsReNormalize(original, provider);
@@ -206,7 +240,12 @@ async function loadStore(): Promise<ProviderStore> {
     }
     return normalizedStore;
   } catch {
-    return { providers: [], activeProviderId: null };
+    return {
+      providers: [],
+      activeProviderId: null,
+      activeClaudeProviderId: null,
+      activeCodexProviderId: null,
+    };
   }
 }
 
@@ -338,45 +377,88 @@ export async function addProvider(provider: StoredProvider): Promise<void> {
   await saveStore(store);
 }
 
+function syncLegacyActiveProviderId(store: ProviderStore): void {
+  const c = store.activeClaudeProviderId;
+  const x = store.activeCodexProviderId;
+  store.activeProviderId = c !== null && c === x ? c : (c ?? x ?? null);
+}
+
 export async function removeProvider(id: string): Promise<void> {
   const store = await loadStore();
   store.providers = store.providers.filter((provider) => provider.id !== id);
   if (store.activeProviderId === id) {
     store.activeProviderId = null;
   }
+  if (store.activeClaudeProviderId === id) {
+    store.activeClaudeProviderId = null;
+  }
+  if (store.activeCodexProviderId === id) {
+    store.activeCodexProviderId = null;
+  }
+  syncLegacyActiveProviderId(store);
   await saveStore(store);
 }
 
-export async function switchProvider(id: string): Promise<ConfigBackup> {
+/**
+ * Apply a saved endpoint to Claude and/or Codex on disk.
+ * @param explicitScope When set, only that CLI is updated (must be supported by the provider row).
+ */
+export async function switchProvider(
+  id: string,
+  explicitScope?: "claude" | "codex",
+): Promise<ConfigBackup> {
   const store = await loadStore();
   const provider = store.providers.find((entry) => entry.id === id);
   if (!provider) {
     throw new Error(`Provider not found: ${id}`);
   }
+
+  let writeClaude: boolean;
+  let writeCodex: boolean;
+  if (explicitScope === "claude") {
+    if (!shouldWriteClaude(provider)) {
+      throw new Error("This endpoint does not apply to Claude Code.");
+    }
+    writeClaude = true;
+    writeCodex = false;
+  } else if (explicitScope === "codex") {
+    if (!shouldWriteCodex(provider)) {
+      throw new Error("This endpoint does not apply to Codex.");
+    }
+    writeClaude = false;
+    writeCodex = true;
+  } else {
+    writeClaude = shouldWriteClaude(provider);
+    writeCodex = shouldWriteCodex(provider);
+  }
+
   const backup = await backupCurrentConfig();
   try {
-    if (shouldWriteClaude(provider)) {
+    if (writeClaude) {
       await writeClaudeSettings(provider);
+      store.activeClaudeProviderId = id;
     }
-    if (shouldWriteCodex(provider)) {
+    if (writeCodex) {
       await writeCodexSettings(provider);
+      store.activeCodexProviderId = id;
     }
-    store.activeProviderId = id;
+    syncLegacyActiveProviderId(store);
     await saveStore(store);
   } catch (error) {
     await restoreConfig(backup);
     throw error;
   }
-  log.info("[provider-switch] switched to provider:", provider.name);
+  log.info("[provider-switch] switched to provider:", provider.name, explicitScope ?? "auto");
   return backup;
 }
 
 export async function getCurrentProvider(): Promise<StoredProvider | null> {
   const store = await loadStore();
-  if (!store.activeProviderId) {
+  const id = store.activeClaudeProviderId ?? store.activeProviderId;
+  if (!id) {
     return null;
   }
-  return store.providers.find((p) => p.id === store.activeProviderId) ?? null;
+  return store.providers.find((p) => p.id === id) ?? null;
 }
 
 export async function setupDefaultProvider(params: {
@@ -411,7 +493,9 @@ export async function setupDefaultProvider(params: {
   try {
     await writeClaudeSettings(provider);
     await writeCodexSettings(provider);
-    store.activeProviderId = id;
+    store.activeClaudeProviderId = id;
+    store.activeCodexProviderId = id;
+    syncLegacyActiveProviderId(store);
     await saveStore(store);
   } catch (error) {
     await restoreConfig(backup);

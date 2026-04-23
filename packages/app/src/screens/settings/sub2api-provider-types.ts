@@ -25,5 +25,8 @@ export interface DesktopProviderPayload {
 
 export interface ProviderStore {
   providers: DesktopProviderPayload[];
+  /** Legacy single active id; kept in sync when Claude and Codex point at the same entry. */
   activeProviderId: string | null;
+  activeClaudeProviderId: string | null;
+  activeCodexProviderId: string | null;
 }

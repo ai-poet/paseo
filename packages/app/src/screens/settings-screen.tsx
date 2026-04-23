@@ -59,6 +59,8 @@ import { THINKING_TONE_NATIVE_PCM_BASE64 } from "@/utils/thinking-tone.native-pc
 import { useVoiceAudioEngineOptional } from "@/contexts/voice-context";
 import { HostPage, HostRenameButton } from "@/screens/settings/host-page";
 import { ManagedProviderSettingsPage } from "@/screens/settings/managed-provider-settings-page";
+import { PaseoCloudSettingsPage } from "@/screens/settings/paseo-cloud-settings-page";
+import { DesktopProvidersStoreProvider } from "@/screens/settings/desktop-providers-context";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
 import {
@@ -86,7 +88,8 @@ interface SidebarSectionItem {
 
 const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
   { id: "general", label: "General", icon: Settings },
-  { id: "managed-provider", label: "Provider", icon: Cloud, desktopOnly: true },
+  { id: "managed-provider", label: "Provider", icon: Server, desktopOnly: true },
+  { id: "paseo-cloud", label: "Paseo Cloud", icon: Cloud, desktopOnly: true },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard, desktopOnly: true },
   { id: "integrations", label: "Integrations", icon: Puzzle, desktopOnly: true },
   { id: "permissions", label: "Permissions", icon: Shield, desktopOnly: true },
@@ -772,6 +775,8 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
           );
         case "managed-provider":
           return isDesktopApp ? <ManagedProviderSettingsPage /> : null;
+        case "paseo-cloud":
+          return isDesktopApp ? <PaseoCloudSettingsPage /> : null;
         case "shortcuts":
           return isDesktopApp ? <KeyboardShortcutsSection /> : null;
         case "integrations":
@@ -793,6 +798,17 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
     }
     return null;
   })();
+
+  const needsDesktopProvidersStore =
+    isDesktopApp &&
+    view.kind === "section" &&
+    (view.section === "managed-provider" || view.section === "paseo-cloud");
+
+  const renderedContent = needsDesktopProvidersStore ? (
+    <DesktopProvidersStoreProvider>{content}</DesktopProvidersStoreProvider>
+  ) : (
+    content
+  );
 
   if (settingsLoading) {
     return (
@@ -868,7 +884,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
           style={styles.scrollView}
           contentContainerStyle={{ paddingBottom: insets.bottom }}
         >
-          <View style={styles.content}>{content}</View>
+          <View style={styles.content}>{renderedContent}</View>
         </ScrollView>
         {addHostModals}
       </View>
@@ -914,7 +930,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
             style={styles.scrollView}
             contentContainerStyle={{ paddingBottom: insets.bottom }}
           >
-            <View style={styles.content}>{content}</View>
+            <View style={styles.content}>{renderedContent}</View>
           </ScrollView>
         </View>
       </View>

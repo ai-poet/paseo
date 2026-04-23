@@ -6,7 +6,7 @@ import { settingsStyles } from "@/styles/settings";
 import { getIsElectron } from "@/constants/platform";
 import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
-import { useAppSettings } from "@/hooks/use-settings";
+import { useDesktopProvidersStore } from "@/screens/settings/desktop-providers-context";
 import {
   useCreateSub2APIKeyMutation,
   useSub2APIKeys,
@@ -42,7 +42,7 @@ function pickUsableKey(keys: Sub2APIKey[], groupId: number): Sub2APIKey | null {
 
 export function Sub2APIModelsSection() {
   const isElectron = getIsElectron();
-  const { settings } = useAppSettings();
+  const { loadProviders } = useDesktopProvidersStore();
   const { isLoggedIn, auth } = useSub2APIAuth();
   const modelsQuery = useSub2APIModelCatalog();
   const keysQuery = useSub2APIKeys(1, 200);
@@ -75,6 +75,7 @@ export function Sub2APIModelsSection() {
           apiKey: keyToUse.key,
           name: item.best_group.name,
         });
+        await loadProviders();
 
         Alert.alert(
           "Switched",
@@ -86,13 +87,10 @@ export function Sub2APIModelsSection() {
         setSwitchingModel(null);
       }
     },
-    [auth?.endpoint, createKeyMutation, keys],
+    [auth?.endpoint, createKeyMutation, keys, loadProviders],
   );
 
   if (!isElectron) {
-    return null;
-  }
-  if (settings.accessMode === "byok") {
     return null;
   }
 

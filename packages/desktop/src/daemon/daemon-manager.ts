@@ -539,8 +539,10 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
     add_provider: (args?: Record<string, unknown>) => addProvider(args as unknown as Provider),
     remove_provider: (args?: Record<string, unknown>) =>
       removeProvider((args as { id: string }).id),
-    switch_provider: (args?: Record<string, unknown>) =>
-      switchProvider((args as { id: string }).id),
+    switch_provider: (args?: Record<string, unknown>) => {
+      const payload = args as { id: string; scope?: "claude" | "codex" };
+      return switchProvider(payload.id, payload.scope);
+    },
     get_current_provider: () => getCurrentProvider(),
     setup_default_provider: (args?: Record<string, unknown>) =>
       setupDefaultProvider(args as unknown as { endpoint: string; apiKey: string; name?: string }),
