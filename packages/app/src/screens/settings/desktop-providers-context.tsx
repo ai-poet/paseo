@@ -10,6 +10,7 @@ import {
 import { Alert } from "react-native";
 import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import { getIsElectron } from "@/constants/platform";
+import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import type {
   DesktopProviderPayload,
   ManagedProviderTarget,
@@ -59,6 +60,7 @@ export function resolveScopedActiveProviderIds(store: ProviderStore): {
 }
 
 export function DesktopProvidersStoreProvider({ children }: { children: ReactNode }) {
+  const { isLoggedIn } = useSub2APIAuth();
   const isElectron = getIsElectron();
   const [providers, setProviders] = useState<DesktopProviderPayload[]>([]);
   const [activeClaudeProviderId, setActiveClaudeProviderId] = useState<string | null>(null);
@@ -89,6 +91,14 @@ export function DesktopProvidersStoreProvider({ children }: { children: ReactNod
   useEffect(() => {
     void loadProviders();
   }, [loadProviders]);
+
+  // After managed-service OAuth (handled at app root), refresh provider list so Claude/Codex routes match the new account.
+  useEffect(() => {
+    if (!isLoggedIn) {
+      return;
+    }
+    void loadProviders();
+  }, [isLoggedIn, loadProviders]);
 
   const openCustomProviderForm = useCallback(() => {
     setShowAddProviderForm(true);

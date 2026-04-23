@@ -97,6 +97,7 @@ import {
 } from "@/stores/navigation-active-workspace-store";
 import { isWeb, isNative } from "@/constants/platform";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
+import { Sub2apiDesktopAuthBridge } from "@/hooks/sub2api-desktop-auth-bridge";
 
 polyfillCrypto();
 
@@ -938,6 +939,7 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <KeyboardProvider>
             <QueryProvider>
+              <Sub2apiDesktopAuthBridge />
               <HostRuntimeBootstrapProvider>
                 <PushNotificationRouter />
                 <ToastProvider>

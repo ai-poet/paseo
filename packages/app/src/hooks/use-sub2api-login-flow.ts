@@ -3,30 +3,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
-import { getIsElectron } from "@/constants/platform";
-import { getDesktopHost } from "@/desktop/host";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { useSub2APIAuth, type Sub2APIAuthState } from "@/hooks/use-sub2api-auth";
-import {
-  buildSub2APILoginBridgeUrl,
-  isValidSub2APIEndpoint,
-  parseSub2APIAuthCallback,
-} from "@/screens/settings/sub2api-auth-bridge";
-
-interface AuthCallbackPayload {
-  url: string;
-}
+import { buildSub2APILoginBridgeUrl, isValidSub2APIEndpoint } from "@/screens/settings/sub2api-auth-bridge";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function extractAuthCallbackUrl(payload: unknown): string | null {
-  if (typeof payload !== "object" || payload === null) {
-    return null;
-  }
-  const url = (payload as AuthCallbackPayload).url;
-  return typeof url === "string" && url.length > 0 ? url : null;
 }
 
 export interface UseSub2APILoginFlowOptions {
@@ -64,21 +46,14 @@ export interface UseSub2APILoginFlowReturn {
 export function useSub2APILoginFlow(
   options: UseSub2APILoginFlowOptions = {},
 ): UseSub2APILoginFlowReturn {
-  const { onLoginSuccess, onLoginError, defaultEndpoint = "", alertOnError = true } = options;
-  const { auth, isLoggedIn, isLoading, login, logout } = useSub2APIAuth();
+  const { onLoginError, defaultEndpoint = "", alertOnError = true } = options;
+  // onLoginSuccess in options: OAuth now completes in Sub2apiDesktopAuthBridge (me/usage refetch via query invalidation).
+  const { auth, isLoggedIn, isLoading, logout } = useSub2APIAuth();
   const [endpoint, setEndpoint] = useState<string>(auth?.endpoint ?? defaultEndpoint);
   const [isInFlight, setIsInFlight] = useState(false);
-  const lastHandledCallbackUrlRef = useRef<string | null>(null);
-  const isElectron = getIsElectron();
 
-  // Keep latest callbacks in refs so the auth-callback subscription effect
-  // can remain stable across callback identity changes.
-  const onLoginSuccessRef = useRef(onLoginSuccess);
   const onLoginErrorRef = useRef(onLoginError);
   const alertOnErrorRef = useRef(alertOnError);
-  useEffect(() => {
-    onLoginSuccessRef.current = onLoginSuccess;
-  }, [onLoginSuccess]);
   useEffect(() => {
     onLoginErrorRef.current = onLoginError;
   }, [onLoginError]);
@@ -102,85 +77,14 @@ export function useSub2APILoginFlow(
     }
   }, [auth, defaultEndpoint]);
 
+  // OAuth callback is handled by Sub2apiDesktopAuthBridge at root; clear in-flight when session appears.
+  useEffect(() => {
+    if (isLoggedIn) {
+      setIsInFlight(false);
+    }
+  }, [isLoggedIn]);
+
   const canStartLogin = isValidSub2APIEndpoint(endpoint);
-
-  const handleAuthCallback = useCallback(
-    async (payload: unknown) => {
-      const url = extractAuthCallbackUrl(payload);
-      if (!url) return;
-      if (lastHandledCallbackUrlRef.current === url) return;
-      lastHandledCallbackUrlRef.current = url;
-
-      try {
-        const session = parseSub2APIAuthCallback(url);
-        await login({
-          accessToken: session.accessToken,
-          refreshToken: session.refreshToken,
-          expiresIn: session.expiresIn,
-          endpoint: session.endpoint,
-        });
-        setEndpoint(session.endpoint);
-
-        const nextAuth: Sub2APIAuthState = {
-          accessToken: session.accessToken,
-          refreshToken: session.refreshToken,
-          expiresAt: Date.now() + session.expiresIn * 1000,
-          endpoint: session.endpoint,
-        };
-        onLoginSuccessRef.current?.(nextAuth);
-      } catch (error) {
-        console.error("[managed-login-flow] callback failed:", error);
-        if (alertOnErrorRef.current) {
-          Alert.alert("Login failed", getErrorMessage(error));
-        }
-        onLoginErrorRef.current?.(error);
-      } finally {
-        setIsInFlight(false);
-      }
-    },
-    [login],
-  );
-
-  useEffect(() => {
-    if (!isElectron) return;
-    const subscribe = getDesktopHost()?.events?.on;
-    if (typeof subscribe !== "function") return;
-
-    let disposed = false;
-    let cleanup: (() => void) | null = null;
-
-    void Promise.resolve(subscribe("auth-callback", handleAuthCallback))
-      .then((unsubscribe) => {
-        if (disposed) {
-          unsubscribe();
-          return;
-        }
-        cleanup = unsubscribe;
-      })
-      .catch((error) => {
-        console.error("[managed-login-flow] subscribe failed:", error);
-      });
-
-    return () => {
-      disposed = true;
-      cleanup?.();
-    };
-  }, [handleAuthCallback, isElectron]);
-
-  useEffect(() => {
-    if (!isElectron) return;
-    const getPendingAuthCallback = getDesktopHost()?.getPendingAuthCallback;
-    if (typeof getPendingAuthCallback !== "function") return;
-
-    void getPendingAuthCallback()
-      .then((url) => {
-        if (!url) return;
-        void handleAuthCallback({ url });
-      })
-      .catch((error) => {
-        console.error("[managed-login-flow] pending callback failed:", error);
-      });
-  }, [handleAuthCallback, isElectron]);
 
   const handleGitHubLogin = useCallback(async () => {
     try {

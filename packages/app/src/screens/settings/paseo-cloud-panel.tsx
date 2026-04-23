@@ -171,15 +171,6 @@ export function PaseoCloudPanel() {
     logout,
   } = useSub2APILoginFlow({
     defaultEndpoint: getManagedServiceUrlFromEnv(),
-    onLoginSuccess: () => {
-      void loadProviders();
-      void Promise.all([
-        meQuery.refetch(),
-        usageTodayQuery.refetch(),
-        usageWeekQuery.refetch(),
-        usageMonthQuery.refetch(),
-      ]);
-    },
   });
 
   const signedInAccountLabel = useMemo(() => {

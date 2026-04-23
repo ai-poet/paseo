@@ -1,10 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import { renderHook, waitFor } from "@testing-library/react";
+import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Sub2APIAuthState } from "@/hooks/use-sub2api-auth";
-import { useSub2APILoginFlow } from "./use-sub2api-login-flow";
+import { Sub2apiDesktopAuthBridge } from "./sub2api-desktop-auth-bridge";
 
 type AuthCallbackListener = (payload: { url: string }) => void;
 
@@ -13,12 +14,6 @@ const { mocks } = vi.hoisted(() => {
   return {
     mocks: {
       login: vi.fn(),
-      logout: vi.fn(),
-      openExternalUrl: vi.fn(),
-      invokeDesktopCommand: vi.fn(),
-      get auth() {
-        return null as Sub2APIAuthState | null;
-      },
       setListener(next: AuthCallbackListener | null) {
         listener = next;
       },
@@ -43,7 +38,7 @@ vi.mock("@/hooks/use-sub2api-auth", () => ({
     isLoggedIn: false,
     isLoading: false,
     login: mocks.login,
-    logout: mocks.logout,
+    logout: vi.fn(),
     getAccessToken: vi.fn(),
   }),
 }));
@@ -60,31 +55,19 @@ vi.mock("@/desktop/host", () => ({
   }),
 }));
 
-vi.mock("@/utils/open-external-url", () => ({
-  openExternalUrl: mocks.openExternalUrl,
-}));
-
-vi.mock("@/desktop/electron/invoke", () => ({
-  invokeDesktopCommand: mocks.invokeDesktopCommand,
-}));
-
-describe("useSub2APILoginFlow", () => {
+describe("Sub2apiDesktopAuthBridge", () => {
   beforeEach(() => {
     mocks.login.mockReset();
-    mocks.logout.mockReset();
-    mocks.openExternalUrl.mockReset();
-    mocks.invokeDesktopCommand.mockReset();
     mocks.setListener(null);
   });
 
-  it("persists auth from the callback without auto-writing device provider config", async () => {
-    const onLoginSuccess = vi.fn();
+  it("persists auth from the Electron auth-callback", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-    renderHook(() =>
-      useSub2APILoginFlow({
-        defaultEndpoint: "https://api.example.com",
-        onLoginSuccess,
-      }),
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Sub2apiDesktopAuthBridge />
+      </QueryClientProvider>,
     );
 
     await waitFor(() => {
@@ -104,14 +87,5 @@ describe("useSub2APILoginFlow", () => {
         endpoint: "https://api.example.com",
       });
     });
-
-    expect(mocks.invokeDesktopCommand).not.toHaveBeenCalled();
-    expect(onLoginSuccess).toHaveBeenCalledWith(
-      expect.objectContaining({
-        accessToken: "at",
-        refreshToken: "rt",
-        endpoint: "https://api.example.com",
-      }),
-    );
   });
 });
