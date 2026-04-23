@@ -20,6 +20,7 @@ import {
   Shield,
   Puzzle,
   Plus,
+  Cloud,
 } from "lucide-react-native";
 import { SidebarHeaderRow } from "@/components/sidebar/sidebar-header-row";
 import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
@@ -57,6 +58,7 @@ import { settingsStyles } from "@/styles/settings";
 import { THINKING_TONE_NATIVE_PCM_BASE64 } from "@/utils/thinking-tone.native-pcm";
 import { useVoiceAudioEngineOptional } from "@/contexts/voice-context";
 import { HostPage, HostRenameButton } from "@/screens/settings/host-page";
+import { ManagedProviderSettingsPage } from "@/screens/settings/managed-provider-settings-page";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
 import {
@@ -84,6 +86,7 @@ interface SidebarSectionItem {
 
 const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
   { id: "general", label: "General", icon: Settings },
+  { id: "managed-provider", label: "Provider", icon: Cloud, desktopOnly: true },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard, desktopOnly: true },
   { id: "integrations", label: "Integrations", icon: Puzzle, desktopOnly: true },
   { id: "permissions", label: "Permissions", icon: Shield, desktopOnly: true },
@@ -767,6 +770,8 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
               handleSendBehaviorChange={handleSendBehaviorChange}
             />
           );
+        case "managed-provider":
+          return isDesktopApp ? <ManagedProviderSettingsPage /> : null;
         case "shortcuts":
           return isDesktopApp ? <KeyboardShortcutsSection /> : null;
         case "integrations":

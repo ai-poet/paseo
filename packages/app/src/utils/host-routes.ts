@@ -374,6 +374,7 @@ export function buildHostNewWorkspaceRoute(
 
 export const SETTINGS_SECTION_SLUGS = [
   "general",
+  "managed-provider",
   "shortcuts",
   "integrations",
   "permissions",
