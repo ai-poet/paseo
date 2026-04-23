@@ -95,6 +95,8 @@ import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import { type PrHint, useWorkspacePrHint } from "@/hooks/use-checkout-pr-status-query";
 import { buildSidebarProjectRowModel } from "@/utils/sidebar-project-row-model";
 import {
+  activateNavigationWorkspaceSelection,
+  getNavigationActiveWorkspaceSelection,
   useIsNavigationProjectActive,
   useIsNavigationWorkspaceSelected,
 } from "@/stores/navigation-active-workspace-store";
@@ -209,29 +211,55 @@ interface WorkspaceRowInnerProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
 }
 
+function normalizePlaceholderWorkspaceName(name: string): string {
+  return name.trim().toLocaleLowerCase();
+}
+
+function extractPlaceholderSlug(workspaceId: string): string | null {
+  const separatorIndex = workspaceId.indexOf(":");
+  if (separatorIndex < 0 || separatorIndex >= workspaceId.length - 1) {
+    return null;
+  }
+  return workspaceId.slice(separatorIndex + 1);
+}
+
+function workspaceDirectoryHasSlug(
+  workspaceDirectory: string | undefined,
+  slug: string,
+): boolean {
+  if (!workspaceDirectory) {
+    return false;
+  }
+  const normalizedDirectory = workspaceDirectory.replace(/\\/g, "/");
+  return normalizedDirectory.endsWith(`/${slug}`);
+}
+
+function findPlaceholderReplacement(
+  placeholder: SidebarWorkspaceEntry,
+  realWorkspaces: readonly SidebarWorkspaceEntry[],
+): SidebarWorkspaceEntry | null {
+  const normalizedPlaceholderName = normalizePlaceholderWorkspaceName(placeholder.name);
+  const byName = realWorkspaces.find(
+    (workspace) =>
+      normalizePlaceholderWorkspaceName(workspace.name) === normalizedPlaceholderName,
+  );
+  if (byName) {
+    return byName;
+  }
+  const placeholderSlug = extractPlaceholderSlug(placeholder.workspaceId);
+  if (!placeholderSlug) {
+    return null;
+  }
+  return (
+    realWorkspaces.find((workspace) =>
+      workspaceDirectoryHasSlug(workspace.workspaceDirectory, placeholderSlug),
+    ) ?? null
+  );
+}
+
 export function getSidebarRenderableProjects(
   projects: SidebarProjectEntry[],
 ): SidebarProjectEntry[] {
-  function normalizeWorkspaceName(name: string): string {
-    return name.trim().toLocaleLowerCase();
-  }
-
-  function extractCreatingSlug(workspaceId: string): string | null {
-    const separatorIndex = workspaceId.indexOf(":");
-    if (separatorIndex < 0 || separatorIndex >= workspaceId.length - 1) {
-      return null;
-    }
-    return workspaceId.slice(separatorIndex + 1);
-  }
-
-  function workspaceDirectoryHasSlug(workspaceDirectory: string | undefined, slug: string): boolean {
-    if (!workspaceDirectory) {
-      return false;
-    }
-    const normalizedDirectory = workspaceDirectory.replace(/\\/g, "/");
-    return normalizedDirectory.endsWith(`/${slug}`);
-  }
-
   let didChange = false;
   const nextProjects = projects.map((project) => {
     const realWorkspaces = project.workspaces.filter(
@@ -240,25 +268,12 @@ export function getSidebarRenderableProjects(
     if (realWorkspaces.length === 0) {
       return project;
     }
-    const realWorkspaceNames = new Set(
-      realWorkspaces.map((workspace) => normalizeWorkspaceName(workspace.name)),
-    );
 
     const filteredWorkspaces = project.workspaces.filter((workspace) => {
       if (!isCreatingWorktreePlaceholderId(workspace.workspaceId)) {
         return true;
       }
-      const normalizedPlaceholderName = normalizeWorkspaceName(workspace.name);
-      if (realWorkspaceNames.has(normalizedPlaceholderName)) {
-        return false;
-      }
-      const placeholderSlug = extractCreatingSlug(workspace.workspaceId);
-      if (!placeholderSlug) {
-        return true;
-      }
-      return !realWorkspaces.some((realWorkspace) =>
-        workspaceDirectoryHasSlug(realWorkspace.workspaceDirectory, placeholderSlug),
-      );
+      return findPlaceholderReplacement(workspace, realWorkspaces) === null;
     });
 
     if (filteredWorkspaces.length === project.workspaces.length) {
@@ -272,6 +287,30 @@ export function getSidebarRenderableProjects(
   });
 
   return didChange ? nextProjects : projects;
+}
+
+export function findPlaceholderToRealWorkspaceReplacements(
+  projects: readonly SidebarProjectEntry[],
+): Map<string, SidebarWorkspaceEntry> {
+  const replacements = new Map<string, SidebarWorkspaceEntry>();
+  for (const project of projects) {
+    const realWorkspaces = project.workspaces.filter(
+      (workspace) => !isCreatingWorktreePlaceholderId(workspace.workspaceId),
+    );
+    if (realWorkspaces.length === 0) {
+      continue;
+    }
+    for (const workspace of project.workspaces) {
+      if (!isCreatingWorktreePlaceholderId(workspace.workspaceId)) {
+        continue;
+      }
+      const replacement = findPlaceholderReplacement(workspace, realWorkspaces);
+      if (replacement) {
+        replacements.set(workspace.workspaceId, replacement);
+      }
+    }
+  }
+  return replacements;
 }
 
 function useSidebarWorkspaceEntry(
@@ -2134,37 +2173,33 @@ export function SidebarWorkspaceList({
       return;
     }
 
-    const duplicatePlaceholderIds: string[] = [];
-    const renderableProjectByKey = new Map(
-      projectsForRender.map((project) => [project.projectKey, project] as const),
-    );
-    for (const project of projects) {
-      const renderableProject = renderableProjectByKey.get(project.projectKey);
-      const visibleWorkspaceIds = new Set(
-        (renderableProject?.workspaces ?? []).map((workspace) => workspace.workspaceId),
-      );
-      for (const workspace of project.workspaces) {
-        if (
-          isCreatingWorktreePlaceholderId(workspace.workspaceId) &&
-          !visibleWorkspaceIds.has(workspace.workspaceId)
-        ) {
-          duplicatePlaceholderIds.push(workspace.workspaceId);
-        }
-      }
-    }
-
-    if (duplicatePlaceholderIds.length === 0) {
+    const replacements = findPlaceholderToRealWorkspaceReplacements(projects);
+    if (replacements.size === 0) {
       return;
     }
 
-    setWorkspaces(serverId, (current) => {
-      const next = new Map(current);
-      for (const workspaceId of duplicatePlaceholderIds) {
-        next.delete(workspaceId);
+    const activeSelection = getNavigationActiveWorkspaceSelection();
+    if (activeSelection && activeSelection.serverId === serverId) {
+      const replacement = replacements.get(activeSelection.workspaceId);
+      if (replacement && replacement.workspaceId !== activeSelection.workspaceId) {
+        activateNavigationWorkspaceSelection(
+          { serverId, workspaceId: replacement.workspaceId },
+          { updateBrowserHistory: true, historyMode: "replace" },
+        );
       }
-      return next;
+    }
+
+    setWorkspaces(serverId, (current) => {
+      let changed = false;
+      const next = new Map(current);
+      for (const workspaceId of replacements.keys()) {
+        if (next.delete(workspaceId)) {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
     });
-  }, [projects, projectsForRender, serverId, setWorkspaces]);
+  }, [projects, serverId, setWorkspaces]);
 
   const handleProjectDragEnd = useCallback(
     (reorderedProjects: SidebarProjectEntry[]) => {

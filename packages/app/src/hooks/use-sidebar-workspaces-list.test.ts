@@ -36,13 +36,23 @@ function project(input: {
   projectKind?: WorkspaceStructureProject["projectKind"];
   iconWorkingDir?: string;
   workspaceKeys: string[];
+  workspaces?: WorkspaceStructureProject["workspaces"];
 }): WorkspaceStructureProject {
+  const workspaces =
+    input.workspaces ??
+    input.workspaceKeys.map((workspaceId) => ({
+      workspaceId,
+      workspaceName: workspaceId,
+      workspaceDirectory: `${input.iconWorkingDir ?? input.projectKey}/${workspaceId}`,
+      workspaceKind: "worktree" as const,
+    }));
   return {
     projectKey: input.projectKey,
     projectName: input.projectName ?? input.projectKey,
     projectKind: input.projectKind ?? "git",
     iconWorkingDir: input.iconWorkingDir ?? input.projectKey,
     workspaceKeys: input.workspaceKeys,
+    workspaces,
   };
 }
 
