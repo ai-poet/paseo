@@ -100,6 +100,7 @@ interface WorkspaceLayoutStore {
   hideAgent: (workspaceKey: string, agentId: string) => void;
   unhideAgent: (workspaceKey: string, agentId: string) => void;
   purgeWorkspace: (workspaceKey: string) => void;
+  getFocusedTabTarget: (workspaceKey: string) => WorkspaceTabTarget | null;
 }
 
 const MAX_TREE_DEPTH = 4;
@@ -400,6 +401,23 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutStore>()(
         return collectAllTabs(
           getWorkspaceLayout(get().layoutByWorkspace, normalizedWorkspaceKey).root,
         );
+      },
+      getFocusedTabTarget: (workspaceKey) => {
+        const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);
+        if (!normalizedWorkspaceKey) {
+          return null;
+        }
+
+        const layout = getWorkspaceLayout(get().layoutByWorkspace, normalizedWorkspaceKey);
+        const focusedPane =
+          findPaneById(layout.root, layout.focusedPaneId) ??
+          collectAllPanes(layout.root)[0] ??
+          null;
+        const tabs = collectAllTabs(layout.root);
+        const fallbackTabId = focusedPane?.tabIds[focusedPane.tabIds.length - 1] ?? null;
+        const focusedTab =
+          tabs.find((tab) => tab.tabId === (focusedPane?.focusedTabId ?? fallbackTabId)) ?? null;
+        return normalizeWorkspaceTabTarget(focusedTab?.target) ?? null;
       },
       splitPane: (workspaceKey, input) => {
         const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);

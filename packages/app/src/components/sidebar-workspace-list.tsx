@@ -95,7 +95,6 @@ import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import { type PrHint, useWorkspacePrHint } from "@/hooks/use-checkout-pr-status-query";
 import { buildSidebarProjectRowModel } from "@/utils/sidebar-project-row-model";
 import {
-  activateNavigationWorkspaceSelection,
   getNavigationActiveWorkspaceSelection,
   useIsNavigationProjectActive,
   useIsNavigationWorkspaceSelected,
@@ -112,7 +111,10 @@ import {
   requireWorkspaceExecutionDirectory,
   resolveWorkspaceExecutionDirectory,
 } from "@/utils/workspace-execution";
-import { navigateToPreparedWorkspaceTab } from "@/utils/workspace-navigation";
+import {
+  navigateToPreparedWorkspaceTab,
+  navigateToReplacementWorkspacePreservingFocusedTab,
+} from "@/utils/workspace-navigation";
 import { WorkspaceHoverCard } from "@/components/workspace-hover-card";
 import { GitHubIcon } from "@/components/icons/github-icon";
 import { generateDraftId } from "@/stores/draft-keys";
@@ -223,10 +225,7 @@ function extractPlaceholderSlug(workspaceId: string): string | null {
   return workspaceId.slice(separatorIndex + 1);
 }
 
-function workspaceDirectoryHasSlug(
-  workspaceDirectory: string | undefined,
-  slug: string,
-): boolean {
+function workspaceDirectoryHasSlug(workspaceDirectory: string | undefined, slug: string): boolean {
   if (!workspaceDirectory) {
     return false;
   }
@@ -240,8 +239,7 @@ function findPlaceholderReplacement(
 ): SidebarWorkspaceEntry | null {
   const normalizedPlaceholderName = normalizePlaceholderWorkspaceName(placeholder.name);
   const byName = realWorkspaces.find(
-    (workspace) =>
-      normalizePlaceholderWorkspaceName(workspace.name) === normalizedPlaceholderName,
+    (workspace) => normalizePlaceholderWorkspaceName(workspace.name) === normalizedPlaceholderName,
   );
   if (byName) {
     return byName;
@@ -2182,10 +2180,14 @@ export function SidebarWorkspaceList({
     if (activeSelection && activeSelection.serverId === serverId) {
       const replacement = replacements.get(activeSelection.workspaceId);
       if (replacement && replacement.workspaceId !== activeSelection.workspaceId) {
-        activateNavigationWorkspaceSelection(
-          { serverId, workspaceId: replacement.workspaceId },
-          { updateBrowserHistory: true, historyMode: "replace" },
-        );
+        // A websocket `workspace_update` can land before the local quick-create response.
+        // Preserve the focused tab target so the later `onCreated` navigation stays idempotent.
+        navigateToReplacementWorkspacePreservingFocusedTab({
+          serverId,
+          fromWorkspaceId: activeSelection.workspaceId,
+          toWorkspaceId: replacement.workspaceId,
+          navigationMethod: "replace",
+        });
       }
     }
 

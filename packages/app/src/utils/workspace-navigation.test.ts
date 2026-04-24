@@ -34,10 +34,12 @@ vi.mock("@react-native-async-storage/async-storage", () => {
 
 import {
   activateNavigationWorkspaceSelection,
+  getNavigationActiveWorkspaceSelection,
   syncNavigationActiveWorkspace,
 } from "@/stores/navigation-active-workspace-store";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import {
+  navigateToReplacementWorkspacePreservingFocusedTab,
   navigateToPreparedWorkspaceTab,
   prepareWorkspaceTab,
 } from "@/utils/workspace-navigation";
@@ -56,6 +58,7 @@ function resetWorkspaceLayoutState() {
 }
 
 function resetNavigationSelection() {
+  window.history.replaceState(null, "", "/");
   syncNavigationActiveWorkspace({ current: null });
 }
 
@@ -102,9 +105,9 @@ describe("navigateToPreparedWorkspaceTab", () => {
     expect(route).toBe("/h/server-1/workspace/workspace-1");
     expect(mocks.routerReplace).not.toHaveBeenCalled();
     expect(mocks.routerNavigate).not.toHaveBeenCalled();
-    expect(useWorkspaceLayoutStore.getState().getWorkspaceTabs("server-1:workspace-1")).toHaveLength(
-      1,
-    );
+    expect(
+      useWorkspaceLayoutStore.getState().getWorkspaceTabs("server-1:workspace-1"),
+    ).toHaveLength(1);
   });
 
   it("falls back to router navigation when no retained workspace is active", () => {
@@ -117,5 +120,51 @@ describe("navigateToPreparedWorkspaceTab", () => {
     expect(route).toBe("/h/server-1/workspace/workspace-1");
     expect(mocks.routerNavigate).toHaveBeenCalledWith("/h/server-1/workspace/workspace-1");
     expect(mocks.routerReplace).not.toHaveBeenCalled();
+  });
+
+  it("preserves the focused placeholder draft when replacing a worktree workspace", () => {
+    const placeholderWorkspaceId = "__creating_worktree__:swift-wren";
+    const realWorkspaceId = "/repo/.paseo/worktrees/swift-wren";
+    const draftId = "draft-swift-wren";
+
+    activateNavigationWorkspaceSelection({
+      serverId: SERVER_ID,
+      workspaceId: placeholderWorkspaceId,
+    });
+
+    navigateToPreparedWorkspaceTab({
+      serverId: SERVER_ID,
+      workspaceId: placeholderWorkspaceId,
+      target: { kind: "draft", draftId },
+      navigationMethod: "replace",
+    });
+
+    navigateToReplacementWorkspacePreservingFocusedTab({
+      serverId: SERVER_ID,
+      fromWorkspaceId: placeholderWorkspaceId,
+      toWorkspaceId: realWorkspaceId,
+      navigationMethod: "replace",
+    });
+
+    navigateToPreparedWorkspaceTab({
+      serverId: SERVER_ID,
+      workspaceId: realWorkspaceId,
+      target: { kind: "draft", draftId },
+      navigationMethod: "replace",
+    });
+
+    expect(getNavigationActiveWorkspaceSelection()).toEqual({
+      serverId: SERVER_ID,
+      workspaceId: realWorkspaceId,
+    });
+    expect(
+      useWorkspaceLayoutStore.getState().getWorkspaceTabs(`${SERVER_ID}:${realWorkspaceId}`),
+    ).toEqual([
+      {
+        tabId: draftId,
+        target: { kind: "draft", draftId },
+        createdAt: expect.any(Number),
+      },
+    ]);
   });
 });

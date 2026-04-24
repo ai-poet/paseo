@@ -11,15 +11,17 @@ import { useAgentInputDraft } from "@/hooks/use-agent-input-draft";
 import { useDraftAgentCreateFlow } from "@/hooks/use-draft-agent-create-flow";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { buildWorkspaceDraftAgentConfig } from "@/screens/workspace/workspace-draft-agent-config";
+import { shouldShowWorkspaceDraftSetupLoading } from "@/screens/workspace/workspace-draft-setup-loading";
 import { buildDraftStoreKey } from "@/stores/draft-keys";
 import type { Agent } from "@/stores/session-store";
+import { useWorkspaceSetupStore } from "@/stores/workspace-setup-store";
 import { useWorkspaceExecutionAuthority } from "@/stores/session-store-hooks";
+import { buildWorkspaceTabPersistenceKey } from "@/stores/workspace-tabs-store";
 import { encodeImages } from "@/utils/encode-images";
 import { shouldAutoFocusWorkspaceDraftComposer } from "@/screens/workspace/workspace-draft-pane-focus";
 import type { AgentCapabilityFlags } from "@server/server/agent/agent-sdk-types";
 import type { AgentSnapshotPayload } from "@server/shared/messages";
 import { isWeb } from "@/constants/platform";
-import { isCreatingWorktreePlaceholderId } from "@/utils/quick-create-worktree";
 
 const EMPTY_PENDING_PERMISSIONS = new Map();
 const DRAFT_CAPABILITIES: AgentCapabilityFlags = {
@@ -57,7 +59,14 @@ export function WorkspaceDraftAgentTab({
   const workspaceAuthority = useWorkspaceExecutionAuthority(serverId, workspaceId);
   const workspaceExecutionAuthority = workspaceAuthority?.ok ? workspaceAuthority.authority : null;
   const workspaceDirectory = workspaceExecutionAuthority?.workspaceDirectory ?? null;
-  const shouldShowSetupLoading = isCreatingWorktreePlaceholderId(workspaceId);
+  const workspaceSetupKey = buildWorkspaceTabPersistenceKey({ serverId, workspaceId });
+  const workspaceSetupSnapshot = useWorkspaceSetupStore((state) =>
+    workspaceSetupKey ? (state.snapshots[workspaceSetupKey] ?? null) : null,
+  );
+  const shouldShowSetupLoading = shouldShowWorkspaceDraftSetupLoading({
+    workspaceId,
+    workspaceSetupSnapshot,
+  });
   const addImagesRef = useRef<((images: ImageAttachment[]) => void) | null>(null);
   const draftStoreKey = useMemo(
     () =>
