@@ -60,7 +60,7 @@ export function resolveScopedActiveProviderIds(store: ProviderStore): {
 }
 
 export function DesktopProvidersStoreProvider({ children }: { children: ReactNode }) {
-  const { isLoggedIn } = useSub2APIAuth();
+  const { auth, isLoggedIn } = useSub2APIAuth();
   const isElectron = getIsElectron();
   const [providers, setProviders] = useState<DesktopProviderPayload[]>([]);
   const [activeClaudeProviderId, setActiveClaudeProviderId] = useState<string | null>(null);
@@ -98,7 +98,7 @@ export function DesktopProvidersStoreProvider({ children }: { children: ReactNod
       return;
     }
     void loadProviders();
-  }, [isLoggedIn, loadProviders]);
+  }, [auth?.endpoint, auth?.sessionKey, isLoggedIn, loadProviders]);
 
   const openCustomProviderForm = useCallback(() => {
     setShowAddProviderForm(true);

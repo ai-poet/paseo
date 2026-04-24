@@ -47,6 +47,23 @@ const SCOPE_OPTIONS: Array<{
   { value: "codex", label: "Codex", testID: "sub2api-api-keys-tab-codex" },
 ];
 
+function clampProgress(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(value, 1));
+}
+
+function getUsageTone(value: number): "base" | "warning" | "danger" {
+  if (value >= 1) {
+    return "danger";
+  }
+  if (value >= 0.8) {
+    return "warning";
+  }
+  return "base";
+}
+
 export function PaseoCloudApiKeysSection({
   authEndpoint,
   serviceEndpoint,
@@ -377,6 +394,52 @@ export function PaseoCloudApiKeysSection({
                         {maskApiKey(key.key)} · Group: {key.group?.name ?? key.group_id ?? "none"}
                       </Text>
                       <Text style={settingsStyles.rowHint}>Used: {formatUsd(key.quota_used)}</Text>
+                      {key.quota > 0 ? (
+                        <View style={styles.usageMeterBlock}>
+                          <View style={styles.usageMeterHeader}>
+                            <Text style={styles.usageMeterLabel}>Quota</Text>
+                            <Text style={styles.usageMeterValue}>
+                              {formatUsd(key.quota_used)} / {formatUsd(key.quota)}
+                            </Text>
+                          </View>
+                          <View style={styles.usageMeterTrack}>
+                            <View
+                              style={[
+                                styles.usageMeterFillBase,
+                                getUsageTone(clampProgress(key.quota_used / key.quota)) ===
+                                  "warning" && styles.usageMeterFillWarning,
+                                getUsageTone(clampProgress(key.quota_used / key.quota)) ===
+                                  "danger" && styles.usageMeterFillDanger,
+                                {
+                                  width: `${clampProgress(key.quota_used / key.quota) * 100}%`,
+                                },
+                              ]}
+                            />
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={styles.usageHint}>Quota: Unlimited</Text>
+                      )}
+                      <View style={styles.usageWindowWrap}>
+                        <View style={styles.usageWindowPill}>
+                          <Text style={styles.usageWindowPillText}>
+                            5h {formatUsd(key.usage_5h)}
+                            {key.rate_limit_5h > 0 ? ` / ${formatUsd(key.rate_limit_5h)}` : ""}
+                          </Text>
+                        </View>
+                        <View style={styles.usageWindowPill}>
+                          <Text style={styles.usageWindowPillText}>
+                            1d {formatUsd(key.usage_1d)}
+                            {key.rate_limit_1d > 0 ? ` / ${formatUsd(key.rate_limit_1d)}` : ""}
+                          </Text>
+                        </View>
+                        <View style={styles.usageWindowPill}>
+                          <Text style={styles.usageWindowPillText}>
+                            7d {formatUsd(key.usage_7d)}
+                            {key.rate_limit_7d > 0 ? ` / ${formatUsd(key.rate_limit_7d)}` : ""}
+                          </Text>
+                        </View>
+                      </View>
                       {keyRoute.ok ? (
                         <Text style={styles.usageHint}>
                           Writes <Text style={styles.sectionHintEm}>{scopeMeta.configTarget}</Text>
@@ -387,6 +450,11 @@ export function PaseoCloudApiKeysSection({
                       {activeForScope ? (
                         <Text style={styles.activeProviderText}>
                           Active for {scopeMeta.cliLabel} on this device
+                        </Text>
+                      ) : key.group?.status === "inactive" ? (
+                        <Text style={styles.errorHint}>
+                          This key&apos;s group is currently inactive. Switch groups before using
+                          it.
                         </Text>
                       ) : null}
                     </View>

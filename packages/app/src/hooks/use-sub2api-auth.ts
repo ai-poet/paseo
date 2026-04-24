@@ -14,6 +14,7 @@ export interface Sub2APIAuthState {
   refreshToken: string;
   expiresAt: number; // ms timestamp
   endpoint: string; // service base URL
+  sessionKey: string; // bumps on full login so cloud caches don't bleed across accounts
 }
 
 export interface Sub2APIUser {
@@ -44,9 +45,18 @@ async function loadAuth(): Promise<Sub2APIAuthState | null> {
   try {
     const raw = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Sub2APIAuthState;
+    const parsed = JSON.parse(raw) as Partial<Sub2APIAuthState>;
     if (!parsed.accessToken || !parsed.refreshToken || !parsed.endpoint) return null;
-    return parsed;
+    return {
+      accessToken: parsed.accessToken,
+      refreshToken: parsed.refreshToken,
+      expiresAt: parsed.expiresAt ?? 0,
+      endpoint: parsed.endpoint,
+      sessionKey:
+        typeof parsed.sessionKey === "string" && parsed.sessionKey.trim().length > 0
+          ? parsed.sessionKey
+          : `${parsed.endpoint}:${parsed.expiresAt ?? Date.now()}`,
+    };
   } catch {
     return null;
   }
@@ -58,6 +68,10 @@ async function saveAuth(state: Sub2APIAuthState): Promise<void> {
 
 async function clearAuth(): Promise<void> {
   await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+function createAuthSessionKey(): string {
+  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 async function refreshAccessToken(auth: Sub2APIAuthState): Promise<Sub2APIAuthState | null> {
@@ -82,6 +96,7 @@ async function refreshAccessToken(auth: Sub2APIAuthState): Promise<Sub2APIAuthSt
       refreshToken: data.refresh_token || auth.refreshToken,
       expiresAt: Date.now() + data.expires_in * 1000,
       endpoint: auth.endpoint,
+      sessionKey: auth.sessionKey,
     };
     await saveAuth(next);
     return next;
@@ -114,6 +129,7 @@ export function useSub2APIAuth(): UseAuthReturn {
         refreshToken: params.refreshToken,
         expiresAt: Date.now() + params.expiresIn * 1000,
         endpoint: params.endpoint,
+        sessionKey: createAuthSessionKey(),
       };
       await saveAuth(state);
       queryClient.setQueryData(AUTH_QUERY_KEY, state);

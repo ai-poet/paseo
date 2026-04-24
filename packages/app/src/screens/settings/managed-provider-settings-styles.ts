@@ -174,6 +174,174 @@ export const managedProviderSettingsStyles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.lg,
     fontWeight: theme.fontWeight.medium,
   },
+  routeSummaryGrid: {
+    gap: theme.spacing[3],
+  },
+  routeSummaryCard: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface0,
+    padding: theme.spacing[3],
+    gap: theme.spacing[2],
+  },
+  routeSummaryCardMuted: {
+    opacity: 0.8,
+  },
+  routeSummaryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing[2],
+  },
+  routeSummaryTitle: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+  },
+  routeSummaryBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: 2,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    overflow: "hidden",
+  },
+  routeSummaryBadgeCloud: {
+    backgroundColor: theme.colors.surface1,
+    color: theme.colors.accent,
+  },
+  routeSummaryBadgeCustom: {
+    backgroundColor: theme.colors.surface1,
+    color: theme.colors.foregroundMuted,
+  },
+  routeSummaryProviderName: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+  },
+  routeSummaryProviderHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  routeSummaryMetricsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[2],
+  },
+  routeMetricCard: {
+    flexGrow: 1,
+    minWidth: 120,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface1,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    gap: theme.spacing[1],
+  },
+  routeMetricLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  routeMetricValue: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+  },
+  routeMetricSubvalue: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  infoBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: 2,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    overflow: "hidden",
+  },
+  infoBadgeNeutral: {
+    backgroundColor: theme.colors.surface1,
+    color: theme.colors.foregroundMuted,
+  },
+  infoBadgeSuccess: {
+    backgroundColor: theme.colors.surface1,
+    color: theme.colors.palette.green[400],
+  },
+  infoBadgeWarning: {
+    backgroundColor: "rgba(245, 158, 11, 0.12)",
+    color: "#b45309",
+  },
+  infoBadgeDanger: {
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    color: theme.colors.destructive,
+  },
+  infoBadgeAccent: {
+    backgroundColor: theme.colors.surface1,
+    color: theme.colors.accent,
+  },
+  usageMeterBlock: {
+    gap: theme.spacing[1],
+    marginTop: theme.spacing[1],
+  },
+  usageMeterHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing[2],
+  },
+  usageMeterLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  usageMeterValue: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  usageMeterTrack: {
+    width: "100%",
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surface2,
+    overflow: "hidden",
+  },
+  usageMeterFillBase: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: theme.colors.accent,
+  },
+  usageMeterFillWarning: {
+    backgroundColor: "#d97706",
+  },
+  usageMeterFillDanger: {
+    backgroundColor: theme.colors.destructive,
+  },
+  usageWindowWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[2],
+    marginTop: theme.spacing[1],
+  },
+  usageWindowPill: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surface1,
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: 2,
+  },
+  usageWindowPillText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  routeInsightText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
   usageHint: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,

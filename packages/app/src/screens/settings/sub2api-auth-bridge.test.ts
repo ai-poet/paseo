@@ -15,13 +15,15 @@ describe("auth-bridge", () => {
   it("parses tokens, api key, and endpoint from the paseo callback url", () => {
     expect(
       parseSub2APIAuthCallback(
-        "paseo://auth/callback#access_token=access&refresh_token=refresh&expires_in=300&api_key=sk-test&endpoint=https%3A%2F%2Fapi.example.com%2F",
+        "paseo://auth/callback#access_token=access&refresh_token=refresh&expires_in=300&api_key=sk-test&claude_api_key=sk-claude&codex_api_key=sk-codex&endpoint=https%3A%2F%2Fapi.example.com%2F",
       ),
     ).toEqual({
       accessToken: "access",
       refreshToken: "refresh",
       expiresIn: 300,
       apiKey: "sk-test",
+      claudeApiKey: "sk-claude",
+      codexApiKey: "sk-codex",
       endpoint: "https://api.example.com",
     });
   });

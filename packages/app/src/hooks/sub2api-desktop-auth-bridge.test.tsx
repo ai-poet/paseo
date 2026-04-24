@@ -14,6 +14,7 @@ const { mocks } = vi.hoisted(() => {
   return {
     mocks: {
       login: vi.fn(),
+      invokeDesktopCommand: vi.fn(),
       setListener(next: AuthCallbackListener | null) {
         listener = next;
       },
@@ -43,6 +44,10 @@ vi.mock("@/hooks/use-sub2api-auth", () => ({
   }),
 }));
 
+vi.mock("@/desktop/electron/invoke", () => ({
+  invokeDesktopCommand: (...args: unknown[]) => mocks.invokeDesktopCommand(...args),
+}));
+
 vi.mock("@/desktop/host", () => ({
   getDesktopHost: () => ({
     events: {
@@ -58,10 +63,22 @@ vi.mock("@/desktop/host", () => ({
 describe("Sub2apiDesktopAuthBridge", () => {
   beforeEach(() => {
     mocks.login.mockReset();
+    mocks.invokeDesktopCommand.mockReset();
+    mocks.invokeDesktopCommand.mockImplementation(async (command: string) => {
+      if (command === "get_providers") {
+        return {
+          providers: [],
+          activeProviderId: null,
+          activeClaudeProviderId: null,
+          activeCodexProviderId: null,
+        };
+      }
+      return null;
+    });
     mocks.setListener(null);
   });
 
-  it("persists auth from the Electron auth-callback", async () => {
+  it("persists auth and auto-configures missing scoped routes from the Electron auth-callback", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
     render(
@@ -75,7 +92,7 @@ describe("Sub2apiDesktopAuthBridge", () => {
     });
 
     const callbackUrl =
-      "https://desktop.example/auth/paseo#access_token=at&refresh_token=rt&api_key=sk-live&endpoint=https%3A%2F%2Fapi.example.com&expires_in=3600";
+      "https://desktop.example/auth/paseo#access_token=at&refresh_token=rt&api_key=sk-live&claude_api_key=sk-claude&codex_api_key=sk-codex&endpoint=https%3A%2F%2Fapi.example.com&expires_in=3600";
 
     mocks.getListener()?.({ url: callbackUrl });
 
@@ -85,6 +102,21 @@ describe("Sub2apiDesktopAuthBridge", () => {
         refreshToken: "rt",
         expiresIn: 3600,
         endpoint: "https://api.example.com",
+      });
+    });
+
+    await waitFor(() => {
+      expect(mocks.invokeDesktopCommand).toHaveBeenCalledWith("setup_default_provider", {
+        endpoint: "https://api.example.com",
+        apiKey: "sk-claude",
+        scope: "claude",
+        name: "Paseo Cloud",
+      });
+      expect(mocks.invokeDesktopCommand).toHaveBeenCalledWith("setup_default_provider", {
+        endpoint: "https://api.example.com",
+        apiKey: "sk-codex",
+        scope: "codex",
+        name: "Paseo Cloud",
       });
     });
   });

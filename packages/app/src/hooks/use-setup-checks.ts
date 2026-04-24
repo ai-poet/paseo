@@ -4,7 +4,7 @@ import { getIsElectron } from "@/constants/platform";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { useAppSettings, type AccessMode } from "@/hooks/use-settings";
 import { getManagedServiceUrlFromEnv } from "@/config/managed-service-env";
-import { createSub2APIClient } from "@/lib/sub2api-client";
+import { createSub2APIClient, type Sub2APIGroup, type Sub2APIKey } from "@/lib/sub2api-client";
 import {
   getModelCliRuntimeStatus,
   installAllModelClis,
@@ -13,6 +13,10 @@ import {
 import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import type { ProviderStore } from "@/screens/settings/sub2api-provider-types";
 import { resolveScopedActiveProviderIds } from "@/screens/settings/desktop-providers-context";
+import {
+  resolveManagedCloudRouteForGroup,
+  resolveManagedCloudRouteForKey,
+} from "@/screens/settings/managed-cloud-scope";
 
 export type CheckStatus = "pending" | "checking" | "passed" | "failed" | "skipped";
 
@@ -34,6 +38,17 @@ export interface UseSetupChecksReturn {
 }
 
 const HEALTH_TIMEOUT_MS = 5000;
+const MANAGED_CLOUD_ROUTES_UNAVAILABLE = "Managed cloud routes unavailable";
+
+export interface ManagedCloudScopeAvailability {
+  groups: number;
+  activeKeys: number;
+}
+
+export interface ManagedCloudAvailabilitySummary {
+  claude: ManagedCloudScopeAvailability;
+  codex: ManagedCloudScopeAvailability;
+}
 
 async function checkHealth(endpoint: string): Promise<void> {
   const controller = new AbortController();
@@ -62,11 +77,12 @@ function makeInitialChecks(accessMode: AccessMode | null): CheckItem[] {
     },
     {
       id: "apiKeys",
-      label: "API Key",
-      description: accessMode === "byok" ? "BYOK mode — skipped" : "Checking API keys...",
+      label: accessMode === "byok" ? "API Key" : "Cloud routes",
+      description:
+        accessMode === "byok" ? "BYOK mode — skipped" : "Checking Claude/Codex routes...",
       status: accessMode === "byok" ? "skipped" : "pending",
       error: null,
-      fixLabel: "Create Key",
+      fixLabel: "Manage Routes",
     },
     {
       id: "cliConfig",
@@ -77,6 +93,100 @@ function makeInitialChecks(accessMode: AccessMode | null): CheckItem[] {
       fixLabel: "Install",
     },
   ];
+}
+
+export function summarizeManagedCloudAvailability(
+  keys: Sub2APIKey[],
+  groups: Sub2APIGroup[],
+): ManagedCloudAvailabilitySummary {
+  const summary: ManagedCloudAvailabilitySummary = {
+    claude: { groups: 0, activeKeys: 0 },
+    codex: { groups: 0, activeKeys: 0 },
+  };
+
+  for (const group of groups) {
+    const route = resolveManagedCloudRouteForGroup(group);
+    if (!route.ok) {
+      continue;
+    }
+    summary[route.scope].groups += 1;
+  }
+
+  for (const key of keys) {
+    if (key.status !== "active") {
+      continue;
+    }
+    const route = resolveManagedCloudRouteForKey(key, groups);
+    if (!route.ok) {
+      continue;
+    }
+    summary[route.scope].activeKeys += 1;
+  }
+
+  return summary;
+}
+
+export function describeManagedCloudAvailability(
+  summary: ManagedCloudAvailabilitySummary,
+  totalKeys: number,
+  totalGroups: number,
+): Pick<CheckItem, "status" | "description" | "error" | "fixLabel"> {
+  const claudeReady = summary.claude.activeKeys > 0 || summary.claude.groups > 0;
+  const codexReady = summary.codex.activeKeys > 0 || summary.codex.groups > 0;
+
+  if (claudeReady && codexReady) {
+    return {
+      status: "passed",
+      description: "Claude Code and Codex routes can be created from your current cloud account",
+      error: null,
+      fixLabel: "Manage Routes",
+    };
+  }
+
+  if (claudeReady) {
+    return {
+      status: "passed",
+      description:
+        "Claude Code routing is available. Add an OpenAI group or key if you also want Codex.",
+      error: null,
+      fixLabel: "Manage Routes",
+    };
+  }
+
+  if (codexReady) {
+    return {
+      status: "passed",
+      description:
+        "Codex routing is available. Add an Anthropic group or key if you also want Claude Code.",
+      error: null,
+      fixLabel: "Manage Routes",
+    };
+  }
+
+  if (totalKeys > 0) {
+    return {
+      status: "failed",
+      description: "Your current API keys are not bound to Claude Code or Codex compatible routes",
+      error: "Assign an anthropic or openai group in Paseo Cloud before continuing.",
+      fixLabel: "Manage Routes",
+    };
+  }
+
+  if (totalGroups > 0) {
+    return {
+      status: "failed",
+      description: "No Claude Code or Codex compatible groups are available for this account",
+      error: "Ask for an anthropic/openai group or switch to BYOK.",
+      fixLabel: "Manage Routes",
+    };
+  }
+
+  return {
+    status: "failed",
+    description: "No managed Claude Code or Codex routes are available yet",
+    error: "Create a compatible cloud route or use BYOK instead.",
+    fixLabel: "Manage Routes",
+  };
 }
 
 export function useSetupChecks(): UseSetupChecksReturn {
@@ -91,18 +201,13 @@ export function useSetupChecks(): UseSetupChecksReturn {
       : null,
   );
 
-  const [checks, setChecks] = useState<CheckItem[]>(() =>
-    makeInitialChecks(settings.accessMode),
-  );
+  const [checks, setChecks] = useState<CheckItem[]>(() => makeInitialChecks(settings.accessMode));
   const [isRunning, setIsRunning] = useState(false);
   const cliStatusRef = useRef<ModelCliRuntimeStatus | null>(null);
 
-  const updateCheck = useCallback(
-    (id: CheckItem["id"], patch: Partial<CheckItem>) => {
-      setChecks((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-    },
-    [],
-  );
+  const updateCheck = useCallback((id: CheckItem["id"], patch: Partial<CheckItem>) => {
+    setChecks((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }, []);
 
   const getEndpoint = useCallback(() => {
     return settings.accessMode === "builtin" && auth?.endpoint
@@ -135,28 +240,20 @@ export function useSetupChecks(): UseSetupChecksReturn {
     try {
       const c = clientRef.current;
       if (!c) throw new Error("Not authenticated");
-      const result = await c.listKeys(1, 1);
-      if (result.total > 0) {
-        updateCheck("apiKeys", {
-          status: "passed",
-          description: `${result.total} API key(s) found`,
-        });
-      } else {
-        updateCheck("apiKeys", {
-          status: "failed",
-          error: "No API keys found",
-          description: "You need at least one API key",
-          fixLabel: "Create Key",
-        });
-        throw new Error("No API keys");
+      const [keyResult, groups] = await Promise.all([c.listKeys(1, 200), c.getAvailableGroups()]);
+      const availability = summarizeManagedCloudAvailability(keyResult.items, groups);
+      const next = describeManagedCloudAvailability(availability, keyResult.total, groups.length);
+      updateCheck("apiKeys", next);
+      if (next.status === "failed") {
+        throw new Error(MANAGED_CLOUD_ROUTES_UNAVAILABLE);
       }
     } catch (err) {
-      if ((err as Error).message !== "No API keys") {
+      if ((err as Error).message !== MANAGED_CLOUD_ROUTES_UNAVAILABLE) {
         updateCheck("apiKeys", {
           status: "failed",
           error: err instanceof Error ? err.message : "Check failed",
-          description: "Failed to check API keys",
-          fixLabel: "Create Key",
+          description: "Failed to check Claude/Codex routes",
+          fixLabel: "Manage Routes",
         });
       }
       throw err;
@@ -220,7 +317,11 @@ export function useSetupChecks(): UseSetupChecksReturn {
       });
     } catch (err) {
       const msg = (err as Error).message;
-      if (msg !== "CLI not installed" && msg !== "Providers not configured" && msg !== "Partial config") {
+      if (
+        msg !== "CLI not installed" &&
+        msg !== "Providers not configured" &&
+        msg !== "Partial config"
+      ) {
         updateCheck("cliConfig", {
           status: "failed",
           error: err instanceof Error ? err.message : "Check failed",
@@ -258,7 +359,14 @@ export function useSetupChecks(): UseSetupChecksReturn {
       // done
     }
     setIsRunning(false);
-  }, [auth?.endpoint, getAccessToken, runApiKeyCheck, runCliConfigCheck, runHealthCheck, settings.accessMode]);
+  }, [
+    auth?.endpoint,
+    getAccessToken,
+    runApiKeyCheck,
+    runCliConfigCheck,
+    runHealthCheck,
+    settings.accessMode,
+  ]);
 
   const fixCheck = useCallback(
     async (id: CheckItem["id"]) => {
@@ -283,7 +391,8 @@ export function useSetupChecks(): UseSetupChecksReturn {
         case "cliConfig": {
           const status = cliStatusRef.current;
           const needsInstall =
-            status && (!status.node.satisfies || !status.claude.installed || !status.codex.installed);
+            status &&
+            (!status.node.satisfies || !status.claude.installed || !status.codex.installed);
           if (needsInstall) {
             updateCheck("cliConfig", {
               status: "checking",

@@ -6,6 +6,7 @@ import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import {
   useCreateSub2APIKeyMutation,
   useSub2APIAvailableGroups,
+  useSub2APIGroupStatuses,
   useSub2APIKeys,
 } from "@/hooks/use-sub2api-api";
 import { SettingsSection } from "@/screens/settings/settings-section";
@@ -39,6 +40,49 @@ const SCOPE_OPTIONS: Array<{
   { value: "codex", label: "Codex", testID: "sub2api-routing-tab-codex" },
 ];
 
+function normalizeRuntimeStatus(
+  status: string | null | undefined,
+): "up" | "degraded" | "down" | "unknown" {
+  switch (status) {
+    case "up":
+    case "degraded":
+    case "down":
+      return status;
+    default:
+      return "unknown";
+  }
+}
+
+function getRuntimeStatusRank(status: string | null | undefined): number {
+  switch (normalizeRuntimeStatus(status)) {
+    case "up":
+      return 3;
+    case "degraded":
+      return 2;
+    case "down":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function formatAvailability(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "-";
+  }
+  return `${value.toFixed(value >= 99 ? 2 : 1)}%`;
+}
+
+function formatLatency(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "-";
+  }
+  if (value < 1000) {
+    return `${Math.round(value)} ms`;
+  }
+  return `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)} s`;
+}
+
 export function PaseoCloudRoutingSection({
   authEndpoint,
   serviceEndpoint,
@@ -48,15 +92,21 @@ export function PaseoCloudRoutingSection({
   const [switchingGroupId, setSwitchingGroupId] = useState<number | null>(null);
   const groupsQuery = useSub2APIAvailableGroups();
   const keysQuery = useSub2APIKeys(1, 200);
+  const statusesQuery = useSub2APIGroupStatuses();
   const createKeyMutation = useCreateSub2APIKeyMutation();
 
   const keys = useMemo(() => keysQuery.data?.items ?? [], [keysQuery.data?.items]);
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+  const statuses = useMemo(() => statusesQuery.data ?? [], [statusesQuery.data]);
   const scopeMeta = getManagedCloudMetaForScope(activeScope);
   const activeScopeApiKey =
     activeScope === "claude"
       ? (activeClaudeProvider?.apiKey?.trim() ?? null)
       : (activeCodexProvider?.apiKey?.trim() ?? null);
+  const statusByGroupId = useMemo(
+    () => new Map(statuses.map((item) => [item.group_id, item])),
+    [statuses],
+  );
 
   const scopedGroups = useMemo(
     () =>
@@ -77,21 +127,59 @@ export function PaseoCloudRoutingSection({
   );
 
   const groupCards = useMemo(() => {
-    return scopedGroups
+    const sorted = scopedGroups
       .map((group) => {
         const groupKeys = scopedKeys.filter((key) => key.group_id === group.id);
         const activeKey =
           activeScopeApiKey == null
             ? null
             : (groupKeys.find((key) => key.key.trim() === activeScopeApiKey) ?? null);
+        const status = statusByGroupId.get(group.id) ?? null;
         return {
           group,
           groupKeys,
           activeKey,
+          status,
         };
       })
-      .sort((a, b) => Number(b.activeKey !== null) - Number(a.activeKey !== null));
-  }, [activeScopeApiKey, scopedGroups, scopedKeys]);
+      .sort((a, b) => {
+        const activeDelta = Number(b.activeKey !== null) - Number(a.activeKey !== null);
+        if (activeDelta !== 0) {
+          return activeDelta;
+        }
+        const statusDelta =
+          getRuntimeStatusRank(b.status?.stable_status ?? b.status?.latest_status) -
+          getRuntimeStatusRank(a.status?.stable_status ?? a.status?.latest_status);
+        if (statusDelta !== 0) {
+          return statusDelta;
+        }
+        const availabilityDelta =
+          (b.status?.availability_24h ?? -1) - (a.status?.availability_24h ?? -1);
+        if (availabilityDelta !== 0) {
+          return availabilityDelta;
+        }
+        const priceDelta = a.group.rate_multiplier - b.group.rate_multiplier;
+        if (priceDelta !== 0) {
+          return priceDelta;
+        }
+        return (
+          (a.status?.latency_ms ?? Number.MAX_SAFE_INTEGER) -
+          (b.status?.latency_ms ?? Number.MAX_SAFE_INTEGER)
+        );
+      });
+
+    const recommendedGroupId =
+      sorted.find(
+        (card) =>
+          card.activeKey === null &&
+          getRuntimeStatusRank(card.status?.stable_status ?? card.status?.latest_status) > 0,
+      )?.group.id ?? null;
+
+    return sorted.map((card) => ({
+      ...card,
+      recommended: card.group.id === recommendedGroupId,
+    }));
+  }, [activeScopeApiKey, scopedGroups, scopedKeys, statusByGroupId]);
 
   const setupDefaultProviderWithKey = useCallback(
     async (apiKey: string, scope: ManagedCloudDesktopScope, name?: string) => {
@@ -208,15 +296,56 @@ export function PaseoCloudRoutingSection({
           </Text>
         ) : (
           <View style={styles.keyRowList}>
-            {groupCards.map(({ group, groupKeys, activeKey }) => {
+            {groupCards.map(({ group, groupKeys, activeKey, recommended, status }) => {
               const isApplying = switchingGroupId === group.id;
+              const stableStatus = normalizeRuntimeStatus(
+                status?.stable_status ?? status?.latest_status,
+              );
               return (
                 <View key={group.id} style={styles.keyRow}>
                   <View style={settingsStyles.rowContent}>
-                    <Text style={settingsStyles.rowTitle}>{group.name}</Text>
+                    <View style={styles.scopeActionsRow}>
+                      <Text style={settingsStyles.rowTitle}>{group.name}</Text>
+                      {recommended ? (
+                        <Text style={[styles.infoBadge, styles.infoBadgeAccent]}>Recommended</Text>
+                      ) : null}
+                      {status ? (
+                        <Text
+                          style={[
+                            styles.infoBadge,
+                            stableStatus === "up"
+                              ? styles.infoBadgeSuccess
+                              : stableStatus === "degraded"
+                                ? styles.infoBadgeWarning
+                                : stableStatus === "down"
+                                  ? styles.infoBadgeDanger
+                                  : styles.infoBadgeNeutral,
+                          ]}
+                        >
+                          {stableStatus.toUpperCase()}
+                        </Text>
+                      ) : null}
+                    </View>
                     <Text style={settingsStyles.rowHint}>
                       {group.platform} · {group.rate_multiplier}x
                     </Text>
+                    {status ? (
+                      <View style={styles.scopeActionsRow}>
+                        <Text style={styles.usageHint}>
+                          24h {formatAvailability(status.availability_24h)}
+                        </Text>
+                        <Text style={styles.usageHint}>
+                          7d {formatAvailability(status.availability_7d)}
+                        </Text>
+                        <Text style={styles.usageHint}>
+                          Latency {formatLatency(status.latency_ms)}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.usageHint}>
+                        Runtime status has not been observed yet for this group.
+                      </Text>
+                    )}
                     {activeKey ? (
                       <Text style={styles.activeProviderText}>
                         Active route via {maskApiKey(activeKey.key)}
@@ -231,6 +360,18 @@ export function PaseoCloudRoutingSection({
                         No existing key yet. Use group will create one automatically.
                       </Text>
                     )}
+                    {recommended ? (
+                      <Text style={styles.routeInsightText}>
+                        Best available option right now for {scopeMeta.cliLabel} based on health,
+                        latency, and price.
+                      </Text>
+                    ) : null}
+                    {stableStatus === "down" ? (
+                      <Text style={styles.errorHint}>
+                        Recent probes look unhealthy. Prefer another group unless you specifically
+                        need this route.
+                      </Text>
+                    ) : null}
                     <Text style={styles.usageHint}>
                       Writes <Text style={styles.sectionHintEm}>{scopeMeta.configTarget}</Text>
                     </Text>

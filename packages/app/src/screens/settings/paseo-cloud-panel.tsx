@@ -9,9 +9,11 @@ import { getManagedServiceUrlFromEnv } from "@/config/managed-service-env";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { useSub2APILoginFlow } from "@/hooks/use-sub2api-login-flow";
 import { useAppSettings } from "@/hooks/use-settings";
-import { useSub2APIMe, useSub2APIUsageStats } from "@/hooks/use-sub2api-api";
+import { useSub2APIMe, useSub2APIKeys, useSub2APIUsageStats } from "@/hooks/use-sub2api-api";
+import type { Sub2APIKey } from "@/lib/sub2api-client";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { useDesktopProvidersStore } from "@/screens/settings/desktop-providers-context";
+import type { DesktopProviderPayload } from "@/screens/settings/sub2api-provider-types";
 import { managedProviderSettingsStyles as styles } from "@/screens/settings/managed-provider-settings-styles";
 import { Sub2APIPayModal } from "@/screens/settings/sub2api-pay-modal";
 import { Sub2APIModelsSection } from "@/screens/settings/sub2api-models-section";
@@ -19,7 +21,7 @@ import { PaseoCloudApiKeysSection } from "@/screens/settings/paseo-cloud-api-key
 import { PaseoCloudRoutingSection } from "@/screens/settings/paseo-cloud-routing-section";
 import { PaseoCloudReferralSection } from "@/screens/settings/paseo-cloud-referral-section";
 import { settingsStyles } from "@/styles/settings";
-import { formatUsd, getErrorMessage } from "./managed-provider-settings-shared";
+import { formatUsd, getErrorMessage, maskApiKey } from "./managed-provider-settings-shared";
 
 type PaseoCloudSection = "overview" | "keys" | "routing" | "catalog" | "referral";
 
@@ -30,6 +32,120 @@ const SECTION_OPTIONS: Array<{ id: PaseoCloudSection; label: string; testID: str
   { id: "catalog", label: "Model Catalog", testID: "paseo-cloud-section-catalog" },
   { id: "referral", label: "Referral", testID: "paseo-cloud-section-referral" },
 ];
+
+type RouteUsageCard = {
+  scopeLabel: string;
+  provider: DesktopProviderPayload | null;
+  cloudKey: Sub2APIKey | null;
+  todayCost: number | null | undefined;
+  todayRequests: number | null | undefined;
+};
+
+function getLocalTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
+}
+
+function findCloudKeyByApiKey(
+  keys: Sub2APIKey[],
+  apiKey: string | null | undefined,
+): Sub2APIKey | null {
+  const trimmed = apiKey?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return keys.find((key) => key.key.trim() === trimmed) ?? null;
+}
+
+function RouteUsageCardBlock({ card }: { card: RouteUsageCard }) {
+  const isCloudBacked = Boolean(card.cloudKey);
+  const quotaRatio =
+    card.cloudKey && card.cloudKey.quota > 0 ? card.cloudKey.quota_used / card.cloudKey.quota : 0;
+
+  if (!card.provider) {
+    return (
+      <View style={[styles.routeSummaryCard, styles.routeSummaryCardMuted]}>
+        <View style={styles.routeSummaryHeader}>
+          <Text style={styles.routeSummaryTitle}>{card.scopeLabel}</Text>
+          <Text style={[styles.routeSummaryBadge, styles.infoBadgeNeutral]}>Not configured</Text>
+        </View>
+        <Text style={styles.routeSummaryProviderHint}>
+          This device does not have an active {card.scopeLabel} route yet.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.routeSummaryCard}>
+      <View style={styles.routeSummaryHeader}>
+        <Text style={styles.routeSummaryTitle}>{card.scopeLabel}</Text>
+        <Text
+          style={[
+            styles.routeSummaryBadge,
+            isCloudBacked ? styles.routeSummaryBadgeCloud : styles.routeSummaryBadgeCustom,
+          ]}
+        >
+          {isCloudBacked ? "Paseo Cloud" : "Custom route"}
+        </Text>
+      </View>
+      <Text style={styles.routeSummaryProviderName}>{card.provider.name}</Text>
+      <Text style={styles.routeSummaryProviderHint}>{card.provider.endpoint}</Text>
+      <Text style={styles.routeSummaryProviderHint}>Key {maskApiKey(card.provider.apiKey)}</Text>
+      {card.cloudKey ? (
+        <>
+          <Text style={styles.routeSummaryProviderHint}>
+            Group {card.cloudKey.group?.name ?? card.cloudKey.group_id ?? "none"}
+          </Text>
+          <View style={styles.routeSummaryMetricsRow}>
+            <View style={styles.routeMetricCard}>
+              <Text style={styles.routeMetricLabel}>Today</Text>
+              <Text style={styles.routeMetricValue}>{formatUsd(card.todayCost)}</Text>
+              <Text style={styles.routeMetricSubvalue}>{card.todayRequests ?? 0} requests</Text>
+            </View>
+            <View style={styles.routeMetricCard}>
+              <Text style={styles.routeMetricLabel}>Total spend</Text>
+              <Text style={styles.routeMetricValue}>{formatUsd(card.cloudKey.quota_used)}</Text>
+              <Text style={styles.routeMetricSubvalue}>
+                {card.cloudKey.quota > 0
+                  ? `${formatUsd(card.cloudKey.quota)} quota`
+                  : "Unlimited quota"}
+              </Text>
+            </View>
+          </View>
+          {card.cloudKey.quota > 0 ? (
+            <View style={styles.usageMeterBlock}>
+              <View style={styles.usageMeterHeader}>
+                <Text style={styles.usageMeterLabel}>Quota</Text>
+                <Text style={styles.usageMeterValue}>
+                  {formatUsd(card.cloudKey.quota_used)} / {formatUsd(card.cloudKey.quota)}
+                </Text>
+              </View>
+              <View style={styles.usageMeterTrack}>
+                <View
+                  style={[
+                    styles.usageMeterFillBase,
+                    quotaRatio >= 0.8 && styles.usageMeterFillWarning,
+                    quotaRatio >= 1 && styles.usageMeterFillDanger,
+                    { width: `${Math.max(0, Math.min(quotaRatio, 1)) * 100}%` },
+                  ]}
+                />
+              </View>
+            </View>
+          ) : null}
+        </>
+      ) : (
+        <Text style={styles.routeSummaryProviderHint}>
+          This device is using a route that does not match a key in the current Paseo Cloud account,
+          so per-route usage is unavailable here.
+        </Text>
+      )}
+    </View>
+  );
+}
 
 function PaseoCloudOverviewSection(props: {
   isLoggedIn: boolean;
@@ -48,6 +164,7 @@ function PaseoCloudOverviewSection(props: {
   usageWeekRequests: number | null | undefined;
   usageMonthCost: number | null | undefined;
   usageMonthRequests: number | null | undefined;
+  routeCards: RouteUsageCard[];
 }) {
   const { theme } = useUnistyles();
 
@@ -62,8 +179,9 @@ function PaseoCloudOverviewSection(props: {
             <Text style={styles.emptyTitle}>Sign in</Text>
             <Text style={styles.emptyBody}>
               Connect with GitHub for Paseo Cloud billing, API keys, routing groups, and the model
-              catalog. Device routing changes happen only when you explicitly use a key, group, or
-              model.
+              catalog. On first sign-in, Paseo tries to fill in any missing Claude Code or Codex
+              route automatically. Existing device routes stay unchanged until you explicitly switch
+              a key or group.
             </Text>
             <Pressable
               onPress={() => void props.handleGitHubLogin()}
@@ -143,6 +261,16 @@ function PaseoCloudOverviewSection(props: {
           </View>
         </SettingsSection>
       ) : null}
+
+      {props.isLoggedIn ? (
+        <SettingsSection title="Current routes">
+          <View style={styles.routeSummaryGrid}>
+            {props.routeCards.map((card) => (
+              <RouteUsageCardBlock key={card.scopeLabel} card={card} />
+            ))}
+          </View>
+        </SettingsSection>
+      ) : null}
     </>
   );
 }
@@ -152,15 +280,42 @@ export function PaseoCloudPanel() {
   const isCompact = useIsCompactFormFactor();
   const { settings } = useAppSettings();
   const { getAccessToken } = useSub2APIAuth();
-  const { loadProviders } = useDesktopProvidersStore();
+  const { activeClaudeProvider, activeCodexProvider } = useDesktopProvidersStore();
   const [activeSection, setActiveSection] = useState<PaseoCloudSection>("overview");
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [payToken, setPayToken] = useState<string | null>(null);
+  const timezone = useMemo(() => getLocalTimeZone(), []);
 
   const meQuery = useSub2APIMe();
+  const keysQuery = useSub2APIKeys(1, 200);
   const usageTodayQuery = useSub2APIUsageStats("today");
   const usageWeekQuery = useSub2APIUsageStats("week");
   const usageMonthQuery = useSub2APIUsageStats("month");
+  const keys = useMemo(() => keysQuery.data?.items ?? [], [keysQuery.data?.items]);
+  const activeClaudeCloudKey = useMemo(
+    () => findCloudKeyByApiKey(keys, activeClaudeProvider?.apiKey),
+    [activeClaudeProvider?.apiKey, keys],
+  );
+  const activeCodexCloudKey = useMemo(
+    () => findCloudKeyByApiKey(keys, activeCodexProvider?.apiKey),
+    [activeCodexProvider?.apiKey, keys],
+  );
+  const activeClaudeUsageTodayQuery = useSub2APIUsageStats(
+    {
+      period: "today",
+      apiKeyId: activeClaudeCloudKey?.id ?? null,
+      timezone,
+    },
+    { enabled: activeClaudeCloudKey !== null },
+  );
+  const activeCodexUsageTodayQuery = useSub2APIUsageStats(
+    {
+      period: "today",
+      apiKeyId: activeCodexCloudKey?.id ?? null,
+      timezone,
+    },
+    { enabled: activeCodexCloudKey !== null },
+  );
 
   const {
     endpoint: serviceEndpoint,
@@ -213,8 +368,49 @@ export function PaseoCloudPanel() {
   }, [getAccessToken]);
 
   const handlePayCompleted = useCallback(() => {
-    void Promise.all([meQuery.refetch(), usageTodayQuery.refetch(), usageMonthQuery.refetch()]);
-  }, [meQuery, usageMonthQuery, usageTodayQuery]);
+    void Promise.all([
+      meQuery.refetch(),
+      usageTodayQuery.refetch(),
+      usageMonthQuery.refetch(),
+      activeClaudeUsageTodayQuery.refetch(),
+      activeCodexUsageTodayQuery.refetch(),
+    ]);
+  }, [
+    activeClaudeUsageTodayQuery,
+    activeCodexUsageTodayQuery,
+    meQuery,
+    usageMonthQuery,
+    usageTodayQuery,
+  ]);
+
+  const routeCards = useMemo<RouteUsageCard[]>(
+    () => [
+      {
+        scopeLabel: "Claude Code",
+        provider: activeClaudeProvider ?? null,
+        cloudKey: activeClaudeCloudKey,
+        todayCost: activeClaudeUsageTodayQuery.data?.total_actual_cost,
+        todayRequests: activeClaudeUsageTodayQuery.data?.total_requests,
+      },
+      {
+        scopeLabel: "Codex",
+        provider: activeCodexProvider ?? null,
+        cloudKey: activeCodexCloudKey,
+        todayCost: activeCodexUsageTodayQuery.data?.total_actual_cost,
+        todayRequests: activeCodexUsageTodayQuery.data?.total_requests,
+      },
+    ],
+    [
+      activeClaudeCloudKey,
+      activeClaudeProvider,
+      activeClaudeUsageTodayQuery.data?.total_actual_cost,
+      activeClaudeUsageTodayQuery.data?.total_requests,
+      activeCodexCloudKey,
+      activeCodexProvider,
+      activeCodexUsageTodayQuery.data?.total_actual_cost,
+      activeCodexUsageTodayQuery.data?.total_requests,
+    ],
+  );
 
   const activeSectionLabel =
     SECTION_OPTIONS.find((option) => option.id === activeSection)?.label ?? "Overview";
@@ -279,6 +475,7 @@ export function PaseoCloudPanel() {
             usageWeekRequests={usageWeekQuery.data?.total_requests}
             usageMonthCost={usageMonthQuery.data?.total_cost}
             usageMonthRequests={usageMonthQuery.data?.total_requests}
+            routeCards={routeCards}
           />
         );
     }

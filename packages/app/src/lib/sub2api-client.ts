@@ -1,5 +1,13 @@
 export type Sub2APIUsagePeriod = "today" | "week" | "month";
 
+export interface Sub2APIUsageStatsQuery {
+  period?: Sub2APIUsagePeriod;
+  apiKeyId?: number | null;
+  timezone?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
 export interface Sub2APIEnvelope<T> {
   code: number;
   message: string;
@@ -50,6 +58,9 @@ export interface Sub2APIKey {
   status: string;
   quota: number;
   quota_used: number;
+  rate_limit_5h: number;
+  rate_limit_1d: number;
+  rate_limit_7d: number;
   usage_5h: number;
   usage_1d: number;
   usage_7d: number;
@@ -221,7 +232,7 @@ export interface Sub2APIClient {
   deleteKey: (id: number) => Promise<void>;
   getAvailableGroups: () => Promise<Sub2APIGroup[]>;
   getModelCatalog: () => Promise<Sub2APIModelCatalog>;
-  getUsageStats: (period: Sub2APIUsagePeriod) => Promise<Sub2APIUsageStats>;
+  getUsageStats: (query: Sub2APIUsagePeriod | Sub2APIUsageStatsQuery) => Promise<Sub2APIUsageStats>;
   getGroupStatuses: () => Promise<Sub2APIGroupStatusItem[]>;
   getReferralInfo: () => Promise<Sub2APIReferralInfo>;
   getReferralHistory: (
@@ -314,6 +325,33 @@ export function createSub2APIClient(input: {
 }): Sub2APIClient {
   const baseUrl = normalizeSub2APIEndpoint(input.endpoint);
 
+  function buildUsageStatsPath(query: Sub2APIUsagePeriod | Sub2APIUsageStatsQuery): string {
+    const normalized =
+      typeof query === "string" ? ({ period: query } satisfies Sub2APIUsageStatsQuery) : query;
+    const searchParams = new URLSearchParams();
+
+    const period = normalized.period ?? "today";
+    searchParams.set("period", period);
+
+    if (typeof normalized.apiKeyId === "number" && Number.isFinite(normalized.apiKeyId)) {
+      searchParams.set("api_key_id", String(normalized.apiKeyId));
+    }
+    const timezone = trimToNull(normalized.timezone);
+    if (timezone) {
+      searchParams.set("timezone", timezone);
+    }
+    const startDate = trimToNull(normalized.startDate);
+    if (startDate) {
+      searchParams.set("start_date", startDate);
+    }
+    const endDate = trimToNull(normalized.endDate);
+    if (endDate) {
+      searchParams.set("end_date", endDate);
+    }
+
+    return `/usage/stats?${searchParams.toString()}`;
+  }
+
   async function request<T>(
     path: string,
     init?: {
@@ -405,8 +443,8 @@ export function createSub2APIClient(input: {
     async getModelCatalog() {
       return await request<Sub2APIModelCatalog>("/models/catalog");
     },
-    async getUsageStats(period) {
-      return await request<Sub2APIUsageStats>(`/usage/stats?period=${encodeURIComponent(period)}`);
+    async getUsageStats(query) {
+      return await request<Sub2APIUsageStats>(buildUsageStatsPath(query));
     },
     async getGroupStatuses() {
       return await request<Sub2APIGroupStatusItem[]>("/group-status");

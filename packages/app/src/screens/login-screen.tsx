@@ -181,8 +181,9 @@ export function LoginScreen() {
           <View style={styles.copyBlock}>
             <Text style={styles.title}>Sign in to Paseo</Text>
             <Text style={styles.subtitle}>
-              Complete sign-in in your browser for Paseo Cloud. We configure Claude Code and Codex
-              routes for you.
+              Complete sign-in in your browser for Paseo Cloud. On first sign-in, Paseo tries to
+              configure any missing Claude Code and Codex routes for you without replacing routes
+              that already exist on this device.
             </Text>
           </View>
 

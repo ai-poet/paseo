@@ -3,6 +3,8 @@ export interface Sub2APIAuthCallback {
   refreshToken: string;
   expiresIn: number;
   apiKey: string;
+  claudeApiKey: string | null;
+  codexApiKey: string | null;
   endpoint: string;
 }
 
@@ -51,6 +53,8 @@ export function parseSub2APIAuthCallback(url: string): Sub2APIAuthCallback {
   const accessToken = params.get("access_token")?.trim() ?? "";
   const refreshToken = params.get("refresh_token")?.trim() ?? "";
   const apiKey = params.get("api_key")?.trim() ?? "";
+  const claudeApiKey = params.get("claude_api_key")?.trim() ?? "";
+  const codexApiKey = params.get("codex_api_key")?.trim() ?? "";
   const endpoint = normalizeEndpoint(params.get("endpoint")?.trim() ?? "");
   const expiresIn = Number.parseInt(params.get("expires_in") ?? "0", 10);
 
@@ -70,6 +74,8 @@ export function parseSub2APIAuthCallback(url: string): Sub2APIAuthCallback {
     refreshToken,
     expiresIn,
     apiKey,
+    claudeApiKey: claudeApiKey || null,
+    codexApiKey: codexApiKey || null,
     endpoint,
   };
 }

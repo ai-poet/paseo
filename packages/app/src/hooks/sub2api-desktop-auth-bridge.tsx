@@ -7,10 +7,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import { Alert } from "react-native";
 import { getIsElectron } from "@/constants/platform";
+import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import { getDesktopHost } from "@/desktop/host";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { cloudServiceQueryKeys } from "@/hooks/use-sub2api-api";
 import { parseSub2APIAuthCallback } from "@/screens/settings/sub2api-auth-bridge";
+import { resolveScopedActiveProviderIds } from "@/screens/settings/desktop-providers-context";
+import type { ProviderStore } from "@/screens/settings/sub2api-provider-types";
 
 let lastHandledCallbackUrl: string | null = null;
 
@@ -28,6 +31,57 @@ function extractAuthCallbackUrl(payload: unknown): string | null {
   }
   const url = (payload as AuthCallbackPayload).url;
   return typeof url === "string" && url.length > 0 ? url : null;
+}
+
+async function configureMissingManagedRoutes(session: ReturnType<typeof parseSub2APIAuthCallback>) {
+  const store = await invokeDesktopCommand<ProviderStore>("get_providers");
+  const active = resolveScopedActiveProviderIds(store);
+
+  const commands: Array<Promise<unknown>> = [];
+  if (!active.claude && session.claudeApiKey) {
+    commands.push(
+      invokeDesktopCommand("setup_default_provider", {
+        endpoint: session.endpoint,
+        apiKey: session.claudeApiKey,
+        scope: "claude",
+        name: "Paseo Cloud",
+      }),
+    );
+  }
+  if (!active.codex && session.codexApiKey) {
+    commands.push(
+      invokeDesktopCommand("setup_default_provider", {
+        endpoint: session.endpoint,
+        apiKey: session.codexApiKey,
+        scope: "codex",
+        name: "Paseo Cloud",
+      }),
+    );
+  }
+
+  if (
+    commands.length === 0 &&
+    !active.claude &&
+    !active.codex &&
+    !session.claudeApiKey &&
+    !session.codexApiKey &&
+    session.apiKey
+  ) {
+    commands.push(
+      invokeDesktopCommand("setup_default_provider", {
+        endpoint: session.endpoint,
+        apiKey: session.apiKey,
+        scope: "both",
+        name: "Paseo Cloud",
+      }),
+    );
+  }
+
+  if (commands.length === 0) {
+    return;
+  }
+
+  await Promise.all(commands);
 }
 
 export function Sub2apiDesktopAuthBridge(): null {
@@ -56,6 +110,15 @@ export function Sub2apiDesktopAuthBridge(): null {
         expiresIn: session.expiresIn,
         endpoint: session.endpoint,
       });
+      try {
+        await configureMissingManagedRoutes(session);
+      } catch (error) {
+        console.error("[sub2api-desktop-auth-bridge] auto-route setup failed:", error);
+        Alert.alert(
+          "Signed in",
+          `Your account is connected, but automatic Claude/Codex setup did not finish. ${getErrorMessage(error)}`,
+        );
+      }
       void queryClientRef.current.invalidateQueries({ queryKey: cloudServiceQueryKeys.root });
     } catch (error) {
       lastHandledCallbackUrl = null;

@@ -4,7 +4,6 @@
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PaseoCloudPanel } from "./paseo-cloud-panel";
 
 const { mocks } = vi.hoisted(() => ({
   mocks: {
@@ -49,6 +48,29 @@ vi.mock("react-native-unistyles", () => ({
   },
 }));
 
+vi.mock("react-native", () => {
+  const mapProps = (props: Record<string, unknown>) => {
+    const { testID, children, onPress, ...rest } = props;
+    return {
+      ...rest,
+      ...(typeof testID === "string" ? { "data-testid": testID } : {}),
+      ...(typeof onPress === "function" ? { onClick: onPress } : {}),
+      children,
+    };
+  };
+
+  return {
+    Alert: { alert: vi.fn() },
+    View: (props: Record<string, unknown>) => React.createElement("div", mapProps(props)),
+    Text: (props: Record<string, unknown>) => React.createElement("span", mapProps(props)),
+    Pressable: (props: Record<string, unknown>) => {
+      const children =
+        typeof props.children === "function" ? props.children({ pressed: false }) : props.children;
+      return React.createElement("button", mapProps({ ...props, children }));
+    },
+  };
+});
+
 vi.mock("@/constants/layout", () => ({
   useIsCompactFormFactor: () => false,
 }));
@@ -92,14 +114,60 @@ vi.mock("@/hooks/use-sub2api-api", () => ({
     refetch: vi.fn(),
   }),
   useSub2APIUsageStats: () => ({
-    data: { total_cost: 1.23, total_requests: 5 },
+    data: { total_cost: 1.23, total_actual_cost: 1.23, total_requests: 5 },
     refetch: vi.fn(),
+  }),
+  useSub2APIKeys: () => ({
+    data: {
+      items: [
+        {
+          id: 11,
+          key: "sk-claude",
+          name: "Claude Cloud Key",
+          group_id: 111,
+          quota: 20,
+          quota_used: 4,
+          rate_limit_5h: 0,
+          rate_limit_1d: 0,
+          rate_limit_7d: 0,
+          usage_5h: 0.4,
+          usage_1d: 0.9,
+          usage_7d: 2,
+          group: { id: 111, name: "Anthropic Group", platform: "anthropic" },
+        },
+        {
+          id: 22,
+          key: "sk-codex",
+          name: "Codex Cloud Key",
+          group_id: 222,
+          quota: 0,
+          quota_used: 8,
+          rate_limit_5h: 0,
+          rate_limit_1d: 0,
+          rate_limit_7d: 0,
+          usage_5h: 0.8,
+          usage_1d: 1.5,
+          usage_7d: 5,
+          group: { id: 222, name: "OpenAI Group", platform: "openai" },
+        },
+      ],
+    },
   }),
 }));
 
 vi.mock("@/screens/settings/desktop-providers-context", () => ({
   useDesktopProvidersStore: () => ({
     loadProviders: mocks.loadProviders,
+    activeClaudeProvider: {
+      name: "Paseo Claude",
+      endpoint: "https://api.example.com",
+      apiKey: "sk-claude",
+    },
+    activeCodexProvider: {
+      name: "Paseo Codex",
+      endpoint: "https://api.example.com",
+      apiKey: "sk-codex",
+    },
   }),
 }));
 
@@ -132,10 +200,15 @@ describe("PaseoCloudPanel", () => {
     mocks.logout.mockReset();
   });
 
-  it("switches between internal Paseo Cloud sections from the left menu", () => {
+  it("switches between internal Paseo Cloud sections from the left menu", async () => {
+    const { PaseoCloudPanel } = await import("./paseo-cloud-panel");
+
     render(<PaseoCloudPanel />);
 
     expect(screen.queryByText("Signed in as alice")).not.toBeNull();
+    expect(screen.queryByText("Current routes")).not.toBeNull();
+    expect(screen.queryByText("Anthropic Group")).not.toBeNull();
+    expect(screen.queryByText("OpenAI Group")).not.toBeNull();
 
     fireEvent.click(screen.getByTestId("paseo-cloud-section-keys"));
     expect(screen.queryByText("API keys section content")).not.toBeNull();
