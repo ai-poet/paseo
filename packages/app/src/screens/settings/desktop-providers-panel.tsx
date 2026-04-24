@@ -1,4 +1,7 @@
-import { Pressable, Text, TextInput, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
+import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import { useUnistyles } from "react-native-unistyles";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SettingsSection } from "@/screens/settings/settings-section";
@@ -10,12 +13,21 @@ import { managedProviderSettingsStyles as styles } from "@/screens/settings/mana
 import {
   CUSTOM_TARGET_SEGMENT_OPTIONS,
   ENDPOINT_PLACEHOLDER,
+  getErrorMessage,
   providerTargetHint,
   maskApiKey,
   providerWritesClaude,
   providerWritesCodex,
 } from "@/screens/settings/managed-provider-settings-shared";
 import type { DesktopProviderPayload } from "@/screens/settings/sub2api-provider-types";
+
+type ConfigPreviewTarget = "claude" | "codex" | null;
+
+type ConfigSnapshot = {
+  claudeSettings: string | null;
+  codexAuth: string | null;
+  codexConfig: string | null;
+};
 
 function RouteHeroCard({
   label,
@@ -57,6 +69,9 @@ export function DesktopProvidersPanel() {
   const { theme } = useUnistyles();
   const { settings } = useAppSettings();
   const isByok = settings.accessMode === "byok";
+  const [previewTarget, setPreviewTarget] = useState<ConfigPreviewTarget>(null);
+  const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const {
     providers,
     activeClaudeProviderId,
@@ -79,6 +94,56 @@ export function DesktopProvidersPanel() {
     handleAddProvider,
   } = useDesktopProvidersStore();
 
+  const openConfigPreview = useCallback(async (target: Exclude<ConfigPreviewTarget, null>) => {
+    try {
+      setIsPreviewLoading(true);
+      const snapshot = await invokeDesktopCommand<ConfigSnapshot>("backup_config");
+      setConfigSnapshot(snapshot);
+      setPreviewTarget(target);
+    } catch (error) {
+      Alert.alert("Unable to preview config", getErrorMessage(error));
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  }, []);
+
+  const openConfigFile = useCallback(
+    async (target: "claude-settings" | "codex-auth" | "codex-config") => {
+      try {
+        await invokeDesktopCommand("open_provider_config_file", { target });
+      } catch (error) {
+        Alert.alert("Unable to open config", getErrorMessage(error));
+      }
+    },
+    [],
+  );
+
+  const previewTitle =
+    previewTarget === "codex" ? "Codex config preview" : "Claude Code config preview";
+  const previewBlocks = useMemo(() => {
+    if (!configSnapshot || !previewTarget) {
+      return [];
+    }
+    if (previewTarget === "claude") {
+      return [
+        {
+          title: "~/.claude/settings.json",
+          contents: configSnapshot.claudeSettings,
+        },
+      ];
+    }
+    return [
+      {
+        title: "~/.codex/auth.json",
+        contents: configSnapshot.codexAuth,
+      },
+      {
+        title: "~/.codex/config.toml",
+        contents: configSnapshot.codexConfig,
+      },
+    ];
+  }, [configSnapshot, previewTarget]);
+
   return (
     <>
       <AccessModeSection />
@@ -92,6 +157,59 @@ export function DesktopProvidersPanel() {
         <View style={styles.routeHeroStack}>
           <RouteHeroCard label="Claude Code" provider={activeClaudeProvider} />
           <RouteHeroCard label="Codex" provider={activeCodexProvider} />
+        </View>
+      </SettingsSection>
+
+      <SettingsSection title="Config files">
+        <View style={[settingsStyles.card, styles.cardBody]}>
+          <Text style={styles.sectionHint}>
+            Preview the actual Claude Code and Codex files on disk, or open them directly when you
+            want to verify or manually fix a route.
+          </Text>
+          <View style={styles.scopeActionsRow}>
+            <Pressable
+              onPress={() => void openConfigPreview("claude")}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed && styles.buttonPressed,
+                isPreviewLoading && styles.disabledButton,
+              ]}
+              disabled={isPreviewLoading}
+            >
+              <Text style={styles.secondaryButtonText}>Preview Claude</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void openConfigFile("claude-settings")}
+              style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+            >
+              <Text style={styles.secondaryButtonText}>Open Claude file</Text>
+            </Pressable>
+          </View>
+          <View style={styles.scopeActionsRow}>
+            <Pressable
+              onPress={() => void openConfigPreview("codex")}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed && styles.buttonPressed,
+                isPreviewLoading && styles.disabledButton,
+              ]}
+              disabled={isPreviewLoading}
+            >
+              <Text style={styles.secondaryButtonText}>Preview Codex</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void openConfigFile("codex-auth")}
+              style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+            >
+              <Text style={styles.secondaryButtonText}>Open auth.json</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void openConfigFile("codex-config")}
+              style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+            >
+              <Text style={styles.secondaryButtonText}>Open config.toml</Text>
+            </Pressable>
+          </View>
         </View>
       </SettingsSection>
 
@@ -261,6 +379,41 @@ export function DesktopProvidersPanel() {
           )}
         </View>
       </SettingsSection>
+
+      <AdaptiveModalSheet
+        title={previewTitle}
+        visible={previewTarget !== null}
+        onClose={() => setPreviewTarget(null)}
+        desktopMaxWidth={760}
+        testID="config-preview-modal"
+      >
+        <ScrollView style={{ maxHeight: 480 }}>
+          <View style={styles.formBody}>
+            {previewBlocks.map((block) => (
+              <View key={block.title} style={styles.routeSummaryCard}>
+                <Text style={styles.formTitle}>{block.title}</Text>
+                <Text style={styles.usageHint}>
+                  {block.contents
+                    ? "Current on-disk contents"
+                    : "This file has not been created yet."}
+                </Text>
+                <View style={styles.configPreviewBlock}>
+                  <Text
+                    selectable
+                    style={{
+                      color: theme.colors.foreground,
+                      fontSize: theme.fontSize.xs,
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {block.contents ?? "(empty)"}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      </AdaptiveModalSheet>
     </>
   );
 }

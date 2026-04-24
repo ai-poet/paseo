@@ -75,6 +75,18 @@ function codexConfigPath(): string {
   return join(homedir(), ".codex", "config.toml");
 }
 
+export function getProviderConfigPaths(): {
+  claudeSettingsPath: string;
+  codexAuthPath: string;
+  codexConfigPath: string;
+} {
+  return {
+    claudeSettingsPath: claudeSettingsPath(),
+    codexAuthPath: codexAuthPath(),
+    codexConfigPath: codexConfigPath(),
+  };
+}
+
 export function normalizeProviderEndpoint(endpoint: string): string {
   const trimmed = endpoint.trim().replace(/\/+$/, "");
   if (trimmed.toLowerCase().endsWith("/v1")) {

@@ -108,6 +108,8 @@ export function PaseoCloudApiKeysSection({
   );
 
   const scopedGroups = groupsByScope[activeScope];
+  const alternateScope: ManagedCloudDesktopScope = activeScope === "claude" ? "codex" : "claude";
+  const alternateGroups = groupsByScope[alternateScope];
   const groupFilterOptions = useMemo(
     () => [
       {
@@ -251,9 +253,10 @@ export function PaseoCloudApiKeysSection({
       }
       if (resolved.scope !== activeScope) {
         const targetMeta = getManagedCloudMetaForScope(resolved.scope);
+        setActiveScope(resolved.scope);
         Alert.alert(
-          "Use the other tab",
-          `Key "${key.name}" belongs to ${targetMeta.cliLabel}. Switch tabs to apply it there.`,
+          "Moved to the matching tab",
+          `Key "${key.name}" belongs to ${targetMeta.cliLabel}. Paseo switched tabs for you so you can apply it there.`,
         );
         return;
       }
@@ -334,6 +337,26 @@ export function PaseoCloudApiKeysSection({
             This page only filters and manages keys. It does not change CLI routing until you press{" "}
             <Text style={styles.sectionHintEm}>Use key</Text>.
           </Text>
+          {scopedGroups.length === 0 ? (
+            <View style={styles.dashedCard}>
+              <Text style={styles.emptyTitle}>No compatible groups yet</Text>
+              <Text style={styles.emptyBody}>
+                Your current account does not have any {scopeMeta.platform} groups available for{" "}
+                {scopeMeta.cliLabel}. Add a compatible group in Paseo Cloud, or use BYOK for this
+                CLI.
+              </Text>
+              {alternateGroups.length > 0 ? (
+                <Pressable
+                  onPress={() => setActiveScope(alternateScope)}
+                  style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+                >
+                  <Text style={styles.secondaryButtonText}>
+                    View {getManagedCloudMetaForScope(alternateScope).cliLabel} instead
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
 
           <View style={styles.groupPickerBlock}>
             <Text style={styles.fieldLabel}>Search</Text>

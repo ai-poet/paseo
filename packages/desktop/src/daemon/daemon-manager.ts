@@ -1,7 +1,7 @@
 import { type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { app, ipcMain, powerMonitor } from "electron";
+import { app, ipcMain, powerMonitor, shell } from "electron";
 import log from "electron-log/main";
 import { resolvePaseoHome, spawnProcess } from "@getpaseo/server";
 import {
@@ -38,6 +38,7 @@ import {
   setupDefaultProvider,
   backupCurrentConfig,
   restoreConfig,
+  getProviderConfigPaths,
   type Provider,
   type ConfigBackup,
   type SetupManagedCloudScope,
@@ -557,6 +558,22 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
     backup_config: () => backupCurrentConfig(),
     restore_config: (args?: Record<string, unknown>) =>
       restoreConfig(args as unknown as ConfigBackup),
+    open_provider_config_file: async (args?: Record<string, unknown>) => {
+      const target =
+        typeof args?.target === "string" ? args.target : "claude-settings";
+      const paths = getProviderConfigPaths();
+      const filePath =
+        target === "codex-auth"
+          ? paths.codexAuthPath
+          : target === "codex-config"
+            ? paths.codexConfigPath
+            : paths.claudeSettingsPath;
+      const result = await shell.openPath(filePath);
+      if (result) {
+        throw new Error(result);
+      }
+      return { path: filePath };
+    },
   };
 }
 

@@ -116,6 +116,15 @@ export function PaseoCloudRoutingSection({
       }),
     [activeScope, groups],
   );
+  const alternateScope: ManagedCloudDesktopScope = activeScope === "claude" ? "codex" : "claude";
+  const alternateScopeGroups = useMemo(
+    () =>
+      groups.filter((group) => {
+        const route = resolveManagedCloudRouteForGroup(group);
+        return route.ok && route.scope === alternateScope;
+      }),
+    [alternateScope, groups],
+  );
 
   const scopedKeys = useMemo(
     () =>
@@ -214,9 +223,10 @@ export function PaseoCloudRoutingSection({
       }
       if (resolved.scope !== activeScope) {
         const targetMeta = getManagedCloudMetaForScope(resolved.scope);
+        setActiveScope(resolved.scope);
         Alert.alert(
-          "Use the other tab",
-          `Group "${group.name}" belongs to ${targetMeta.cliLabel}. Switch tabs to apply it there.`,
+          "Moved to the matching tab",
+          `Group "${group.name}" belongs to ${targetMeta.cliLabel}. Paseo switched tabs for you so you can apply it there.`,
         );
         return;
       }
@@ -291,9 +301,23 @@ export function PaseoCloudRoutingSection({
         ) : groupsQuery.isLoading ? (
           <Text style={styles.usageHint}>Loading groups…</Text>
         ) : groupCards.length === 0 ? (
-          <Text style={styles.usageHint}>
-            No {scopeMeta.platform} routing groups are available for {scopeMeta.cliLabel}.
-          </Text>
+          <View style={styles.dashedCard}>
+            <Text style={styles.emptyTitle}>No routing groups available</Text>
+            <Text style={styles.emptyBody}>
+              This account does not currently expose any {scopeMeta.platform} routing groups for{" "}
+              {scopeMeta.cliLabel}. Add a compatible group in Paseo Cloud, or use BYOK for this CLI.
+            </Text>
+            {alternateScopeGroups.length > 0 ? (
+              <Pressable
+                onPress={() => setActiveScope(alternateScope)}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  View {getManagedCloudMetaForScope(alternateScope).cliLabel} routes
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : (
           <View style={styles.keyRowList}>
             {groupCards.map(({ group, groupKeys, activeKey, recommended, status }) => {

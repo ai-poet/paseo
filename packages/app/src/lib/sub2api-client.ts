@@ -170,6 +170,61 @@ export interface Sub2APIGroupStatusItem {
   observed_at: string | null;
 }
 
+function toFiniteNumberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function toStringOrEmpty(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function normalizeGroupStatusItem(value: unknown): Sub2APIGroupStatusItem {
+  if (typeof value !== "object" || value === null) {
+    return {
+      group_id: 0,
+      group_name: "",
+      latest_status: "",
+      stable_status: "",
+      latency_ms: null,
+      availability_24h: null,
+      availability_7d: null,
+      observed_at: null,
+    };
+  }
+
+  const raw = value as Record<string, unknown>;
+  const summary =
+    typeof raw.summary === "object" && raw.summary !== null
+      ? (raw.summary as Record<string, unknown>)
+      : null;
+  const group =
+    typeof raw.group === "object" && raw.group !== null
+      ? (raw.group as Record<string, unknown>)
+      : null;
+
+  return {
+    group_id:
+      (typeof raw.group_id === "number" ? raw.group_id : null) ??
+      (typeof summary?.group_id === "number" ? summary.group_id : null) ??
+      (typeof group?.id === "number" ? group.id : null) ??
+      0,
+    group_name:
+      toStringOrEmpty(raw.group_name) ||
+      toStringOrEmpty(group?.name) ||
+      toStringOrEmpty(summary?.group_name),
+    latest_status: toStringOrEmpty(raw.latest_status) || toStringOrEmpty(summary?.latest_status),
+    stable_status: toStringOrEmpty(raw.stable_status) || toStringOrEmpty(summary?.stable_status),
+    latency_ms: toFiniteNumberOrNull(raw.latency_ms) ?? toFiniteNumberOrNull(summary?.latency_ms),
+    availability_24h:
+      toFiniteNumberOrNull(raw.availability_24h) ?? toFiniteNumberOrNull(raw.availability24),
+    availability_7d:
+      toFiniteNumberOrNull(raw.availability_7d) ?? toFiniteNumberOrNull(raw.availability7d),
+    observed_at:
+      (typeof raw.observed_at === "string" ? raw.observed_at : null) ??
+      (typeof summary?.observed_at === "string" ? summary.observed_at : null),
+  };
+}
+
 export interface Sub2APIReferralStats {
   total_count: number;
   rewarded_count: number;
@@ -447,7 +502,8 @@ export function createSub2APIClient(input: {
       return await request<Sub2APIUsageStats>(buildUsageStatsPath(query));
     },
     async getGroupStatuses() {
-      return await request<Sub2APIGroupStatusItem[]>("/group-status");
+      const items = await request<unknown[]>("/group-status");
+      return Array.isArray(items) ? items.map(normalizeGroupStatusItem) : [];
     },
     async getReferralInfo() {
       return await request<Sub2APIReferralInfo>("/referral/info");

@@ -342,6 +342,13 @@ export const managedProviderSettingsStyles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
   },
+  configPreviewBlock: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface1,
+    padding: theme.spacing[3],
+  },
   usageHint: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
