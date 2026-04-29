@@ -19,16 +19,9 @@ import type { SelectorCloudGroup } from "@/components/combined-model-selector.ut
 import { useSessionStore } from "@/stores/session-store";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import {
-  useCreateSub2APIKeyMutation,
-  useSub2APIClient,
-  useSub2APIGroupStatuses,
-  useSub2APIKeys,
-  useSub2APIModelCatalog,
-} from "@/hooks/use-sub2api-api";
-import {
-  useSetWorkspaceCloudRouteMutation,
-  useWorkspaceCloudRoutes,
-} from "@/hooks/use-workspace-cloud-routes";
+  formatWorkspaceCloudRouteSwitchError,
+  useCloudModelRouting,
+} from "@/hooks/use-cloud-model-routing";
 import { resolveProviderDefinition } from "@/utils/provider-definitions";
 import {
   buildFavoriteModelKey,
@@ -36,9 +29,6 @@ import {
   toggleFavoriteModel,
   useFormPreferences,
 } from "@/hooks/use-form-preferences";
-import { buildGroupFirstModelCatalog } from "@/screens/settings/paseo-cloud-catalog-utils";
-import { resolveManagedCloudRouteFromPlatform } from "@/screens/settings/managed-cloud-scope";
-import { findReusableKey } from "@/screens/settings/managed-provider-settings-shared";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,7 +50,6 @@ import {
   type AgentModeColorTier,
   type AgentModeIcon,
 } from "@server/server/agent/provider-manifest";
-import type { WorkspaceCloudRouteProvider } from "@server/shared/messages";
 import {
   getFeatureHighlightColor,
   getFeatureTooltip,
@@ -926,6 +915,11 @@ export const AgentStatusBar = memo(function AgentStatusBar({
       : undefined;
     return definition ? [definition] : [];
   }, [agent?.provider, snapshotEntries]);
+  const { cloudGroups, selectCloudModelForNextSession } = useCloudModelRouting({
+    serverId,
+    cwd: agent?.cwd,
+    providerDefinitions: agentProviderDefinitions,
+  });
 
   const agentProviderModels = useMemo(() => {
     const map = new Map<string, AgentModelDefinition[]>();
@@ -974,6 +968,33 @@ export const AgentStatusBar = memo(function AgentStatusBar({
       label: option.label,
     }));
   }, [modelSelection.thinkingOptions]);
+
+  const handleSelectCloudModel = useCallback(
+    async (provider: AgentProvider, modelId: string, group: SelectorCloudGroup) => {
+      try {
+        const route = await selectCloudModelForNextSession(provider, modelId, group);
+        if (!route) {
+          return;
+        }
+        await updatePreferences((current) =>
+          mergeProviderPreferences({
+            preferences: current,
+            provider,
+            updates: {
+              model: modelId,
+            },
+          }),
+        );
+        toast.show(
+          `${group.groupLabel} will apply to new sessions in this workspace. Current session keeps its current route.`,
+          { variant: "success" },
+        );
+      } catch (error) {
+        toast.error(`Could not switch Cloud group: ${formatWorkspaceCloudRouteSwitchError(error)}`);
+      }
+    },
+    [selectCloudModelForNextSession, toast, updatePreferences],
+  );
 
   if (!agent) {
     return null;
@@ -1029,6 +1050,8 @@ export const AgentStatusBar = memo(function AgentStatusBar({
           console.warn("[AgentStatusBar] toggle favorite model failed", error);
         });
       }}
+      cloudGroups={cloudGroups}
+      onSelectCloudModel={handleSelectCloudModel}
       thinkingOptions={thinkingOptions.length > 1 ? thinkingOptions : undefined}
       selectedThinkingOptionId={modelSelection.selectedThinkingId ?? undefined}
       onSelectThinkingOption={(thinkingOptionId) => {
@@ -1115,13 +1138,11 @@ export function DraftAgentStatusBar({
 }: DraftAgentStatusBarProps) {
   const { preferences, updatePreferences } = useFormPreferences();
   const toast = useToast();
-  const cloudClient = useSub2APIClient();
-  const cloudCatalogQuery = useSub2APIModelCatalog();
-  const cloudStatusesQuery = useSub2APIGroupStatuses();
-  const cloudKeysQuery = useSub2APIKeys(1, 200);
-  const createCloudKeyMutation = useCreateSub2APIKeyMutation();
-  const workspaceCloudRoutesQuery = useWorkspaceCloudRoutes(serverId, cwd);
-  const setWorkspaceCloudRouteMutation = useSetWorkspaceCloudRouteMutation(serverId);
+  const { cloudGroups, selectCloudModelForNextSession } = useCloudModelRouting({
+    serverId,
+    cwd,
+    providerDefinitions,
+  });
 
   const mappedModeOptions = useMemo<StatusOption[]>(() => {
     if (modeOptions.length === 0) {
@@ -1147,130 +1168,21 @@ export function DraftAgentStatusBar({
     [preferences.favoriteModels],
   );
 
-  const cloudGroups = useMemo<SelectorCloudGroup[]>(() => {
-    if (!cloudClient.isLoggedIn || !cloudClient.endpoint || !cloudCatalogQuery.data) {
-      return [];
-    }
-    const supportedProviderIds = new Set(providerDefinitions.map((definition) => definition.id));
-    const activeGroupByProvider = new Map(
-      (workspaceCloudRoutesQuery.data ?? []).map(
-        (route) => [route.provider, route.groupId] as const,
-      ),
-    );
-    const groups: SelectorCloudGroup[] = [];
-    for (const platform of ["anthropic", "openai"]) {
-      const route = resolveManagedCloudRouteFromPlatform(platform);
-      if (!route.ok || !supportedProviderIds.has(route.scope)) {
-        continue;
-      }
-      const catalog = buildGroupFirstModelCatalog({
-        catalog: cloudCatalogQuery.data,
-        statuses: cloudStatusesQuery.data,
-        platform,
-      });
-      for (const group of catalog.groups) {
-        const seenModelIds = new Set<string>();
-        const models = group.models
-          .filter((entry) => {
-            if (seenModelIds.has(entry.item.model)) {
-              return false;
-            }
-            seenModelIds.add(entry.item.model);
-            return true;
-          })
-          .map((entry) => ({
-            id: entry.item.model,
-            label: entry.item.display_name || entry.item.model,
-            description: `${group.group.rate_multiplier}x · ${entry.item.billing_mode}`,
-          }));
-        if (models.length === 0) {
-          continue;
-        }
-        const status = group.status?.stable_status || group.status?.latest_status;
-        const isActiveForWorkspace = activeGroupByProvider.get(route.scope) === group.group.id;
-        groups.push({
-          provider: route.scope,
-          groupId: group.group.id,
-          groupLabel: group.group.name,
-          platform,
-          description: `${isActiveForWorkspace ? "Current workspace · " : ""}${route.cliLabel} · ${
-            group.group.rate_multiplier
-          }x${status ? ` · ${status}` : ""}`,
-          models,
-        });
-      }
-    }
-    const getActiveGroupId = (provider: string) =>
-      provider === "claude" || provider === "codex"
-        ? activeGroupByProvider.get(provider)
-        : undefined;
-    return groups.sort((a, b) => {
-      const aActive = getActiveGroupId(a.provider) === a.groupId;
-      const bActive = getActiveGroupId(b.provider) === b.groupId;
-      return Number(bActive) - Number(aActive);
-    });
-  }, [
-    cloudCatalogQuery.data,
-    cloudClient.endpoint,
-    cloudClient.isLoggedIn,
-    cloudStatusesQuery.data,
-    providerDefinitions,
-    workspaceCloudRoutesQuery.data,
-  ]);
-
   const handleSelectCloudModel = useCallback(
     async (provider: AgentProvider, modelId: string, group: SelectorCloudGroup) => {
-      const endpoint = cloudClient.endpoint;
-      const normalizedCwd = cwd?.trim();
-      if (
-        !serverId ||
-        !normalizedCwd ||
-        !endpoint ||
-        !cloudClient.isLoggedIn ||
-        (provider !== "claude" && provider !== "codex")
-      ) {
-        onSelectProviderAndModel(provider, modelId);
-        return;
-      }
-
       try {
-        const reusable = findReusableKey(cloudKeysQuery.data?.items ?? [], group.groupId);
-        const keyToUse =
-          reusable ??
-          (await createCloudKeyMutation.mutateAsync({
-            name: `${group.groupLabel} Key`,
-            group_id: group.groupId,
-          }));
-
-        await setWorkspaceCloudRouteMutation.mutateAsync({
-          cwd: normalizedCwd,
-          provider: provider as WorkspaceCloudRouteProvider,
-          endpoint,
-          apiKey: keyToUse.key,
-          apiKeyId: keyToUse.id,
-          groupId: group.groupId,
-          groupName: group.groupLabel,
-          platform: group.platform,
-        });
+        const route = await selectCloudModelForNextSession(provider, modelId, group);
         onSelectProviderAndModel(provider, modelId);
-        toast.show(`${group.groupLabel} will apply to new sessions in this workspace.`, {
-          variant: "success",
-        });
+        if (route) {
+          toast.show(`${group.groupLabel} will apply to new sessions in this workspace.`, {
+            variant: "success",
+          });
+        }
       } catch (error) {
-        toast.error(`Could not switch Cloud group: ${toErrorMessage(error)}`);
+        toast.error(`Could not switch Cloud group: ${formatWorkspaceCloudRouteSwitchError(error)}`);
       }
     },
-    [
-      cloudClient.endpoint,
-      cloudClient.isLoggedIn,
-      cloudKeysQuery.data?.items,
-      createCloudKeyMutation,
-      cwd,
-      onSelectProviderAndModel,
-      serverId,
-      setWorkspaceCloudRouteMutation,
-      toast,
-    ],
+    [onSelectProviderAndModel, selectCloudModelForNextSession, toast],
   );
 
   const effectiveSelectedMode = selectedMode || mappedModeOptions[0]?.id || "";

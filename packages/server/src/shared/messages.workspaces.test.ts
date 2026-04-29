@@ -30,6 +30,72 @@ describe("workspace message schemas", () => {
     expect(parsed.type).toBe("open_project_request");
   });
 
+  test("parses workspace cloud route requests", () => {
+    const getParsed = SessionInboundMessageSchema.parse({
+      type: "get_workspace_cloud_routes_request",
+      requestId: "req-cloud-get",
+      cwd: "/tmp/repo",
+      provider: "claude",
+    });
+    const setParsed = SessionInboundMessageSchema.parse({
+      type: "set_workspace_cloud_route_request",
+      requestId: "req-cloud-set",
+      route: {
+        cwd: "/tmp/repo",
+        provider: "claude",
+        endpoint: "https://cloud.example",
+        apiKey: "sk-test",
+        apiKeyId: 123,
+        groupId: 456,
+        groupName: "Claude Fast",
+        platform: "anthropic",
+      },
+    });
+    const clearParsed = SessionInboundMessageSchema.parse({
+      type: "clear_workspace_cloud_route_request",
+      requestId: "req-cloud-clear",
+      cwd: "/tmp/repo",
+      provider: "claude",
+    });
+
+    expect(getParsed.type).toBe("get_workspace_cloud_routes_request");
+    expect(setParsed.type).toBe("set_workspace_cloud_route_request");
+    expect(clearParsed.type).toBe("clear_workspace_cloud_route_request");
+  });
+
+  test("parses workspace cloud route responses", () => {
+    const route = {
+      cwd: "/tmp/repo",
+      provider: "codex",
+      endpoint: "https://cloud.example",
+      maskedKey: "sk-***",
+      apiKeyId: 123,
+      groupId: 456,
+      groupName: "Codex Fast",
+      platform: "openai",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "get_workspace_cloud_routes_response",
+        payload: { requestId: "req-cloud-get", routes: [route], error: null },
+      }).type,
+    ).toBe("get_workspace_cloud_routes_response");
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "set_workspace_cloud_route_response",
+        payload: { requestId: "req-cloud-set", route, error: null },
+      }).type,
+    ).toBe("set_workspace_cloud_route_response");
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "clear_workspace_cloud_route_response",
+        payload: { requestId: "req-cloud-clear", route: null, error: null },
+      }).type,
+    ).toBe("clear_workspace_cloud_route_response");
+  });
+
   test("parses list_available_editors_request", () => {
     const parsed = SessionInboundMessageSchema.parse({
       type: "list_available_editors_request",

@@ -11,7 +11,7 @@ function fmt(value: number | null): string {
 
 function fmtPct(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "--";
-  return `${(value * 100).toFixed(1)}%`;
+  return `${value.toFixed(1)}%`;
 }
 
 export interface ModelCardProps {

@@ -951,6 +951,20 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
       keys: ["Space"],
     },
   },
+
+  {
+    id: "agent-mode-cycle-shift-tab",
+    action: "agent.mode.cycle",
+    combo: "Shift+Tab",
+    repeat: false,
+    when: { commandCenter: false, terminal: false },
+    help: {
+      id: "agent-mode-cycle",
+      section: "agent-input",
+      label: "Cycle agent mode",
+      keys: ["shift", "Tab"],
+    },
+  },
 ];
 
 // --- Parse bindings at module load ---

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { ComboSelect } from "@/components/agent-form/agent-form-dropdowns";
+import { ModelCard } from "@/components/model-square/group-card";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { settingsStyles } from "@/styles/settings";
@@ -8,8 +10,10 @@ import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { useSub2APIGroupStatuses, useSub2APIModelCatalog } from "@/hooks/use-sub2api-api";
 import { CLOUD_NAME } from "@/config/branding";
 import {
+  buildCatalogModelCardItem,
   buildGroupFirstModelCatalog,
   type GroupFirstCatalogGroup,
+  type GroupFirstCatalogModel,
 } from "@/screens/settings/paseo-cloud-catalog-utils";
 
 type PlatformFilter = "anthropic" | "openai";
@@ -32,13 +36,6 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function formatUsd(value: number | null | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "-";
-  }
-  return `$${value.toFixed(value >= 10 ? 2 : 4)}`;
-}
-
 function formatAvailability(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "-";
@@ -59,6 +56,16 @@ function matchesModelSearch(
   }
   return [input.model, input.display_name, input.platform].some((value) =>
     value.toLowerCase().includes(query),
+  );
+}
+
+function isGroupCatalogModel(value: GroupFirstCatalogModel | unknown): value is GroupFirstCatalogModel {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "item" in value &&
+    "group" in value &&
+    "effectivePricing" in value
   );
 }
 
@@ -99,6 +106,10 @@ export function Sub2APIModelsSection() {
       }),
     [catalogQuery.data, platform, statusesQuery.data],
   );
+  const statusByGroupId = useMemo(
+    () => new Map((statusesQuery.data ?? []).map((status) => [status.group_id, status] as const)),
+    [statusesQuery.data],
+  );
 
   useEffect(() => {
     if (selectedGroup === "all") {
@@ -117,6 +128,27 @@ export function Sub2APIModelsSection() {
     typeof selectedGroup === "number"
       ? (groupCatalog.groups.find((group) => group.group.id === selectedGroup) ?? null)
       : null;
+  const groupOptions = useMemo(
+    () => [
+      ...groupCatalog.groups.map((group) => {
+        const statusLabel = group.status?.stable_status || group.status?.latest_status;
+        return {
+          id: String(group.group.id),
+          label: group.group.name,
+          description: `${group.models.length} models · ${group.group.rate_multiplier}x${
+            statusLabel ? ` · ${statusLabel}` : ""
+          }`,
+        };
+      }),
+      {
+        id: "all",
+        label: "All models",
+        description: `${groupCatalog.allModels.length} platform models`,
+      },
+    ],
+    [groupCatalog.allModels.length, groupCatalog.groups],
+  );
+  const selectedGroupValue = selectedGroup === null ? "" : String(selectedGroup);
   const normalizedSearch = useMemo(() => normalizeSearch(search), [search]);
   const selectedModels = useMemo(() => {
     if (selectedGroup === "all") {
@@ -168,126 +200,73 @@ export function Sub2APIModelsSection() {
                 testID="paseo-cloud-catalog-platform-tabs"
               />
 
-              <TextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search models in this group"
-                placeholderTextColor={theme.colors.foregroundMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.textInput}
-              />
+              <View style={styles.catalogControlsRow}>
+                <View style={styles.groupSelectWrap}>
+                  <Text style={styles.fieldLabel}>Group</Text>
+                  <ComboSelect
+                    label="Group"
+                    title={`Select ${platform} group`}
+                    value={selectedGroupValue}
+                    options={groupOptions}
+                    placeholder="Select group"
+                    isLoading={statusesQuery.isFetching}
+                    onSelect={(id) => setSelectedGroup(id === "all" ? "all" : Number(id))}
+                    showLabel={false}
+                    testID="paseo-cloud-catalog-group-select"
+                  />
+                </View>
+                <View style={styles.searchWrap}>
+                  <Text style={styles.fieldLabel}>Search</Text>
+                  <TextInput
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder={
+                      selectedGroup === "all" ? "Search all models" : "Search models in group"
+                    }
+                    placeholderTextColor={theme.colors.foregroundMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.textInput}
+                  />
+                </View>
+              </View>
 
-              <View style={styles.groupLayout}>
-                <View style={styles.groupList}>
-                  {groupCatalog.groups.map((group) => {
-                    const selected = selectedGroup === group.group.id;
-                    const statusLabel = group.status?.stable_status || group.status?.latest_status;
+              <View style={styles.modelList}>
+                {selectedGroupRecord ? (
+                  <View style={styles.selectedGroupHeader}>
+                    <Text style={styles.selectedGroupTitle}>{selectedGroupRecord.group.name}</Text>
+                    <Text style={styles.usageHint}>
+                      {platform} · {selectedGroupRecord.models.length} models ·{" "}
+                      {selectedGroupRecord.group.rate_multiplier}x
+                    </Text>
+                    <GroupStatusLine group={selectedGroupRecord} />
+                  </View>
+                ) : (
+                  <View style={styles.selectedGroupHeader}>
+                    <Text style={styles.selectedGroupTitle}>All models</Text>
+                    <Text style={styles.usageHint}>Fallback view across all {platform} groups.</Text>
+                  </View>
+                )}
+
+                {selectedModels.length === 0 ? (
+                  <Text style={styles.hintText}>No models match this search.</Text>
+                ) : (
+                  selectedModels.map((entry) => {
+                    const cardItem = isGroupCatalogModel(entry)
+                      ? buildCatalogModelCardItem(entry)
+                      : entry;
+                    const statusGroupId = isGroupCatalogModel(entry)
+                      ? entry.group.id
+                      : cardItem.best_group.id;
                     return (
-                      <Pressable
-                        key={group.group.id}
-                        onPress={() => setSelectedGroup(group.group.id)}
-                        style={({ pressed }) => [
-                          styles.groupButton,
-                          selected && styles.groupButtonActive,
-                          pressed && !selected && styles.groupButtonPressed,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.groupButtonTitle,
-                            selected && styles.groupButtonTitleActive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {group.group.name}
-                        </Text>
-                        <Text style={styles.groupButtonHint} numberOfLines={1}>
-                          {group.models.length} models · {group.group.rate_multiplier}x
-                          {statusLabel ? ` · ${statusLabel}` : ""}
-                        </Text>
-                      </Pressable>
+                      <ModelCard
+                        key={`${cardItem.model}-${statusGroupId}`}
+                        item={cardItem}
+                        status={statusByGroupId.get(statusGroupId) ?? null}
+                      />
                     );
-                  })}
-                  <Pressable
-                    onPress={() => setSelectedGroup("all")}
-                    style={({ pressed }) => [
-                      styles.groupButton,
-                      selectedGroup === "all" && styles.groupButtonActive,
-                      pressed && selectedGroup !== "all" && styles.groupButtonPressed,
-                    ]}
-                    testID="paseo-cloud-catalog-all-models"
-                  >
-                    <Text
-                      style={[
-                        styles.groupButtonTitle,
-                        selectedGroup === "all" && styles.groupButtonTitleActive,
-                      ]}
-                    >
-                      All models
-                    </Text>
-                    <Text style={styles.groupButtonHint}>
-                      {groupCatalog.allModels.length} platform models
-                    </Text>
-                  </Pressable>
-                </View>
-
-                <View style={styles.modelList}>
-                  {selectedGroupRecord ? (
-                    <View style={styles.selectedGroupHeader}>
-                      <Text style={styles.selectedGroupTitle}>
-                        {selectedGroupRecord.group.name}
-                      </Text>
-                      <Text style={styles.usageHint}>
-                        {platform} · {selectedGroupRecord.group.rate_multiplier}x
-                      </Text>
-                      <GroupStatusLine group={selectedGroupRecord} />
-                    </View>
-                  ) : (
-                    <View style={styles.selectedGroupHeader}>
-                      <Text style={styles.selectedGroupTitle}>All models</Text>
-                      <Text style={styles.usageHint}>
-                        Fallback view across all {platform} groups.
-                      </Text>
-                    </View>
-                  )}
-
-                  {selectedModels.length === 0 ? (
-                    <Text style={styles.hintText}>No models match this search.</Text>
-                  ) : (
-                    selectedModels.map((entry) => {
-                      const item = "item" in entry ? entry.item : entry;
-                      const pricing =
-                        "effectivePricing" in entry
-                          ? entry.effectivePricing
-                          : item.effective_pricing_usd;
-                      const comparison = "comparison" in entry ? entry.comparison : item.comparison;
-                      return (
-                        <View
-                          key={`${item.model}-${"group" in entry ? entry.group.id : "all"}`}
-                          style={styles.modelRow}
-                        >
-                          <View style={styles.modelRowMain}>
-                            <Text style={styles.modelTitle}>{item.display_name}</Text>
-                            <Text style={styles.usageHint}>{item.model}</Text>
-                            <Text style={styles.usageHint}>
-                              Input {formatUsd(pricing.input_per_mtok_usd)} / MTok · Output{" "}
-                              {formatUsd(pricing.output_per_mtok_usd)} / MTok
-                            </Text>
-                          </View>
-                          <View style={styles.modelMeta}>
-                            <Text style={styles.modelBadge}>{item.billing_mode}</Text>
-                            {typeof comparison.savings_percent === "number" ? (
-                              <Text style={styles.savingsText}>
-                                {comparison.savings_percent.toFixed(1)}% savings
-                              </Text>
-                            ) : null}
-                          </View>
-                        </View>
-                      );
-                    })
-                  )}
-                </View>
+                  })
+                )}
               </View>
             </>
           )}
@@ -338,45 +317,28 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
   },
-  groupLayout: {
+  catalogControlsRow: {
     flexDirection: "row",
     gap: theme.spacing[3],
-    alignItems: "flex-start",
+    alignItems: "stretch",
+    flexWrap: "wrap",
   },
-  groupList: {
-    width: 240,
-    gap: theme.spacing[2],
-  },
-  groupButton: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.md,
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
+  groupSelectWrap: {
+    flex: 1,
+    minWidth: 240,
     gap: theme.spacing[1],
   },
-  groupButtonActive: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.surface2,
+  searchWrap: {
+    flex: 2,
+    minWidth: 260,
+    gap: theme.spacing[1],
   },
-  groupButtonPressed: {
-    backgroundColor: theme.colors.surface1,
-  },
-  groupButtonTitle: {
-    color: theme.colors.foreground,
+  fieldLabel: {
+    color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
   },
-  groupButtonTitleActive: {
-    color: theme.colors.accent,
-  },
-  groupButtonHint: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-  },
   modelList: {
-    flex: 1,
-    minWidth: 0,
     gap: theme.spacing[2],
   },
   selectedGroupHeader: {
@@ -392,42 +354,5 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: theme.spacing[2],
-  },
-  modelRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: theme.spacing[3],
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing[3],
-  },
-  modelRowMain: {
-    flex: 1,
-    minWidth: 0,
-    gap: theme.spacing[1],
-  },
-  modelTitle: {
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.medium,
-  },
-  modelMeta: {
-    alignItems: "flex-end",
-    gap: theme.spacing[1],
-  },
-  modelBadge: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.md,
-    paddingHorizontal: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
-  },
-  savingsText: {
-    color: theme.colors.palette.green[400],
-    fontSize: theme.fontSize.xs,
   },
 }));

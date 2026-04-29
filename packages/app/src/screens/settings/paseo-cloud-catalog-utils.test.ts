@@ -4,7 +4,10 @@ import type {
   Sub2APIModelCatalog,
   Sub2APIModelCatalogItem,
 } from "@/lib/sub2api-client";
-import { buildGroupFirstModelCatalog } from "./paseo-cloud-catalog-utils";
+import {
+  buildCatalogModelCardItem,
+  buildGroupFirstModelCatalog,
+} from "./paseo-cloud-catalog-utils";
 
 const price = {
   input_per_mtok_usd: 1,
@@ -120,5 +123,38 @@ describe("buildGroupFirstModelCatalog", () => {
     );
     expect(result.groups[0]!.models.map((model) => model.item.model)).toEqual(["claude-sonnet"]);
     expect(result.groups[1]!.models.map((model) => model.item.model)).toEqual(["claude-sonnet"]);
+  });
+
+  it("builds group-specific model card pricing without mutating the catalog item", () => {
+    const catalogItem = item({
+      model: "claude-sonnet",
+      best_group: {
+        id: 1,
+        name: "Official",
+        rate_multiplier: 1,
+        rate_source: "official",
+      },
+    });
+    const group = {
+      id: 2,
+      name: "Discount Group",
+      rate_multiplier: 0.5,
+      rate_source: "group",
+    };
+    const effectivePricing = { ...price, input_per_mtok_usd: 0.5 };
+    const discountedComparison = { ...comparison, savings_percent: 50 };
+
+    const cardItem = buildCatalogModelCardItem({
+      item: catalogItem,
+      group,
+      effectivePricing,
+      comparison: discountedComparison,
+      isBestGroup: false,
+    });
+
+    expect(cardItem.best_group).toEqual(group);
+    expect(cardItem.effective_pricing_usd.input_per_mtok_usd).toBe(0.5);
+    expect(cardItem.comparison.savings_percent).toBe(50);
+    expect(catalogItem.best_group.name).toBe("Official");
   });
 });

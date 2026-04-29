@@ -70,6 +70,7 @@ import { AttachmentPill } from "@/components/attachment-pill";
 import { AttachmentLightbox } from "@/components/attachment-lightbox";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { useIsDictationReady } from "@/hooks/use-is-dictation-ready";
+import type { AgentMode } from "@server/server/agent/agent-sdk-types";
 
 type QueuedMessage = {
   id: string;
@@ -135,6 +136,7 @@ const EMPTY_ARRAY: readonly QueuedMessage[] = [];
 const DESKTOP_MESSAGE_PLACEHOLDER = "Message the agent, tag @files, or use /commands and /skills";
 const MOBILE_MESSAGE_PLACEHOLDER = "Message, @files, /commands";
 const StableMessageInput = memo(MessageInput);
+const EMPTY_AGENT_MODES: AgentMode[] = [];
 
 export function Composer({
   agentId,
@@ -192,6 +194,8 @@ export function Composer({
         status: agent?.status ?? null,
         contextWindowMaxTokens: agent?.lastUsage?.contextWindowMaxTokens ?? null,
         contextWindowUsedTokens: agent?.lastUsage?.contextWindowUsedTokens ?? null,
+        currentModeId: agent?.currentModeId ?? null,
+        availableModes: agent?.availableModes ?? EMPTY_AGENT_MODES,
       };
     }),
   );
@@ -518,6 +522,25 @@ export function Composer({
     messageInputRef.current?.focus();
   }, [client, isAgentRunning, isCancellingAgent, isConnected]);
 
+  const handleCycleAgentMode = useCallback((): boolean => {
+    if (!client || agentState.availableModes.length < 2) {
+      return false;
+    }
+    const currentIndex = agentState.availableModes.findIndex(
+      (mode) => mode.id === agentState.currentModeId,
+    );
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % agentState.availableModes.length : 0;
+    const nextMode = agentState.availableModes[nextIndex];
+    if (!nextMode) {
+      return false;
+    }
+    void client.setAgentMode(agentId, nextMode.id).catch((error) => {
+      console.warn("[Composer] cycle agent mode failed", error);
+      toast.error(error instanceof Error ? error.message : String(error));
+    });
+    return true;
+  }, [agentId, agentState.availableModes, agentState.currentModeId, client, toast]);
+
   const handleKeyboardAction = useCallback(
     (action: KeyboardActionDefinition): boolean => {
       if (!isPaneFocused) {
@@ -525,6 +548,8 @@ export function Composer({
       }
 
       switch (action.id) {
+        case "agent.mode.cycle":
+          return handleCycleAgentMode();
         case "message-input.send":
           return messageInputRef.current?.runKeyboardAction("send") ?? false;
         case "message-input.dictation-confirm":
@@ -560,7 +585,7 @@ export function Composer({
           return false;
       }
     },
-    [isPaneFocused],
+    [handleCycleAgentMode, isPaneFocused],
   );
 
   useKeyboardActionHandler({
@@ -573,6 +598,7 @@ export function Composer({
       "message-input.dictation-confirm",
       "message-input.voice-toggle",
       "message-input.voice-mute-toggle",
+      "agent.mode.cycle",
     ],
     enabled: isPaneFocused,
     priority: isMessageInputFocused ? 200 : 100,

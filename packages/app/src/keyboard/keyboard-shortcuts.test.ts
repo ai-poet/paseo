@@ -134,6 +134,12 @@ describe("keyboard-shortcuts", () => {
       action: "shortcuts.dialog.toggle",
     },
     {
+      name: "matches Shift+Tab to cycle agent mode",
+      event: { key: "Tab", code: "Tab", shiftKey: true },
+      context: { focusScope: "message-input" },
+      action: "agent.mode.cycle",
+    },
+    {
       name: "matches workspace index jump on web via Alt+digit",
       event: { key: "2", code: "Digit2", altKey: true },
       context: { isDesktop: false },

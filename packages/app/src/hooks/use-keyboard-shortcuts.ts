@@ -161,6 +161,11 @@ export function useKeyboardShortcuts({
       switch (input.action) {
         case "agent.new":
           return openProjectPicker();
+        case "agent.mode.cycle":
+          return keyboardActionDispatcher.dispatch({
+            id: "agent.mode.cycle",
+            scope: "message-input",
+          });
         case "workspace.tab.new":
           return keyboardActionDispatcher.dispatch({
             id: "workspace.tab.new",

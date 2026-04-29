@@ -7,6 +7,7 @@ import { CLOUD_NAME } from "@/config/branding";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import {
+  useSub2APIAvailableGroups,
   useSub2APIGroupStatusEvents,
   useSub2APIGroupStatusHistory,
   useSub2APIGroupStatusRecords,
@@ -22,6 +23,7 @@ import type {
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { getErrorMessage } from "@/screens/settings/managed-provider-settings-shared";
 import { managedProviderSettingsStyles as sharedStyles } from "@/screens/settings/managed-provider-settings-styles";
+import { resolveGroupStatusDisplayName } from "@/screens/settings/paseo-cloud-model-status-utils";
 import { settingsStyles } from "@/styles/settings";
 
 type NormalizedStatus = "up" | "degraded" | "down" | "unknown";
@@ -153,13 +155,16 @@ function StatusMetric({ label, value }: { label: string; value: string }) {
 function StatusRow({
   item,
   selected,
+  groupNameById,
   onPress,
 }: {
   item: Sub2APIGroupStatusItem;
   selected: boolean;
+  groupNameById: ReadonlyMap<number, string>;
   onPress: () => void;
 }) {
   const status = getItemStatus(item);
+  const displayName = resolveGroupStatusDisplayName(item, groupNameById);
   return (
     <Pressable
       onPress={onPress}
@@ -174,7 +179,7 @@ function StatusRow({
           <View style={styles.statusTitleRow}>
             <View style={[styles.statusDot, { backgroundColor: getStatusColor(status) }]} />
             <Text style={styles.statusTitle} numberOfLines={1}>
-              {item.group_name || `Group #${item.group_id}`}
+              {displayName}
             </Text>
           </View>
           <Text style={styles.statusMeta}>
@@ -292,6 +297,7 @@ function EventRow({ event }: { event: Sub2APIGroupStatusEvent }) {
 
 function DetailPanel({
   selected,
+  groupNameById,
   period,
   onPeriodChange,
   history,
@@ -301,6 +307,7 @@ function DetailPanel({
   error,
 }: {
   selected: Sub2APIGroupStatusItem;
+  groupNameById: ReadonlyMap<number, string>;
   period: Sub2APIGroupStatusHistoryPeriod;
   onPeriodChange: (period: Sub2APIGroupStatusHistoryPeriod) => void;
   history: Sub2APIGroupStatusHistoryBucket[];
@@ -309,13 +316,12 @@ function DetailPanel({
   isLoading: boolean;
   error: unknown;
 }) {
+  const displayName = resolveGroupStatusDisplayName(selected, groupNameById);
   return (
     <View style={[settingsStyles.card, styles.cardBody]}>
       <View style={styles.detailHeader}>
         <View>
-          <Text style={styles.cardTitle}>
-            {selected.group_name || `Group #${selected.group_id}`}
-          </Text>
+          <Text style={styles.cardTitle}>{displayName}</Text>
           <Text style={styles.hintText}>History, recent probe records, and status events.</Text>
         </View>
         <SegmentedControl
@@ -379,8 +385,13 @@ export function PaseoCloudModelStatusSection() {
   const { isLoggedIn } = useSub2APIAuth();
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [detailPeriod, setDetailPeriod] = useState<Sub2APIGroupStatusHistoryPeriod>("24h");
+  const groupsQuery = useSub2APIAvailableGroups();
   const statusesQuery = useSub2APIGroupStatuses();
   const statuses = statusesQuery.data ?? [];
+  const groupNameById = useMemo(
+    () => new Map((groupsQuery.data ?? []).map((group) => [group.id, group.name] as const)),
+    [groupsQuery.data],
+  );
   const selectedItem = useMemo(
     () => statuses.find((item) => item.group_id === selectedGroupId) ?? statuses[0] ?? null,
     [selectedGroupId, statuses],
@@ -423,12 +434,13 @@ export function PaseoCloudModelStatusSection() {
 
   const handleRefresh = useCallback(() => {
     void Promise.all([
+      groupsQuery.refetch(),
       statusesQuery.refetch(),
       historyQuery.refetch(),
       recordsQuery.refetch(),
       eventsQuery.refetch(),
     ]);
-  }, [eventsQuery, historyQuery, recordsQuery, statusesQuery]);
+  }, [eventsQuery, groupsQuery, historyQuery, recordsQuery, statusesQuery]);
 
   const detailError = historyQuery.error || recordsQuery.error || eventsQuery.error;
   const detailLoading = historyQuery.isLoading || recordsQuery.isLoading || eventsQuery.isLoading;
@@ -489,6 +501,7 @@ export function PaseoCloudModelStatusSection() {
                     key={item.group_id}
                     item={item}
                     selected={item.group_id === activeGroupId}
+                    groupNameById={groupNameById}
                     onPress={() => setSelectedGroupId(item.group_id)}
                   />
                 ))}
@@ -499,6 +512,7 @@ export function PaseoCloudModelStatusSection() {
           {selectedItem ? (
             <DetailPanel
               selected={selectedItem}
+              groupNameById={groupNameById}
               period={detailPeriod}
               onPeriodChange={setDetailPeriod}
               history={historyQuery.data ?? []}

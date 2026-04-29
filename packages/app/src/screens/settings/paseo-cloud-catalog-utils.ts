@@ -27,6 +27,16 @@ export interface GroupFirstCatalogResult {
   allModels: Sub2APIModelCatalogItem[];
 }
 
+export function buildCatalogModelCardItem(model: GroupFirstCatalogModel): Sub2APIModelCatalogItem {
+  return {
+    ...model.item,
+    best_group: model.group,
+    effective_pricing_usd: model.effectivePricing,
+    comparison: model.comparison,
+    other_groups: (model.item.other_groups ?? []).filter((entry) => entry.group.id !== model.group.id),
+  };
+}
+
 function normalizePlatform(value: string | null | undefined): string {
   return value?.trim().toLowerCase() ?? "";
 }
