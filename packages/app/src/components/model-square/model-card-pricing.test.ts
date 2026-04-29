@@ -37,6 +37,26 @@ describe("model card pricing", () => {
     ).toBe("$0.2609");
   });
 
+  it("falls back to balance USD in English when USD exchange rate is unavailable", () => {
+    expect(
+      formatActualPaidPrice(0.25, {
+        balanceCreditCnyPerUsd: 7.2,
+        usdExchangeRate: null,
+        locale: "en-US",
+      }),
+    ).toBe("$0.2500");
+  });
+
+  it("localizes actual paid section labels", () => {
+    expect(
+      getActualPaidSectionLabel({
+        balanceCreditCnyPerUsd: 7.2,
+        usdExchangeRate: 6.9,
+      }, "zh-CN"),
+    ).toBe("实付价格");
+    expect(getActualPaidSectionLabel(null, "zh-CN")).toBe("余额价格");
+  });
+
   it("formats official USD prices with stable precision", () => {
     expect(formatUsdPrice(125)).toBe("$125.00");
     expect(formatUsdPrice(12.5)).toBe("$12.500");

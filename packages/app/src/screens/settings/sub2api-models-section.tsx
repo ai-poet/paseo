@@ -19,6 +19,8 @@ import {
   type GroupFirstCatalogGroup,
   type GroupFirstCatalogModel,
 } from "@/screens/settings/paseo-cloud-catalog-utils";
+import { useSub2APILocale } from "@/hooks/use-sub2api-locale";
+import { getSub2APIMessages } from "@/i18n/sub2api";
 
 type PlatformFilter = "anthropic" | "openai";
 type SelectedGroup = number | "all" | null;
@@ -73,23 +75,21 @@ function isGroupCatalogModel(value: GroupFirstCatalogModel | unknown): value is 
   );
 }
 
-function resolvePreferredLocale(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().locale;
-  } catch {
-    return "";
-  }
-}
-
-function GroupStatusLine({ group }: { group: GroupFirstCatalogGroup }) {
+function GroupStatusLine({
+  group,
+  text,
+}: {
+  group: GroupFirstCatalogGroup;
+  text: ReturnType<typeof getSub2APIMessages>["modelCatalog"];
+}) {
   const status = group.status;
   if (!status) {
-    return <Text style={styles.usageHint}>Runtime status has not been observed yet.</Text>;
+    return <Text style={styles.usageHint}>{text.runtimeUnknown}</Text>;
   }
   return (
     <View style={styles.statusMetricsRow}>
       <Text style={styles.usageHint}>
-        Status {(status.stable_status || status.latest_status || "unknown").toUpperCase()}
+        {text.status} {(status.stable_status || status.latest_status || "unknown").toUpperCase()}
       </Text>
       <Text style={styles.usageHint}>24h {formatAvailability(status.availability_24h)}</Text>
       <Text style={styles.usageHint}>7d {formatAvailability(status.availability_7d)}</Text>
@@ -103,6 +103,8 @@ export function Sub2APIModelsSection() {
   const statusesQuery = useSub2APIGroupStatuses();
   const catalogQuery = useSub2APIModelCatalog();
   const paymentConfigQuery = useSub2APIPaymentConfig();
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).modelCatalog, [locale]);
   const [platform, setPlatform] = useState<PlatformFilter>("anthropic");
   const [selectedGroup, setSelectedGroup] = useState<SelectedGroup>(null);
   const [search, setSearch] = useState("");
@@ -127,9 +129,10 @@ export function Sub2APIModelsSection() {
     () => ({
       balanceCreditCnyPerUsd: paymentConfigQuery.data?.balanceCreditCnyPerUsd ?? null,
       usdExchangeRate: paymentConfigQuery.data?.usdExchangeRate ?? null,
-      locale: resolvePreferredLocale(),
+      locale,
     }),
     [
+      locale,
       paymentConfigQuery.data?.balanceCreditCnyPerUsd,
       paymentConfigQuery.data?.usdExchangeRate,
     ],
@@ -159,18 +162,20 @@ export function Sub2APIModelsSection() {
         return {
           id: String(group.group.id),
           label: group.group.name,
-          description: `${group.models.length} models · ${group.group.rate_multiplier}x${
-            statusLabel ? ` · ${statusLabel}` : ""
-          }`,
+          description: text.groupDescription(
+            group.models.length,
+            group.group.rate_multiplier,
+            statusLabel,
+          ),
         };
       }),
       {
         id: "all",
-        label: "All models",
-        description: `${groupCatalog.allModels.length} platform models`,
+        label: text.allModels,
+        description: text.platformModels(groupCatalog.allModels.length),
       },
     ],
-    [groupCatalog.allModels.length, groupCatalog.groups],
+    [groupCatalog.allModels.length, groupCatalog.groups, text],
   );
   const selectedGroupValue = selectedGroup === null ? "" : String(selectedGroup);
   const normalizedSearch = useMemo(() => normalizeSearch(search), [search]);
@@ -186,32 +191,32 @@ export function Sub2APIModelsSection() {
   const error = catalogQuery.error || statusesQuery.error;
 
   return (
-    <SettingsSection title="Model catalog">
+    <SettingsSection title={text.title}>
       {!isLoggedIn ? (
         <View style={[settingsStyles.card, styles.cardBody]}>
-          <Text style={styles.hintText}>Sign in to {CLOUD_NAME} to browse the model catalog.</Text>
+          <Text style={styles.hintText}>{text.signInHint(CLOUD_NAME)}</Text>
         </View>
       ) : null}
 
       {isLoggedIn ? (
         <View style={[settingsStyles.card, styles.cardBody]}>
           {isLoading ? (
-            <Text style={styles.hintText}>Loading catalog...</Text>
+            <Text style={styles.hintText}>{text.loading}</Text>
           ) : error ? (
             <View style={styles.errorBlock}>
               <Text style={styles.errorText}>{getErrorMessage(error)}</Text>
             </View>
           ) : catalogItems.length === 0 ? (
-            <Text style={styles.hintText}>No models available.</Text>
+            <Text style={styles.hintText}>{text.noModels}</Text>
           ) : (
             <>
               {summary ? (
                 <View style={styles.summaryGrid}>
-                  <Text style={styles.summaryCell}>Models: {summary.total_models}</Text>
-                  <Text style={styles.summaryCell}>Token: {summary.token_models}</Text>
-                  <Text style={styles.summaryCell}>Non-token: {summary.non_token_models}</Text>
+                  <Text style={styles.summaryCell}>{text.models}: {summary.total_models}</Text>
+                  <Text style={styles.summaryCell}>{text.token}: {summary.token_models}</Text>
+                  <Text style={styles.summaryCell}>{text.nonToken}: {summary.non_token_models}</Text>
                   <Text style={styles.summaryCell}>
-                    Best savings: {summary.max_savings_percent.toFixed(1)}%
+                    {text.bestSavings}: {summary.max_savings_percent.toFixed(1)}%
                   </Text>
                 </View>
               ) : null}
@@ -226,13 +231,13 @@ export function Sub2APIModelsSection() {
 
               <View style={styles.catalogControlsRow}>
                 <View style={styles.groupSelectWrap}>
-                  <Text style={styles.fieldLabel}>Group</Text>
+                  <Text style={styles.fieldLabel}>{text.group}</Text>
                   <ComboSelect
-                    label="Group"
-                    title={`Select ${platform} group`}
+                    label={text.group}
+                    title={text.selectGroup(platform)}
                     value={selectedGroupValue}
                     options={groupOptions}
-                    placeholder="Select group"
+                    placeholder={text.selectGroupPlaceholder}
                     isLoading={statusesQuery.isFetching}
                     onSelect={(id) => setSelectedGroup(id === "all" ? "all" : Number(id))}
                     showLabel={false}
@@ -240,12 +245,12 @@ export function Sub2APIModelsSection() {
                   />
                 </View>
                 <View style={styles.searchWrap}>
-                  <Text style={styles.fieldLabel}>Search</Text>
+                  <Text style={styles.fieldLabel}>{text.search}</Text>
                   <TextInput
                     value={search}
                     onChangeText={setSearch}
                     placeholder={
-                      selectedGroup === "all" ? "Search all models" : "Search models in group"
+                      selectedGroup === "all" ? text.searchAllModels : text.searchModelsInGroup
                     }
                     placeholderTextColor={theme.colors.foregroundMuted}
                     autoCapitalize="none"
@@ -260,20 +265,20 @@ export function Sub2APIModelsSection() {
                   <View style={styles.selectedGroupHeader}>
                     <Text style={styles.selectedGroupTitle}>{selectedGroupRecord.group.name}</Text>
                     <Text style={styles.usageHint}>
-                      {platform} · {selectedGroupRecord.models.length} models ·{" "}
+                      {platform} · {selectedGroupRecord.models.length} {text.models} ·{" "}
                       {selectedGroupRecord.group.rate_multiplier}x
                     </Text>
-                    <GroupStatusLine group={selectedGroupRecord} />
+                    <GroupStatusLine group={selectedGroupRecord} text={text} />
                   </View>
                 ) : (
                   <View style={styles.selectedGroupHeader}>
-                    <Text style={styles.selectedGroupTitle}>All models</Text>
-                    <Text style={styles.usageHint}>Fallback view across all {platform} groups.</Text>
+                    <Text style={styles.selectedGroupTitle}>{text.allModels}</Text>
+                    <Text style={styles.usageHint}>{text.fallbackAcrossGroups(platform)}</Text>
                   </View>
                 )}
 
                 {selectedModels.length === 0 ? (
-                  <Text style={styles.hintText}>No models match this search.</Text>
+                  <Text style={styles.hintText}>{text.noSearchMatch}</Text>
                 ) : (
                   selectedModels.map((entry) => {
                     const cardItem = isGroupCatalogModel(entry)
@@ -288,6 +293,7 @@ export function Sub2APIModelsSection() {
                         item={cardItem}
                         status={statusByGroupId.get(statusGroupId) ?? null}
                         actualPaidPricing={actualPaidPricing}
+                        locale={locale}
                       />
                     );
                   })

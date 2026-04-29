@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import {
+  filterSub2APIPaymentTypesByLocale,
+  getSub2APIMessages,
+  getSub2APIPaymentLabel,
+  normalizeSub2APILanguagePreference,
+  normalizeSub2APILocale,
+  resolveSub2APILocaleFromPreference,
+  resolveSub2APILocale,
+} from "./sub2api";
+
+describe("sub2api i18n helpers", () => {
+  it("normalizes supported Chinese and English locales", () => {
+    expect(normalizeSub2APILocale("zh-CN")).toBe("zh");
+    expect(normalizeSub2APILocale("zh-Hant")).toBe("zh");
+    expect(normalizeSub2APILocale("en-US")).toBe("en");
+    expect(normalizeSub2APILocale("fr-FR")).toBe("en");
+  });
+
+  it("resolves explicit locale before system locale", () => {
+    expect(resolveSub2APILocale({ explicitLocale: "zh-CN", intlLocale: "en-US" })).toBe("zh");
+    expect(resolveSub2APILocale({ intlLocale: "en-US", navigatorLanguages: ["zh-CN"] })).toBe("en");
+  });
+
+  it("resolves app language preference with system fallback", () => {
+    expect(normalizeSub2APILanguagePreference("zh-CN")).toBe("zh");
+    expect(normalizeSub2APILanguagePreference("en-US")).toBe("en");
+    expect(normalizeSub2APILanguagePreference("auto")).toBe("auto");
+    expect(normalizeSub2APILanguagePreference("fr-FR")).toBe("auto");
+    expect(resolveSub2APILocaleFromPreference("auto", { intlLocale: "zh-CN" })).toBe("zh");
+    expect(resolveSub2APILocaleFromPreference("en", { intlLocale: "zh-CN" })).toBe("en");
+  });
+
+  it("localizes payment labels", () => {
+    expect(getSub2APIPaymentLabel("alipay", "zh")).toBe("支付宝");
+    expect(getSub2APIPaymentLabel("wxpay_direct", "zh")).toBe("微信支付");
+    expect(getSub2APIPaymentLabel("alipay", "en")).toBe("Alipay");
+    expect(getSub2APIPaymentLabel("wxpay_direct", "en")).toBe("WeChat Pay");
+    expect(getSub2APIPaymentLabel("usdt.polygon", "en")).toBe("USDT (Polygon)");
+  });
+
+  it("filters payment methods by locale like the Sub2API pay center", () => {
+    const allTypes = ["alipay", "wxpay_direct", "stripe", "usdt.plasma", "usdc.solana"];
+
+    expect(filterSub2APIPaymentTypesByLocale(allTypes, "zh")).toEqual([
+      "alipay",
+      "wxpay_direct",
+    ]);
+    expect(filterSub2APIPaymentTypesByLocale(allTypes, "en")).toEqual([
+      "usdt.plasma",
+      "usdc.solana",
+    ]);
+  });
+
+  it("exposes Chinese and English UI copy", () => {
+    expect(getSub2APIMessages("zh").pay.addBalance).toBe("充值余额");
+    expect(getSub2APIMessages("en").pay.addBalance).toBe("Add balance");
+    expect(getSub2APIMessages("zh").modelCatalog.title).toBe("模型广场");
+    expect(getSub2APIMessages("en").modelCatalog.title).toBe("Model catalog");
+  });
+});

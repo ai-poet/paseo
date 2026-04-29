@@ -9,6 +9,7 @@ import {
   getActualPaidSectionLabel,
   type ActualPaidPricingContext,
 } from "@/components/model-square/model-card-pricing";
+import { getSub2APIMessages, type Sub2APILocale } from "@/i18n/sub2api";
 
 function fmtPct(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "--";
@@ -19,13 +20,16 @@ export interface ModelCardProps {
   item: Sub2APIModelCatalogItem;
   status?: Sub2APIGroupStatusItem | null;
   actualPaidPricing?: ActualPaidPricingContext | null;
+  locale?: Sub2APILocale | null;
 }
 
 export const ModelCard = memo(function ModelCard({
   item,
   status,
   actualPaidPricing,
+  locale,
 }: ModelCardProps) {
+  const text = getSub2APIMessages(locale).modelCard;
   const platform = getPlatformColors(item.platform);
   const stableStatus = status?.stable_status ?? "unknown";
   const statusColor = getStatusColor(stableStatus);
@@ -76,7 +80,7 @@ export const ModelCard = memo(function ModelCard({
       {/* Best group + rate */}
       <Text style={styles.groupHint}>
         {item.best_group.name} · {item.best_group.rate_multiplier}x
-        {item.available_group_count > 1 ? ` · ${item.available_group_count} groups` : ""}
+        {item.available_group_count > 1 ? ` · ${text.groups(item.available_group_count)}` : ""}
       </Text>
 
       {/* Status indicator */}
@@ -92,44 +96,48 @@ export const ModelCard = memo(function ModelCard({
 
       {/* Pricing — actual paid (effective) is primary */}
       <View style={styles.pricingSection}>
-        <Text style={styles.sectionLabel}>{getActualPaidSectionLabel(actualPaidPricing)}</Text>
+        <Text style={styles.sectionLabel}>{getActualPaidSectionLabel(actualPaidPricing, locale)}</Text>
         {isToken ? (
           <>
             <PriceRow
-              label="Input /MTok"
+              label={text.input}
               official={offInput}
               effective={effInput}
               cheaper={isCheaper}
               actualPaidPricing={actualPaidPricing}
+              locale={locale}
             />
             <PriceRow
-              label="Output /MTok"
+              label={text.output}
               official={offOutput}
               effective={effOutput}
               cheaper={isCheaper}
               actualPaidPricing={actualPaidPricing}
+              locale={locale}
             />
           </>
         ) : isPerRequest ? (
           <PriceRow
-            label="Per Request"
+            label={text.perRequest}
             official={offReq}
             effective={effReq}
             cheaper={isCheaper}
             actualPaidPricing={actualPaidPricing}
+            locale={locale}
           />
         ) : isImage ? (
           <PriceRow
-            label="Per Image"
+            label={text.perImage}
             official={offImg}
             effective={effImg}
             cheaper={isCheaper}
             actualPaidPricing={actualPaidPricing}
+            locale={locale}
           />
         ) : null}
         {savings != null ? (
           <View style={styles.priceRow}>
-            <Text style={styles.mutedText}>Savings</Text>
+            <Text style={styles.mutedText}>{text.savings}</Text>
             <Text style={[styles.savingsValue, isCheaper && styles.green]}>{fmtPct(savings)}</Text>
           </View>
         ) : null}
@@ -140,23 +148,25 @@ export const ModelCard = memo(function ModelCard({
       (item.effective_pricing_usd.cache_write_per_mtok_usd != null ||
         item.effective_pricing_usd.cache_read_per_mtok_usd != null) ? (
         <View style={styles.pricingSection}>
-          <Text style={styles.sectionLabel}>Cache Pricing</Text>
+          <Text style={styles.sectionLabel}>{text.cachePricing}</Text>
           {item.effective_pricing_usd.cache_write_per_mtok_usd != null ? (
             <PriceRow
-              label="Write /MTok"
+              label={text.write}
               official={item.official_pricing.cache_write_per_mtok_usd}
               effective={item.effective_pricing_usd.cache_write_per_mtok_usd}
               cheaper={isCheaper}
               actualPaidPricing={actualPaidPricing}
+              locale={locale}
             />
           ) : null}
           {item.effective_pricing_usd.cache_read_per_mtok_usd != null ? (
             <PriceRow
-              label="Read /MTok"
+              label={text.read}
               official={item.official_pricing.cache_read_per_mtok_usd}
               effective={item.effective_pricing_usd.cache_read_per_mtok_usd}
               cheaper={isCheaper}
               actualPaidPricing={actualPaidPricing}
+              locale={locale}
             />
           ) : null}
         </View>
@@ -171,7 +181,7 @@ export const ModelCard = memo(function ModelCard({
         {caching ? (
           <View style={[styles.tag, { borderColor: "rgba(34,197,94,0.3)" }]}>
             <View style={[styles.tagDot, { backgroundColor: "#22c55e" }]} />
-            <Text style={styles.tagText}>prompt caching</Text>
+            <Text style={styles.tagText}>{text.promptCaching}</Text>
           </View>
         ) : null}
       </View>
@@ -179,12 +189,12 @@ export const ModelCard = memo(function ModelCard({
       {/* Other groups */}
       {item.other_groups && item.other_groups.length > 0 ? (
         <View style={styles.otherGroupsSection}>
-          <Text style={styles.sectionLabel}>Also available in</Text>
+          <Text style={styles.sectionLabel}>{text.alsoAvailableIn}</Text>
           {item.other_groups.map((og) => (
             <Text key={og.group.id} style={styles.mutedText}>
               {og.group.name} ({og.group.rate_multiplier}x)
               {og.comparison.savings_percent != null
-                ? ` · ${fmtPct(og.comparison.savings_percent)} savings`
+                ? ` · ${fmtPct(og.comparison.savings_percent)} ${text.savingsSuffix}`
                 : ""}
             </Text>
           ))}
@@ -200,12 +210,14 @@ function PriceRow({
   effective,
   cheaper,
   actualPaidPricing,
+  locale,
 }: {
   label: string;
   official: number | null;
   effective: number | null;
   cheaper: boolean;
   actualPaidPricing?: ActualPaidPricingContext | null;
+  locale?: Sub2APILocale | null;
 }) {
   return (
     <View style={styles.priceRow}>
@@ -214,7 +226,12 @@ function PriceRow({
         <Text style={styles.officialPrice}>{formatUsdPrice(official)}</Text>
         <Text style={styles.arrow}>→</Text>
         <Text style={[styles.effectivePrice, cheaper && styles.green]}>
-          {formatActualPaidPrice(effective, actualPaidPricing)}
+          {formatActualPaidPrice(
+            effective,
+            actualPaidPricing
+              ? { ...actualPaidPricing, locale: locale ?? actualPaidPricing.locale }
+              : actualPaidPricing,
+          )}
         </Text>
       </View>
     </View>

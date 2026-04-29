@@ -11,6 +11,8 @@ const { mocks } = vi.hoisted(() => ({
     loadProviders: vi.fn(),
     handleGitHubLogin: vi.fn(),
     logout: vi.fn(),
+    activeClaudeApiKey: "sk-claude",
+    activeCodexApiKey: "sk-codex",
   },
 }));
 
@@ -114,6 +116,7 @@ vi.mock("@/hooks/use-settings", () => ({
   useAppSettings: () => ({
     settings: {
       accessMode: "byok",
+      language: "en",
     },
   }),
 }));
@@ -192,12 +195,12 @@ vi.mock("@/screens/settings/desktop-providers-context", () => ({
     activeClaudeProvider: {
       name: "Paseo Claude",
       endpoint: "https://api.example.com",
-      apiKey: "sk-claude",
+      apiKey: mocks.activeClaudeApiKey,
     },
     activeCodexProvider: {
       name: "Paseo Codex",
       endpoint: "https://api.example.com",
-      apiKey: "sk-codex",
+      apiKey: mocks.activeCodexApiKey,
     },
   }),
 }));
@@ -246,6 +249,8 @@ describe("PaseoCloudPanel", () => {
     mocks.loadProviders.mockReset();
     mocks.handleGitHubLogin.mockReset();
     mocks.logout.mockReset();
+    mocks.activeClaudeApiKey = "sk-claude";
+    mocks.activeCodexApiKey = "sk-codex";
   });
 
   it("switches between internal Paseo Cloud sections from the left menu", async () => {
@@ -288,5 +293,21 @@ describe("PaseoCloudPanel", () => {
     fireEvent.click(screen.getByTestId("paseo-cloud-section-overview"));
     fireEvent.click(screen.getByTestId("paseo-cloud-overview-open-catalog"));
     expect(screen.queryByText("Model catalog section content")).not.toBeNull();
+  });
+
+  it("offers repair actions when the device route key is not in the signed-in account", async () => {
+    mocks.activeClaudeApiKey = "sk-unlinked";
+    const { PaseoCloudPanel } = await import("./paseo-cloud-panel");
+
+    render(<PaseoCloudPanel />);
+
+    expect(screen.queryByText(/does not match a key in the current Paseo Cloud account/)).not.toBeNull();
+
+    fireEvent.click(screen.getByTestId("paseo-cloud-route-repair-routing-claude-code"));
+    expect(screen.queryByText("Routing section content")).not.toBeNull();
+
+    fireEvent.click(screen.getByTestId("paseo-cloud-section-overview"));
+    fireEvent.click(screen.getByTestId("paseo-cloud-route-repair-keys-claude-code"));
+    expect(screen.queryByText("API keys section content")).not.toBeNull();
   });
 });

@@ -69,6 +69,9 @@ describe("use-settings", () => {
       manageBuiltInDaemon: false,
       sendBehavior: "interrupt",
       releaseChannel: "stable",
+      accessMode: null,
+      setupCheckCompleted: false,
+      language: "auto",
     });
     expect(asyncStorageMock.setItem).not.toHaveBeenCalled();
   });
@@ -87,5 +90,47 @@ describe("use-settings", () => {
     const result = await mod.loadSettingsFromStorage();
 
     expect(result.releaseChannel).toBe("beta");
+  });
+
+  it("defaults language to automatic system detection", async () => {
+    asyncStorageMock.getItem.mockResolvedValue(null);
+    asyncStorageMock.setItem.mockResolvedValue();
+
+    const mod = await import("./use-settings");
+    const result = await mod.loadSettingsFromStorage();
+
+    expect(result.language).toBe("auto");
+  });
+
+  it("loads persisted language preference", async () => {
+    asyncStorageMock.getItem.mockImplementation(async (key: string) => {
+      if (key === "@paseo:app-settings") {
+        return JSON.stringify({
+          language: "zh",
+        });
+      }
+      return null;
+    });
+
+    const mod = await import("./use-settings");
+    const result = await mod.loadSettingsFromStorage();
+
+    expect(result.language).toBe("zh");
+  });
+
+  it("resets invalid language preference to automatic", async () => {
+    asyncStorageMock.getItem.mockImplementation(async (key: string) => {
+      if (key === "@paseo:app-settings") {
+        return JSON.stringify({
+          language: "fr",
+        });
+      }
+      return null;
+    });
+
+    const mod = await import("./use-settings");
+    const result = await mod.loadSettingsFromStorage();
+
+    expect(result.language).toBe("auto");
   });
 });

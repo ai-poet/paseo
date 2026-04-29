@@ -13,6 +13,13 @@ import {
   buildPayCenterUrl,
 } from "@/screens/settings/sub2api-pay-url";
 import { openExternalUrl } from "@/utils/open-external-url";
+import {
+  filterSub2APIPaymentTypesByLocale,
+  getSub2APIMessages,
+  getSub2APIPaymentLabel,
+  type Sub2APILocale,
+} from "@/i18n/sub2api";
+import { useSub2APILocale } from "@/hooks/use-sub2api-locale";
 
 export interface Sub2APIPayModalProps {
   visible: boolean;
@@ -77,7 +84,6 @@ type StageDescriptor = {
   tone: "default" | "success" | "warning" | "error";
 };
 
-const DEFAULT_LANG = "zh";
 const DEFAULT_THEME = "dark";
 const QUICK_AMOUNTS = [10, 20, 50, 100, 200, 500];
 const AMOUNT_PATTERN = /^\d*(\.\d{0,2})?$/;
@@ -126,21 +132,6 @@ function formatCny(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? `¥${value.toFixed(2)}` : "--";
 }
 
-function paymentLabel(paymentType: string): string {
-  switch (paymentType) {
-    case "alipay":
-    case "alipay_direct":
-      return "Alipay";
-    case "wxpay":
-    case "wxpay_direct":
-      return "WeChat Pay";
-    case "stripe":
-      return "Stripe";
-    default:
-      return paymentType;
-  }
-}
-
 function isStripePaymentType(paymentType: string): boolean {
   return paymentType === "stripe";
 }
@@ -155,14 +146,14 @@ function resolveOrderFlow(order: PaymentCenterCreateOrderResponse): OrderFlowKin
   return "redirect";
 }
 
-function formatTimeRemaining(expiresAt: string): string {
+function formatTimeRemaining(expiresAt: string, expiredLabel: string): string {
   const expiresAtMs = new Date(expiresAt).getTime();
   if (!Number.isFinite(expiresAtMs)) {
     return "--";
   }
   const diff = expiresAtMs - Date.now();
   if (diff <= 0) {
-    return "Expired";
+    return expiredLabel;
   }
   const totalSeconds = Math.floor(diff / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -186,28 +177,29 @@ function createSeedOrderStatus(order: PaymentCenterCreateOrderResponse): Payment
   };
 }
 
-function describeOrderStatus(status: PaymentCenterOrderStatus): StageDescriptor {
+function describeOrderStatus(status: PaymentCenterOrderStatus, locale: Sub2APILocale): StageDescriptor {
+  const text = getSub2APIMessages(locale).pay.status;
   if (status.rechargeSuccess || status.status.toUpperCase() === "COMPLETED") {
     return {
-      title: "Recharge complete",
-      message: "Your balance has been credited. Closing this dialog…",
+      title: text.rechargeCompleteTitle,
+      message: text.rechargeCompleteMessage,
       tone: "success",
     };
   }
   if (status.paymentSuccess) {
     if (status.rechargeStatus === "paid_pending" || status.rechargeStatus === "recharging") {
       return {
-        title: "Payment received",
-        message: "Your payment was received and the balance top-up is still being processed.",
+        title: text.paymentReceivedTitle,
+        message: text.paymentReceivedMessage,
         tone: "success",
       };
     }
     if (status.rechargeStatus === "failed") {
       return {
-        title: "Payment received, recharge not finished",
+        title: text.rechargeUnfinishedTitle,
         message:
           status.failedReason ??
-          "Payment completed, but the recharge has not finished yet. Please try again later or contact support.",
+          text.rechargeUnfinishedMessage,
         tone: "warning",
       };
     }
@@ -216,38 +208,38 @@ function describeOrderStatus(status: PaymentCenterOrderStatus): StageDescriptor 
   const normalizedStatus = status.status.toUpperCase();
   if (normalizedStatus === "PENDING") {
     return {
-      title: "Awaiting payment",
-      message: "Complete payment using the method below. We will refresh this order automatically.",
+      title: text.awaitingPaymentTitle,
+      message: text.awaitingPaymentMessage,
       tone: "default",
     };
   }
   if (normalizedStatus === "FAILED") {
     return {
-      title: "Payment failed",
+      title: text.paymentFailedTitle,
       message:
         status.failedReason ??
-        "This payment did not complete successfully. You can go back and create a new order.",
+        text.paymentFailedMessage,
       tone: "error",
     };
   }
   if (normalizedStatus === "CANCELLED") {
     return {
-      title: "Order cancelled",
-      message: "This order was cancelled before payment completed.",
+      title: text.orderCancelledTitle,
+      message: text.orderCancelledMessage,
       tone: "warning",
     };
   }
   if (normalizedStatus === "EXPIRED") {
     return {
-      title: "Order expired",
-      message: "This order expired before payment completed. Create a new order to try again.",
+      title: text.orderExpiredTitle,
+      message: text.orderExpiredMessage,
       tone: "warning",
     };
   }
 
   return {
-    title: "Payment status updated",
-    message: "The payment status changed. You can go back and create a new order if needed.",
+    title: text.statusUpdatedTitle,
+    message: text.statusUpdatedMessage,
     tone: "default",
   };
 }
@@ -267,20 +259,23 @@ function estimateSettlementSummary(input: {
   amount: number | null;
   feeRate: number;
   balanceCreditCnyPerUsd: number | null;
+  text: ReturnType<typeof getSub2APIMessages>["pay"];
 }): { creditedUsd: string; estimatedPay: string; feeText: string | null; rateText: string | null } {
   const amount = input.amount;
   const creditedUsd = formatUsd(amount);
   const rateText =
     typeof input.balanceCreditCnyPerUsd === "number" &&
     Number.isFinite(input.balanceCreditCnyPerUsd)
-      ? `Estimated settlement: ${formatCny(amount == null ? null : amount * input.balanceCreditCnyPerUsd)}`
+      ? input.text.estimatedSettlement(
+          formatCny(amount == null ? null : amount * input.balanceCreditCnyPerUsd),
+        )
       : null;
 
   if (amount == null) {
     return {
       creditedUsd,
       estimatedPay: "--",
-      feeText: input.feeRate > 0 ? `Method fee: ${input.feeRate}%` : null,
+      feeText: input.feeRate > 0 ? input.text.methodFee(input.feeRate) : null,
       rateText,
     };
   }
@@ -299,7 +294,7 @@ function estimateSettlementSummary(input: {
       Number.isFinite(input.balanceCreditCnyPerUsd)
         ? formatCny(estimatedPay)
         : formatUsd(estimatedPay),
-    feeText: input.feeRate > 0 ? `Method fee: ${input.feeRate}%` : null,
+    feeText: input.feeRate > 0 ? input.text.methodFee(input.feeRate) : null,
     rateText,
   };
 }
@@ -329,6 +324,8 @@ export function Sub2APIPayModal({
   const [countdownTick, setCountdownTick] = useState(0);
   const pollingStartedAtRef = useRef<number | null>(null);
   const paymentCompletionHandledRef = useRef(false);
+  const clientLocale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(clientLocale).pay, [clientLocale]);
 
   const payCenterUrl = useMemo(() => {
     if (!accessToken) {
@@ -336,14 +333,14 @@ export function Sub2APIPayModal({
     }
     try {
       return buildPayCenterUrl(endpoint, accessToken, {
-        lang: DEFAULT_LANG,
+        lang: clientLocale,
         theme: DEFAULT_THEME,
         uiMode: "embedded",
       });
     } catch {
       return null;
     }
-  }, [accessToken, endpoint]);
+  }, [accessToken, clientLocale, endpoint]);
 
   const selectedMethodLimit = useMemo(() => {
     if (!config || !selectedPaymentType) {
@@ -387,8 +384,9 @@ export function Sub2APIPayModal({
         amount: parsedAmount,
         feeRate,
         balanceCreditCnyPerUsd: config?.balanceCreditCnyPerUsd ?? null,
+        text,
       }),
-    [config?.balanceCreditCnyPerUsd, feeRate, parsedAmount],
+    [config?.balanceCreditCnyPerUsd, feeRate, parsedAmount, text],
   );
 
   const canUseStripePopup = useMemo(() => canUseEmbeddedStripePopup(endpoint), [endpoint]);
@@ -400,10 +398,13 @@ export function Sub2APIPayModal({
 
   const currentOrderStatus =
     activeOrderStatus ?? (activeOrder ? createSeedOrderStatus(activeOrder) : null);
-  const statusDescriptor = currentOrderStatus ? describeOrderStatus(currentOrderStatus) : null;
+  const statusDescriptor = currentOrderStatus
+    ? describeOrderStatus(currentOrderStatus, clientLocale)
+    : null;
   const timeRemaining = useMemo(
-    () => (currentOrderStatus ? formatTimeRemaining(currentOrderStatus.expiresAt) : "--"),
-    [countdownTick, currentOrderStatus],
+    () =>
+      currentOrderStatus ? formatTimeRemaining(currentOrderStatus.expiresAt, text.expired) : "--",
+    [countdownTick, currentOrderStatus, text.expired],
   );
 
   const resetOrderState = useCallback(() => {
@@ -443,16 +444,19 @@ export function Sub2APIPayModal({
       const ordersUrl = buildPayCenterApiUrl(
         endpoint,
         `/api/orders/my?token=${encodeURIComponent(accessToken)}&page=1&page_size=20`,
+        { lang: clientLocale },
       );
-      const ordersResponse = await fetch(ordersUrl);
+      const ordersResponse = await fetch(ordersUrl, {
+        headers: { "Accept-Language": clientLocale },
+      });
       const ordersPayload = readJsonSafe(await ordersResponse.text());
       if (!ordersResponse.ok) {
-        throw new Error(getApiErrorMessage(ordersPayload, "Failed to load order summary."));
+        throw new Error(getApiErrorMessage(ordersPayload, text.failedLoadOrders));
       }
 
       const userId = readNumber((ordersPayload as { user?: { id?: unknown } } | null)?.user?.id);
       if (!userId || userId <= 0) {
-        throw new Error("Payment user info is unavailable.");
+        throw new Error(text.paymentUserUnavailable);
       }
 
       const userDisplayName =
@@ -468,7 +472,7 @@ export function Sub2APIPayModal({
             ?.username,
         ) ??
         readString((ordersPayload as { user?: { email?: unknown } } | null)?.user?.email) ??
-        "Account";
+        text.accountFallback;
       const userBalance = readNumber(
         (ordersPayload as { user?: { balance?: unknown } } | null)?.user?.balance,
       );
@@ -479,24 +483,29 @@ export function Sub2APIPayModal({
 
       const userUrl = buildPayCenterApiUrl(
         endpoint,
-        `/api/user?user_id=${userId}&token=${encodeURIComponent(accessToken)}&lang=${encodeURIComponent(DEFAULT_LANG)}`,
+        `/api/user?user_id=${userId}&token=${encodeURIComponent(accessToken)}`,
+        { lang: clientLocale },
       );
       const userResponse = await fetch(userUrl, {
         method: "GET",
-        headers: { "Accept-Language": DEFAULT_LANG },
+        headers: { "Accept-Language": clientLocale },
       });
       const userPayload = readJsonSafe(await userResponse.text());
       if (!userResponse.ok) {
-        throw new Error(getApiErrorMessage(userPayload, "Failed to load payment config."));
+        throw new Error(getApiErrorMessage(userPayload, text.failedLoadConfig));
       }
 
       const configPayload =
         (userPayload as { config?: Record<string, unknown> } | null)?.config ?? {};
-      const enabledPaymentTypes = Array.isArray(configPayload.enabledPaymentTypes)
+      const rawEnabledPaymentTypes = Array.isArray(configPayload.enabledPaymentTypes)
         ? configPayload.enabledPaymentTypes.filter(
             (entry): entry is string => typeof entry === "string",
           )
         : [];
+      const enabledPaymentTypes = filterSub2APIPaymentTypesByLocale(
+        rawEnabledPaymentTypes,
+        clientLocale,
+      );
       const methodLimits =
         typeof configPayload.methodLimits === "object" && configPayload.methodLimits !== null
           ? (configPayload.methodLimits as Record<string, PaymentCenterMethodLimit>)
@@ -532,7 +541,7 @@ export function Sub2APIPayModal({
     } finally {
       setIsLoadingConfig(false);
     }
-  }, [accessToken, endpoint, resetOrderState, visible]);
+  }, [accessToken, clientLocale, endpoint, resetOrderState, text, visible]);
 
   useEffect(() => {
     if (!visible) {
@@ -567,7 +576,7 @@ export function Sub2APIPayModal({
         amount: order.payAmount ?? order.amount,
         accessToken: order.statusAccessToken,
         method: paymentMethod,
-        lang: DEFAULT_LANG,
+        lang: clientLocale,
         theme: DEFAULT_THEME,
       });
 
@@ -601,23 +610,21 @@ export function Sub2APIPayModal({
       setStripePopupBlocked(false);
       return true;
     },
-    [canUseStripePopup, config?.stripePublishableKey, endpoint],
+    [canUseStripePopup, clientLocale, config?.stripePublishableKey, endpoint],
   );
 
   const handleCreateOrder = useCallback(async () => {
     if (!accessToken || !config) {
-      setErrorMessage("Please sign in again before creating a payment order.");
+      setErrorMessage(text.signInAgain);
       return;
     }
     if (!selectedPaymentType) {
-      setErrorMessage("Select a payment method first.");
+      setErrorMessage(text.selectPaymentMethod);
       return;
     }
 
     if (isStripePaymentType(selectedPaymentType) && !canUseStripePopup) {
-      setErrorMessage(
-        "Stripe checkout needs the full payment center in this runtime. Open the full pay center instead.",
-      );
+      setErrorMessage(text.stripeFullCenterRequired);
       if (payCenterUrl) {
         await openPaymentTarget(payCenterUrl);
       }
@@ -625,33 +632,29 @@ export function Sub2APIPayModal({
     }
 
     if (config.pendingCount >= config.maxPendingOrders) {
-      setErrorMessage(
-        `You already have ${config.pendingCount} pending orders. Please complete or cancel them first.`,
-      );
+      setErrorMessage(text.pendingOrders(config.pendingCount));
       return;
     }
     if (selectedMethodLimit?.available === false) {
-      setErrorMessage("This payment method is currently unavailable.");
+      setErrorMessage(text.methodUnavailable);
       return;
     }
     if (parsedAmount == null) {
-      setErrorMessage("Enter a valid recharge amount.");
+      setErrorMessage(text.enterValidAmount);
       return;
     }
     if (parsedAmount < effectiveMinAmount || parsedAmount > effectiveMaxAmount) {
-      setErrorMessage(
-        `Recharge amount must be between ${effectiveMinAmount} and ${effectiveMaxAmount}.`,
-      );
+      setErrorMessage(text.rechargeAmountRange(effectiveMinAmount, effectiveMaxAmount));
       return;
     }
 
     setIsCreatingOrder(true);
     setErrorMessage(null);
     try {
-      const ordersUrl = buildPayCenterApiUrl(endpoint, "/api/orders");
+      const ordersUrl = buildPayCenterApiUrl(endpoint, "/api/orders", { lang: clientLocale });
       const response = await fetch(ordersUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Accept-Language": clientLocale, "Content-Type": "application/json" },
         body: JSON.stringify({
           token: accessToken,
           amount: parsedAmount,
@@ -661,14 +664,14 @@ export function Sub2APIPayModal({
       });
       const payload = readJsonSafe(await response.text());
       if (!response.ok) {
-        throw new Error(getApiErrorMessage(payload, "Failed to create payment order."));
+        throw new Error(getApiErrorMessage(payload, text.failedCreateOrder));
       }
 
       const createdOrder: PaymentCenterCreateOrderResponse = {
         orderId:
           readString((payload as { orderId?: unknown } | null)?.orderId) ??
           (() => {
-            throw new Error("Payment order is missing an order id.");
+            throw new Error(text.missingOrderId);
           })(),
         amount: readNumber((payload as { amount?: unknown } | null)?.amount) ?? parsedAmount,
         payAmount: readNumber((payload as { payAmount?: unknown } | null)?.payAmount),
@@ -685,7 +688,7 @@ export function Sub2APIPayModal({
         statusAccessToken:
           readString((payload as { statusAccessToken?: unknown } | null)?.statusAccessToken) ??
           (() => {
-            throw new Error("Payment order is missing a status access token.");
+            throw new Error(text.missingStatusAccessToken);
           })(),
       };
 
@@ -702,9 +705,7 @@ export function Sub2APIPayModal({
       } else if (flow === "stripe") {
         const opened = openStripePopup(createdOrder);
         if (!opened) {
-          setErrorMessage(
-            "Stripe payment window was blocked. Use the button below to try opening it again.",
-          );
+          setErrorMessage(text.stripeWindowBlocked);
         }
       }
     } catch (error) {
@@ -716,6 +717,7 @@ export function Sub2APIPayModal({
   }, [
     accessToken,
     canUseStripePopup,
+    clientLocale,
     config,
     effectiveMaxAmount,
     effectiveMinAmount,
@@ -726,6 +728,7 @@ export function Sub2APIPayModal({
     payCenterUrl,
     selectedMethodLimit?.available,
     selectedPaymentType,
+    text,
   ]);
 
   const pollOrderStatus = useCallback(async (): Promise<PaymentCenterOrderStatus | null> => {
@@ -736,11 +739,14 @@ export function Sub2APIPayModal({
       endpoint,
       activeOrder.orderId,
       activeOrder.statusAccessToken,
+      { lang: clientLocale },
     );
-    const response = await fetch(statusUrl);
+    const response = await fetch(statusUrl, {
+      headers: { "Accept-Language": clientLocale },
+    });
     const payload = readJsonSafe(await response.text());
     if (!response.ok) {
-      throw new Error(getApiErrorMessage(payload, "Failed to refresh order status."));
+      throw new Error(getApiErrorMessage(payload, text.failedRefreshStatus));
     }
 
     return {
@@ -754,17 +760,17 @@ export function Sub2APIPayModal({
         readString((payload as { rechargeStatus?: unknown } | null)?.rechargeStatus) ?? "not_paid",
       failedReason: readString((payload as { failedReason?: unknown } | null)?.failedReason),
     };
-  }, [activeOrder, endpoint]);
+  }, [activeOrder, clientLocale, endpoint, text.failedRefreshStatus]);
 
   const refreshBalanceAndClose = useCallback(() => {
     if (paymentCompletionHandledRef.current) {
       return;
     }
     paymentCompletionHandledRef.current = true;
-    toast.show("Payment successful. Balance updated.", { variant: "success" });
+    toast.show(text.paymentSuccessfulToast, { variant: "success" });
     onCompleted?.();
     onClose();
-  }, [onClose, onCompleted, toast]);
+  }, [onClose, onCompleted, text.paymentSuccessfulToast, toast]);
 
   useEffect(() => {
     if (!currentOrderStatus) {
@@ -817,9 +823,7 @@ export function Sub2APIPayModal({
         if (elapsed > 5 * 60 * 1000) {
           setIsPollingOrder(false);
           setStage("result");
-          setErrorMessage(
-            "Payment status polling timed out. You can go back to recharge and try again if needed.",
-          );
+          setErrorMessage(text.paymentPollingTimedOut);
           return;
         }
         timer = setTimeout(() => void run(), 2000);
@@ -833,7 +837,7 @@ export function Sub2APIPayModal({
         clearTimeout(timer);
       }
     };
-  }, [activeOrder, isPollingOrder, pollOrderStatus, stage]);
+  }, [activeOrder, isPollingOrder, pollOrderStatus, stage, text.paymentPollingTimedOut]);
 
   useEffect(() => {
     if (stage !== "paying" || activeFlow !== "qr" || !activeOrder?.qrCode) {
@@ -889,10 +893,12 @@ export function Sub2APIPayModal({
         return;
       }
 
-      const cancelUrl = buildPayCenterApiUrl(endpoint, `/api/orders/${activeOrder.orderId}/cancel`);
+      const cancelUrl = buildPayCenterApiUrl(endpoint, `/api/orders/${activeOrder.orderId}/cancel`, {
+        lang: clientLocale,
+      });
       const cancelResponse = await fetch(cancelUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Accept-Language": clientLocale, "Content-Type": "application/json" },
         body: JSON.stringify({ token: accessToken }),
       });
 
@@ -903,7 +909,7 @@ export function Sub2APIPayModal({
           setActiveOrderStatus(refreshed);
           return;
         }
-        throw new Error(getApiErrorMessage(cancelPayload, "Failed to cancel this order."));
+        throw new Error(getApiErrorMessage(cancelPayload, text.failedCancelOrder));
       }
 
       const cancelledStatus: PaymentCenterOrderStatus = {
@@ -923,7 +929,7 @@ export function Sub2APIPayModal({
     } finally {
       setIsCancellingOrder(false);
     }
-  }, [accessToken, activeOrder, endpoint, pollOrderStatus]);
+  }, [accessToken, activeOrder, clientLocale, endpoint, pollOrderStatus, text.failedCancelOrder]);
 
   const handleBackToForm = useCallback(() => {
     setErrorMessage(null);
@@ -933,16 +939,16 @@ export function Sub2APIPayModal({
 
   const mainCtaLabel = useMemo(() => {
     if (isLoadingConfig) {
-      return "Loading…";
+      return text.loadingCta;
     }
     if (isCreatingOrder) {
-      return "Creating order…";
+      return text.creatingOrder;
     }
     if (selectedPaymentType && isStripePaymentType(selectedPaymentType) && !canUseStripePopup) {
-      return "Open full pay center";
+      return text.openFullPayCenter;
     }
-    return "Continue to payment";
-  }, [canUseStripePopup, isCreatingOrder, isLoadingConfig, selectedPaymentType]);
+    return text.continueToPayment;
+  }, [canUseStripePopup, isCreatingOrder, isLoadingConfig, selectedPaymentType, text]);
 
   const mainCtaDisabled =
     isLoadingConfig ||
@@ -962,7 +968,7 @@ export function Sub2APIPayModal({
     <AdaptiveModalSheet
       visible={visible}
       onClose={onClose}
-      title="Add balance"
+      title={text.addBalance}
       scrollable
       snapPoints={["80%", "95%"]}
     >
@@ -970,15 +976,15 @@ export function Sub2APIPayModal({
         {stage === "loading-config" ? (
           <View style={styles.loadingCard}>
             <ActivityIndicator />
-            <Text style={styles.loadingText}>Loading recharge options…</Text>
+            <Text style={styles.loadingText}>{text.loadingRechargeOptions}</Text>
           </View>
         ) : null}
 
         {stage === "error" ? (
           <View style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Unable to load recharge options</Text>
+            <Text style={styles.errorTitle}>{text.unableToLoadRechargeOptions}</Text>
             <Text style={styles.errorText}>
-              {errorMessage ?? "You can still open the full payment center in your browser."}
+              {errorMessage ?? text.fullPayCenterFallback}
             </Text>
             {payCenterUrl ? (
               <Button
@@ -986,7 +992,7 @@ export function Sub2APIPayModal({
                 onPress={() => void openPaymentTarget(payCenterUrl)}
                 style={styles.primaryCta}
               >
-                Open full pay center
+                {text.openFullPayCenter}
               </Button>
             ) : null}
           </View>
@@ -995,16 +1001,16 @@ export function Sub2APIPayModal({
         {stage === "form" && config ? (
           <View style={styles.formStack}>
             <View style={styles.accountCard}>
-              <Text style={styles.accountEyebrow}>Recharge account</Text>
+              <Text style={styles.accountEyebrow}>{text.rechargeAccount}</Text>
               <Text style={styles.accountName}>{config.userDisplayName}</Text>
               <Text style={styles.accountHint}>
-                Current balance:{" "}
+                {text.currentBalance}:{" "}
                 <Text style={styles.accountBalance}>{formatUsd(config.userBalance)}</Text>
               </Text>
             </View>
 
             <View style={styles.sectionCard}>
-              <Text style={styles.fieldLabel}>Recharge amount</Text>
+              <Text style={styles.fieldLabel}>{text.rechargeAmount}</Text>
               <View style={styles.quickAmountGrid}>
                 {quickAmounts.map((value) => {
                   const selected = amountText.trim() === String(value);
@@ -1041,8 +1047,11 @@ export function Sub2APIPayModal({
                 style={styles.textInput}
               />
               <Text style={styles.rangeHint}>
-                Credited to balance: {paymentSummary.creditedUsd} · Allowed range:{" "}
-                {formatUsd(effectiveMinAmount)} - {formatUsd(effectiveMaxAmount)}
+                {text.creditedRange(
+                  paymentSummary.creditedUsd,
+                  formatUsd(effectiveMinAmount),
+                  formatUsd(effectiveMaxAmount),
+                )}
               </Text>
               {paymentSummary.rateText ? (
                 <Text style={styles.rangeHint}>{paymentSummary.rateText}</Text>
@@ -1052,13 +1061,13 @@ export function Sub2APIPayModal({
               ) : null}
               {paymentSummary.estimatedPay !== "--" ? (
                 <Text style={styles.rangeHint}>
-                  Estimated amount to pay: {paymentSummary.estimatedPay}
+                  {text.estimatedAmountToPay(paymentSummary.estimatedPay)}
                 </Text>
               ) : null}
             </View>
 
             <View style={styles.sectionCard}>
-              <Text style={styles.fieldLabel}>Payment method</Text>
+              <Text style={styles.fieldLabel}>{text.paymentMethod}</Text>
               <View style={styles.paymentTypeList}>
                 {config.enabledPaymentTypes.map((type) => {
                   const selected = selectedPaymentType === type;
@@ -1078,26 +1087,24 @@ export function Sub2APIPayModal({
                           selected && styles.paymentTypeChipTextSelected,
                         ]}
                       >
-                        {paymentLabel(type)}
+                        {getSub2APIPaymentLabel(type, clientLocale)}
                       </Text>
                     </Pressable>
                   );
                 })}
               </View>
               {selectedMethodLimit?.available === false ? (
-                <Text style={styles.errorText}>This payment method is currently unavailable.</Text>
+                <Text style={styles.errorText}>{text.methodUnavailable}</Text>
               ) : null}
               {selectedMethodLimit?.remaining != null ? (
                 <Text style={styles.rangeHint}>
-                  Remaining daily quota: {formatUsd(selectedMethodLimit.remaining)}
+                  {text.remainingDailyQuota(formatUsd(selectedMethodLimit.remaining))}
                 </Text>
               ) : null}
               {selectedPaymentType &&
               isStripePaymentType(selectedPaymentType) &&
               !canUseStripePopup ? (
-                <Text style={styles.rangeHint}>
-                  Stripe checkout is only available in the full payment center in this runtime.
-                </Text>
+                <Text style={styles.rangeHint}>{text.stripeRuntimeHint}</Text>
               ) : null}
             </View>
 
@@ -1134,10 +1141,11 @@ export function Sub2APIPayModal({
               </Text>
               <Text style={styles.statusHint}>{statusDescriptor.message}</Text>
               <Text style={styles.statusMeta}>
-                Order {activeOrder.orderId} · Time remaining {timeRemaining}
+                {text.order} {activeOrder.orderId} · {text.timeRemaining} {timeRemaining}
               </Text>
               <Text style={styles.statusMeta}>
-                Amount to pay {formatCny(activeOrder.payAmount ?? activeOrder.amount)} · Credited{" "}
+                {text.amountToPay} {formatCny(activeOrder.payAmount ?? activeOrder.amount)} ·{" "}
+                {text.credited}{" "}
                 {formatUsd(activeOrder.amount)}
               </Text>
             </View>
@@ -1145,7 +1153,7 @@ export function Sub2APIPayModal({
             {activeFlow === "qr" ? (
               <View style={styles.paymentCard}>
                 <Text style={styles.fieldLabel}>
-                  Open {paymentLabel(activeOrder.paymentType)} and scan to complete payment
+                  {text.qrInstruction(getSub2APIPaymentLabel(activeOrder.paymentType, clientLocale))}
                 </Text>
                 <View style={styles.qrContainer}>
                   {qrCodeDataUrl ? (
@@ -1165,7 +1173,7 @@ export function Sub2APIPayModal({
                     onPress={() => void openPaymentTarget(activeOrder.payUrl)}
                     style={styles.secondaryInlineButton}
                   >
-                    Open payment page
+                    {text.openPaymentPage}
                   </Button>
                 ) : null}
               </View>
@@ -1173,33 +1181,25 @@ export function Sub2APIPayModal({
 
             {activeFlow === "redirect" ? (
               <View style={styles.paymentCard}>
-                <Text style={styles.fieldLabel}>Payment continues in your browser</Text>
-                <Text style={styles.statusHint}>
-                  If the payment page did not open automatically, use the button below to reopen it.
-                </Text>
+                <Text style={styles.fieldLabel}>{text.redirectTitle}</Text>
+                <Text style={styles.statusHint}>{text.redirectHint}</Text>
                 <Button
                   variant="outline"
                   size="sm"
                   onPress={() => void openPaymentTarget(activeOrder.payUrl)}
                   style={styles.secondaryInlineButton}
                 >
-                  Open payment page
+                  {text.openPaymentPage}
                 </Button>
               </View>
             ) : null}
 
             {activeFlow === "stripe" ? (
               <View style={styles.paymentCard}>
-                <Text style={styles.fieldLabel}>Stripe checkout</Text>
-                <Text style={styles.statusHint}>
-                  A secure Stripe window is required for this order. We keep polling the order here
-                  while that window is open.
-                </Text>
+                <Text style={styles.fieldLabel}>{text.stripeCheckout}</Text>
+                <Text style={styles.statusHint}>{text.stripeCheckoutHint}</Text>
                 {stripePopupBlocked || errorMessage ? (
-                  <Text style={styles.errorText}>
-                    {errorMessage ??
-                      "The Stripe payment window was blocked. Use the button below to try again."}
-                  </Text>
+                  <Text style={styles.errorText}>{errorMessage ?? text.stripeWindowBlocked}</Text>
                 ) : null}
                 <Button
                   variant="outline"
@@ -1211,16 +1211,14 @@ export function Sub2APIPayModal({
                     setIsOpeningStripePopup(true);
                     const opened = openStripePopup(activeOrder);
                     if (!opened) {
-                      setErrorMessage(
-                        "Stripe checkout could not open here. Please use the full payment center.",
-                      );
+                      setErrorMessage(text.stripeCouldNotOpen);
                     }
                     setIsOpeningStripePopup(false);
                   }}
                   style={styles.secondaryInlineButton}
                   disabled={isOpeningStripePopup}
                 >
-                  {isOpeningStripePopup ? "Opening…" : "Open secure payment window"}
+                  {isOpeningStripePopup ? text.opening : text.openSecurePaymentWindow}
                 </Button>
               </View>
             ) : null}
@@ -1235,7 +1233,7 @@ export function Sub2APIPayModal({
                 disabled={isCancellingOrder}
                 style={styles.secondaryInlineButton}
               >
-                {isCancellingOrder ? "Cancelling…" : "Cancel order"}
+                {isCancellingOrder ? text.cancelling : text.cancelOrder}
               </Button>
             ) : null}
           </View>
@@ -1258,7 +1256,9 @@ export function Sub2APIPayModal({
               {statusDescriptor.title}
             </Text>
             <Text style={styles.statusHint}>{statusDescriptor.message}</Text>
-            <Text style={styles.statusMeta}>Order {currentOrderStatus.id}</Text>
+            <Text style={styles.statusMeta}>
+              {text.order} {currentOrderStatus.id}
+            </Text>
             {currentOrderStatus.failedReason ? (
               <Text style={styles.errorText}>{currentOrderStatus.failedReason}</Text>
             ) : null}
@@ -1268,7 +1268,7 @@ export function Sub2APIPayModal({
               onPress={handleBackToForm}
               style={styles.primaryCta}
             >
-              Back to recharge
+              {text.backToRecharge}
             </Button>
           </View>
         ) : null}

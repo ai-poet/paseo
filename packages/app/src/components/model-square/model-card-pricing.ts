@@ -1,3 +1,5 @@
+import { getSub2APIMessages, isSub2APIEnglish } from "@/i18n/sub2api";
+
 export interface ActualPaidPricingContext {
   balanceCreditCnyPerUsd: number | null;
   usdExchangeRate: number | null;
@@ -6,10 +8,6 @@ export interface ActualPaidPricingContext {
 
 function isPositiveFiniteNumber(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
-}
-
-function shouldDisplayActualPaidInUsd(locale: string | null | undefined): boolean {
-  return (locale ?? "").trim().toLowerCase().startsWith("en");
 }
 
 function formatPriceNumber(value: number): string {
@@ -44,16 +42,21 @@ export function formatActualPaidPrice(
   }
 
   const actualCny = valueUsd * context.balanceCreditCnyPerUsd;
-  if (shouldDisplayActualPaidInUsd(context.locale) && isPositiveFiniteNumber(context.usdExchangeRate)) {
-    return formatUsdPrice(actualCny / context.usdExchangeRate);
+  if (isSub2APIEnglish(context.locale)) {
+    if (isPositiveFiniteNumber(context.usdExchangeRate)) {
+      return formatUsdPrice(actualCny / context.usdExchangeRate);
+    }
+    return formatUsdPrice(valueUsd);
   }
   return `¥${formatPriceNumber(actualCny)}`;
 }
 
 export function getActualPaidSectionLabel(
   context: ActualPaidPricingContext | null | undefined,
+  locale?: string | null,
 ): string {
+  const text = getSub2APIMessages(locale ?? "en").modelCard;
   return context && isPositiveFiniteNumber(context.balanceCreditCnyPerUsd)
-    ? "Actual Paid"
-    : "Balance Price";
+    ? text.actualPaid
+    : text.balancePrice;
 }

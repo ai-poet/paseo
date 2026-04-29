@@ -11,10 +11,12 @@ import { THEME_TO_UNISTYLES, type ThemeName } from "@/styles/theme";
 export type SendBehavior = "interrupt" | "queue";
 export type ReleaseChannel = "stable" | "beta";
 export type AccessMode = "builtin" | "byok";
+export type AppLanguage = "auto" | "zh" | "en";
 
 const VALID_THEMES = new Set<string>([...Object.keys(THEME_TO_UNISTYLES), "auto"]);
 const VALID_RELEASE_CHANNELS = new Set<string>(["stable", "beta"]);
 const VALID_ACCESS_MODES = new Set<string>(["builtin", "byok"]);
+const VALID_APP_LANGUAGES = new Set<string>(["auto", "zh", "en"]);
 
 export interface AppSettings {
   theme: ThemeName | "auto";
@@ -23,6 +25,7 @@ export interface AppSettings {
   releaseChannel: ReleaseChannel;
   accessMode: AccessMode | null;
   setupCheckCompleted: boolean;
+  language: AppLanguage;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -32,6 +35,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   releaseChannel: "stable",
   accessMode: null,
   setupCheckCompleted: false,
+  language: "auto",
 };
 
 export interface UseAppSettingsReturn {
@@ -105,6 +109,9 @@ export async function loadSettingsFromStorage(): Promise<AppSettings> {
       ) {
         parsed.accessMode = DEFAULT_APP_SETTINGS.accessMode;
       }
+      if (parsed.language && !VALID_APP_LANGUAGES.has(parsed.language)) {
+        parsed.language = DEFAULT_APP_SETTINGS.language;
+      }
       return { ...DEFAULT_APP_SETTINGS, ...parsed };
     }
 
@@ -137,6 +144,9 @@ function pickAppSettingsFromLegacy(legacy: Record<string, unknown>): Partial<App
   }
   if (legacy.releaseChannel === "stable" || legacy.releaseChannel === "beta") {
     result.releaseChannel = legacy.releaseChannel;
+  }
+  if (legacy.language === "auto" || legacy.language === "zh" || legacy.language === "en") {
+    result.language = legacy.language;
   }
   return result;
 }

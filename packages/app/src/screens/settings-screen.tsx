@@ -27,7 +27,12 @@ import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { ScreenTitle } from "@/components/headers/screen-title";
 import { HeaderIconBadge } from "@/components/headers/header-icon-badge";
 import { SettingsSection } from "@/screens/settings/settings-section";
-import { useAppSettings, type AppSettings, type SendBehavior } from "@/hooks/use-settings";
+import {
+  useAppSettings,
+  type AppLanguage,
+  type AppSettings,
+  type SendBehavior,
+} from "@/hooks/use-settings";
 import { THEME_SWATCHES } from "@/styles/theme";
 import { getHostRuntimeStore, isHostRuntimeConnected, useHosts } from "@/runtime/host-runtime";
 import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
@@ -148,6 +153,12 @@ const THEME_LABELS: Record<AppSettings["theme"], string> = {
   auto: "System",
 };
 
+const LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [
+  { value: "auto", label: "System" },
+  { value: "zh", label: "中文" },
+  { value: "en", label: "English" },
+];
+
 // ---------------------------------------------------------------------------
 // Section components
 // ---------------------------------------------------------------------------
@@ -155,12 +166,14 @@ const THEME_LABELS: Record<AppSettings["theme"], string> = {
 interface GeneralSectionProps {
   settings: AppSettings;
   handleThemeChange: (theme: AppSettings["theme"]) => void;
+  handleLanguageChange: (language: AppLanguage) => void;
   handleSendBehaviorChange: (behavior: SendBehavior) => void;
 }
 
 function GeneralSection({
   settings,
   handleThemeChange,
+  handleLanguageChange,
   handleSendBehaviorChange,
 }: GeneralSectionProps) {
   const { theme } = useUnistyles();
@@ -206,6 +219,20 @@ function GeneralSection({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+        </View>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>Language</Text>
+            <Text style={settingsStyles.rowHint}>
+              Used for Paseo Cloud, payments, and the model catalog
+            </Text>
+          </View>
+          <SegmentedControl
+            size="sm"
+            value={settings.language}
+            onValueChange={handleLanguageChange}
+            options={LANGUAGE_OPTIONS}
+          />
         </View>
         <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
           <View style={settingsStyles.rowContent}>
@@ -613,6 +640,13 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
     [updateSettings],
   );
 
+  const handleLanguageChange = useCallback(
+    (language: AppLanguage) => {
+      void updateSettings({ language });
+    },
+    [updateSettings],
+  );
+
   const handleSendBehaviorChange = useCallback(
     (behavior: SendBehavior) => {
       void updateSettings({ sendBehavior: behavior });
@@ -771,6 +805,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
             <GeneralSection
               settings={settings}
               handleThemeChange={handleThemeChange}
+              handleLanguageChange={handleLanguageChange}
               handleSendBehaviorChange={handleSendBehaviorChange}
             />
           );
