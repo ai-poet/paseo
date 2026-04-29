@@ -19,10 +19,11 @@ $env:EXPO_DEV_URL = "http://localhost:$($env:EXPO_PORT)"
 # SECURITY: wildcard CORS is unsafe in production — only acceptable here because
 # the daemon binds to localhost and this script is never used for production.
 $env:PASEO_CORS_ORIGINS = "*"
+$BrandName = if ([string]::IsNullOrWhiteSpace($env:PASEO_APP_NAME)) { "Paseo" } else { $env:PASEO_APP_NAME }
 
 Write-Host @"
 ======================================================
-  Paseo Desktop Dev (Windows)
+  $BrandName Desktop Dev (Windows)
 ======================================================
   Metro:     http://localhost:$($env:EXPO_PORT)
 ======================================================

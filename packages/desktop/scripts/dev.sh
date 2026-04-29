@@ -20,7 +20,7 @@ export EXPO_PORT
 export PASEO_CORS_ORIGINS="*"
 
 echo "══════════════════════════════════════════════════════"
-echo "  Paseo Desktop Dev"
+echo "  ${PASEO_APP_NAME:-Paseo} Desktop Dev"
 echo "══════════════════════════════════════════════════════"
 echo "  Metro:     http://localhost:${EXPO_PORT}"
 echo "══════════════════════════════════════════════════════"
