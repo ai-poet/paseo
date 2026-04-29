@@ -1,7 +1,9 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const pkg = require("./package.json");
+const { resolveBrandingFromEnv } = require("./branding.config.cjs");
 const appVariant = process.env.APP_VARIANT ?? "production";
+const brand = resolveBrandingFromEnv(process.env);
 
 function resolveSecretFile(params) {
   const fromEnv = process.env[params.envKey];
@@ -19,7 +21,7 @@ function resolveSecretFile(params) {
 
 const variants = {
   production: {
-    name: "Paseo",
+    name: brand.appName,
     packageId: "sh.paseo",
     googleServicesFile: resolveSecretFile({
       envKey: "GOOGLE_SERVICES_FILE_PROD",
@@ -31,7 +33,7 @@ const variants = {
     }),
   },
   development: {
-    name: "Paseo Debug",
+    name: brand.developmentAppName,
     packageId: "sh.paseo.debug",
     googleServicesFile: resolveSecretFile({
       envKey: "GOOGLE_SERVICES_FILE_DEBUG",
@@ -52,7 +54,7 @@ export default {
     slug: "voice-mobile",
     version: pkg.version,
     orientation: "portrait",
-    icon: "./assets/images/icon.png",
+    icon: brand.expoIcon,
     scheme: "paseo",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
@@ -76,7 +78,7 @@ export default {
     android: {
       adaptiveIcon: {
         backgroundColor: "#000000",
-        foregroundImage: "./assets/images/android-icon-foreground.png",
+        foregroundImage: brand.expoAndroidForegroundIcon,
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
@@ -95,7 +97,7 @@ export default {
     },
     web: {
       output: "single",
-      favicon: "./assets/images/favicon.png",
+      favicon: brand.webFavicon,
     },
     autolinking: {
       searchPaths: ["../../node_modules", "./node_modules"],
@@ -111,7 +113,7 @@ export default {
       [
         "expo-splash-screen",
         {
-          image: "./assets/images/splash-icon.png",
+          image: brand.expoSplashIcon,
           imageWidth: 200,
           resizeMode: "contain",
           backgroundColor: "#ffffff",
@@ -123,7 +125,7 @@ export default {
       [
         "expo-notifications",
         {
-          icon: "./assets/images/notification-icon.png",
+          icon: brand.expoNotificationIcon,
           color: "#20744A",
         },
       ],
@@ -146,6 +148,10 @@ export default {
       autolinkingModuleResolution: true,
     },
     extra: {
+      brand: {
+        appName: brand.appName,
+        cloudName: brand.cloudName,
+      },
       router: {},
       eas: {
         projectId: "0e7f65ce-0367-46c8-a238-2b65963d235a",

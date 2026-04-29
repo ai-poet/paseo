@@ -7,6 +7,7 @@ import { useAppSettings } from "@/hooks/use-settings";
 import { settingsStyles } from "@/styles/settings";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { Button } from "@/components/ui/button";
+import { CLOUD_NAME } from "@/config/branding";
 
 export function AccessModeSection() {
   const router = useRouter();
@@ -16,7 +17,7 @@ export function AccessModeSection() {
 
   const modeLabel =
     settings.accessMode === "builtin"
-      ? "Paseo Cloud"
+      ? CLOUD_NAME
       : settings.accessMode === "byok"
         ? "BYOK"
         : "Not selected";
@@ -37,7 +38,7 @@ export function AccessModeSection() {
           Current: {modeLabel}
         </Text>
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs }}>
-          Switch between Paseo Cloud and BYOK. Choosing Cloud requires signing in again.
+          Switch between {CLOUD_NAME} and BYOK. Choosing Cloud requires signing in again.
         </Text>
         <Button variant="secondary" size="sm" onPress={() => void handleSwitchMode()}>
           Change access mode

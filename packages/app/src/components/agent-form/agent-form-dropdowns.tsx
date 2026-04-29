@@ -33,6 +33,7 @@ import {
   IsolatedBottomSheetModal,
   useIsolatedBottomSheetVisibility,
 } from "@/components/ui/isolated-bottom-sheet-modal";
+import { APP_NAME } from "@/config/branding";
 import { baseColors } from "@/styles/theme";
 import { isNative } from "@/constants/platform";
 
@@ -1063,7 +1064,7 @@ export function GitOptionsSection({
         <View style={styles.worktreeToggleContent}>
           <Text style={styles.worktreeToggleLabel}>Attach to existing worktree</Text>
           <Text style={styles.worktreeToggleDescription}>
-            {isLoading ? "Inspecting repository…" : "Pick a Paseo worktree by branch"}
+            {isLoading ? "Inspecting repository…" : `Pick a ${APP_NAME} worktree by branch`}
           </Text>
         </View>
       </Pressable>

@@ -4,6 +4,7 @@ import { Alert, Pressable, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useUnistyles } from "react-native-unistyles";
 import { Cloud } from "lucide-react-native";
+import { APP_NAME, CLOUD_NAME } from "@/config/branding";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { getManagedServiceUrlFromEnv } from "@/config/managed-service-env";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
@@ -20,16 +21,27 @@ import { Sub2APIModelsSection } from "@/screens/settings/sub2api-models-section"
 import { PaseoCloudApiKeysSection } from "@/screens/settings/paseo-cloud-api-keys-section";
 import { PaseoCloudRoutingSection } from "@/screens/settings/paseo-cloud-routing-section";
 import { PaseoCloudReferralSection } from "@/screens/settings/paseo-cloud-referral-section";
+import { PaseoCloudUsageSection } from "@/screens/settings/paseo-cloud-usage-section";
+import { PaseoCloudModelStatusSection } from "@/screens/settings/paseo-cloud-model-status-section";
 import { settingsStyles } from "@/styles/settings";
 import { formatUsd, getErrorMessage, maskApiKey } from "./managed-provider-settings-shared";
 
-type PaseoCloudSection = "overview" | "keys" | "routing" | "catalog" | "referral";
+type PaseoCloudSection =
+  | "overview"
+  | "keys"
+  | "routing"
+  | "catalog"
+  | "usage"
+  | "status"
+  | "referral";
 
 const SECTION_OPTIONS: Array<{ id: PaseoCloudSection; label: string; testID: string }> = [
   { id: "overview", label: "Overview", testID: "paseo-cloud-section-overview" },
   { id: "keys", label: "API Keys", testID: "paseo-cloud-section-keys" },
   { id: "routing", label: "Routing", testID: "paseo-cloud-section-routing" },
   { id: "catalog", label: "Model Catalog", testID: "paseo-cloud-section-catalog" },
+  { id: "usage", label: "Usage", testID: "paseo-cloud-section-usage" },
+  { id: "status", label: "Model Status", testID: "paseo-cloud-section-status" },
   { id: "referral", label: "Referral", testID: "paseo-cloud-section-referral" },
 ];
 
@@ -89,7 +101,7 @@ function RouteUsageCardBlock({ card }: { card: RouteUsageCard }) {
             isCloudBacked ? styles.routeSummaryBadgeCloud : styles.routeSummaryBadgeCustom,
           ]}
         >
-          {isCloudBacked ? "Paseo Cloud" : "Custom route"}
+          {isCloudBacked ? CLOUD_NAME : "Custom route"}
         </Text>
       </View>
       <Text style={styles.routeSummaryProviderName}>{card.provider.name}</Text>
@@ -139,8 +151,8 @@ function RouteUsageCardBlock({ card }: { card: RouteUsageCard }) {
         </>
       ) : (
         <Text style={styles.routeSummaryProviderHint}>
-          This device is using a route that does not match a key in the current Paseo Cloud account,
-          so per-route usage is unavailable here.
+          This device is using a route that does not match a key in the current {CLOUD_NAME}{" "}
+          account, so per-route usage is unavailable here.
         </Text>
       )}
     </View>
@@ -178,10 +190,10 @@ function PaseoCloudOverviewSection(props: {
             </View>
             <Text style={styles.emptyTitle}>Sign in</Text>
             <Text style={styles.emptyBody}>
-              Connect with GitHub for Paseo Cloud billing, API keys, routing groups, and the model
-              catalog. On first sign-in, Paseo tries to fill in any missing Claude Code or Codex
-              route automatically. Existing device routes stay unchanged until you explicitly switch
-              a key or group.
+              Connect with GitHub for {CLOUD_NAME} billing, API keys, routing groups, and the model
+              catalog. On first sign-in, {APP_NAME} tries to fill in any missing Claude Code or
+              Codex route automatically. Existing device routes stay unchanged until you explicitly
+              switch a key or group.
             </Text>
             <Pressable
               onPress={() => void props.handleGitHubLogin()}
@@ -199,7 +211,7 @@ function PaseoCloudOverviewSection(props: {
         ) : (
           <View style={[settingsStyles.card, styles.cardBody]}>
             <Text style={styles.sectionHint}>
-              Your Paseo Cloud session is connected. Use the sections on the left to manage keys,
+              Your {CLOUD_NAME} session is connected. Use the sections on the left to manage keys,
               routing, and models without mixing those controls together.
             </Text>
             <View style={styles.statusRow}>
@@ -423,7 +435,7 @@ export function PaseoCloudPanel() {
             <Text style={styles.emptyTitle}>Sign in required</Text>
             <Text style={styles.emptyBody}>
               Open <Text style={styles.sectionHintEm}>Overview</Text> to sign in before managing API
-              keys, routing, or the model catalog.
+              keys, routing, usage, model status, or the model catalog.
             </Text>
             <Pressable
               onPress={() => setActiveSection("overview")}
@@ -453,6 +465,10 @@ export function PaseoCloudPanel() {
         );
       case "catalog":
         return <Sub2APIModelsSection />;
+      case "usage":
+        return <PaseoCloudUsageSection />;
+      case "status":
+        return <PaseoCloudModelStatusSection />;
       case "referral":
         return <PaseoCloudReferralSection />;
       case "overview":
@@ -495,7 +511,7 @@ export function PaseoCloudPanel() {
           ]}
         >
           <View style={styles.cloudMenuHeader}>
-            <Text style={styles.formTitle}>Paseo Cloud</Text>
+            <Text style={styles.formTitle}>{CLOUD_NAME}</Text>
             <Text style={styles.sectionHint}>Browse one section at a time.</Text>
           </View>
           <View style={[styles.cloudMenuList, isCompact && styles.cloudMenuListCompact]}>

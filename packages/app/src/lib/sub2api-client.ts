@@ -1,9 +1,18 @@
 export type Sub2APIUsagePeriod = "today" | "week" | "month";
+export type Sub2APIGroupStatusHistoryPeriod = "24h" | "7d";
 
 export interface Sub2APIUsageStatsQuery {
   period?: Sub2APIUsagePeriod;
   apiKeyId?: number | null;
   timezone?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
+export interface Sub2APIUsageLogsQuery {
+  page?: number;
+  pageSize?: number;
+  apiKeyId?: number | null;
   startDate?: string | null;
   endDate?: string | null;
 }
@@ -78,6 +87,48 @@ export interface Sub2APIUsageStats {
   total_cost: number;
   total_actual_cost: number;
   average_duration_ms: number;
+}
+
+export interface Sub2APIUsageLog {
+  id: number;
+  user_id?: number;
+  api_key_id: number;
+  account_id?: number | null;
+  request_id?: string;
+  model: string;
+  service_tier?: string | null;
+  reasoning_effort?: string | null;
+  inbound_endpoint?: string | null;
+  upstream_endpoint?: string | null;
+  group_id?: number | null;
+  subscription_id?: number | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_5m_tokens?: number;
+  cache_creation_1h_tokens?: number;
+  input_cost?: number;
+  output_cost?: number;
+  cache_creation_cost?: number;
+  cache_read_cost?: number;
+  total_cost: number;
+  actual_cost: number;
+  rate_multiplier?: number;
+  billing_type?: number;
+  request_type?: string | null;
+  stream?: boolean;
+  openai_ws_mode?: boolean;
+  duration_ms: number;
+  first_token_ms?: number | null;
+  image_count?: number;
+  image_size?: string | null;
+  user_agent?: string | null;
+  cache_ttl_overridden?: boolean;
+  billing_mode?: string | null;
+  created_at: string;
+  api_key?: Sub2APIKey | null;
+  group?: Sub2APIGroup | null;
 }
 
 export interface Sub2APIModelCatalogSummary {
@@ -168,6 +219,45 @@ export interface Sub2APIGroupStatusItem {
   availability_24h: number | null;
   availability_7d: number | null;
   observed_at: string | null;
+}
+
+export interface Sub2APIGroupStatusHistoryBucket {
+  bucket_start: string;
+  bucket_end?: string;
+  availability: number;
+  avg_latency_ms?: number | null;
+  total_count?: number;
+  down_count?: number;
+  latest_status?: string;
+}
+
+export interface Sub2APIGroupStatusRecord {
+  id: number;
+  group_id?: number;
+  config_id?: number;
+  status: string;
+  response_excerpt?: string;
+  latency_ms?: number | null;
+  http_code?: number | null;
+  sub_status?: string;
+  error_detail?: string;
+  observed_at: string;
+  created_at?: string;
+}
+
+export interface Sub2APIGroupStatusEvent {
+  id: number;
+  group_id?: number;
+  config_id?: number;
+  event_type: string;
+  from_status?: string;
+  to_status?: string;
+  latency_ms?: number | null;
+  http_code?: number | null;
+  sub_status?: string;
+  error_detail?: string;
+  observed_at: string;
+  created_at?: string;
 }
 
 function toFiniteNumberOrNull(value: unknown): number | null {
@@ -287,8 +377,17 @@ export interface Sub2APIClient {
   deleteKey: (id: number) => Promise<void>;
   getAvailableGroups: () => Promise<Sub2APIGroup[]>;
   getModelCatalog: () => Promise<Sub2APIModelCatalog>;
+  listUsageLogs: (
+    query?: Sub2APIUsageLogsQuery,
+  ) => Promise<Sub2APIPaginatedData<Sub2APIUsageLog>>;
   getUsageStats: (query: Sub2APIUsagePeriod | Sub2APIUsageStatsQuery) => Promise<Sub2APIUsageStats>;
   getGroupStatuses: () => Promise<Sub2APIGroupStatusItem[]>;
+  getGroupStatusHistory: (
+    groupId: number,
+    period?: Sub2APIGroupStatusHistoryPeriod,
+  ) => Promise<Sub2APIGroupStatusHistoryBucket[]>;
+  getGroupStatusRecords: (groupId: number, limit?: number) => Promise<Sub2APIGroupStatusRecord[]>;
+  getGroupStatusEvents: (groupId: number, limit?: number) => Promise<Sub2APIGroupStatusEvent[]>;
   getReferralInfo: () => Promise<Sub2APIReferralInfo>;
   getReferralHistory: (
     page?: number,
@@ -407,6 +506,30 @@ export function createSub2APIClient(input: {
     return `/usage/stats?${searchParams.toString()}`;
   }
 
+  function buildUsageLogsPath(query: Sub2APIUsageLogsQuery = {}): string {
+    const searchParams = new URLSearchParams();
+    const page = typeof query.page === "number" && Number.isFinite(query.page) ? query.page : 1;
+    const pageSize =
+      typeof query.pageSize === "number" && Number.isFinite(query.pageSize) ? query.pageSize : 20;
+
+    searchParams.set("page", String(page));
+    searchParams.set("page_size", String(pageSize));
+
+    if (typeof query.apiKeyId === "number" && Number.isFinite(query.apiKeyId)) {
+      searchParams.set("api_key_id", String(query.apiKeyId));
+    }
+    const startDate = trimToNull(query.startDate);
+    if (startDate) {
+      searchParams.set("start_date", startDate);
+    }
+    const endDate = trimToNull(query.endDate);
+    if (endDate) {
+      searchParams.set("end_date", endDate);
+    }
+
+    return `/usage?${searchParams.toString()}`;
+  }
+
   async function request<T>(
     path: string,
     init?: {
@@ -498,12 +621,30 @@ export function createSub2APIClient(input: {
     async getModelCatalog() {
       return await request<Sub2APIModelCatalog>("/models/catalog");
     },
+    async listUsageLogs(query = {}) {
+      return await request<Sub2APIPaginatedData<Sub2APIUsageLog>>(buildUsageLogsPath(query));
+    },
     async getUsageStats(query) {
       return await request<Sub2APIUsageStats>(buildUsageStatsPath(query));
     },
     async getGroupStatuses() {
       const items = await request<unknown[]>("/group-status");
       return Array.isArray(items) ? items.map(normalizeGroupStatusItem) : [];
+    },
+    async getGroupStatusHistory(groupId, period = "24h") {
+      return await request<Sub2APIGroupStatusHistoryBucket[]>(
+        `/group-status/${encodeURIComponent(String(groupId))}/history?period=${encodeURIComponent(period)}`,
+      );
+    },
+    async getGroupStatusRecords(groupId, limit = 24) {
+      return await request<Sub2APIGroupStatusRecord[]>(
+        `/group-status/${encodeURIComponent(String(groupId))}/records?limit=${encodeURIComponent(String(limit))}`,
+      );
+    },
+    async getGroupStatusEvents(groupId, limit = 20) {
+      return await request<Sub2APIGroupStatusEvent[]>(
+        `/group-status/${encodeURIComponent(String(groupId))}/events?limit=${encodeURIComponent(String(limit))}`,
+      );
     },
     async getReferralInfo() {
       return await request<Sub2APIReferralInfo>("/referral/info");

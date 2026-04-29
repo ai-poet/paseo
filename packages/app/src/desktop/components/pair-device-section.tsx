@@ -8,6 +8,7 @@ import { RotateCw, Copy, Check } from "lucide-react-native";
 import { settingsStyles } from "@/styles/settings";
 import { Button } from "@/components/ui/button";
 import { getDesktopDaemonPairing, shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
+import { APP_NAME } from "@/config/branding";
 import { useState } from "react";
 
 export function PairDeviceSection() {
@@ -87,7 +88,7 @@ export function PairDeviceSection() {
         ) : (
           <View style={styles.content}>
             <Text style={styles.hint}>
-              Scan this QR code with Paseo on your phone, or copy the link below.
+              Scan this QR code with {APP_NAME} on your phone, or copy the link below.
             </Text>
             <View style={styles.qrContainer}>
               {qrQuery.data ? (

@@ -7,6 +7,7 @@ import {
   type DesktopPermissionSnapshot,
 } from "@/desktop/permissions/desktop-permissions";
 import { sendOsNotification } from "@/utils/os-notifications";
+import { APP_NAME } from "@/config/branding";
 
 export interface UseDesktopPermissionsReturn {
   isDesktopApp: boolean;
@@ -124,7 +125,7 @@ export function useDesktopPermissions(): UseDesktopPermissionsReturn {
     setTestNotificationError(null);
     try {
       const sent = await sendOsNotification({
-        title: "Paseo notification test",
+        title: `${APP_NAME} notification test`,
         body: "If you can see this, desktop notifications work.",
       });
       if (!sent) {

@@ -3,6 +3,7 @@ import { useUnistyles } from "react-native-unistyles";
 import { settingsStyles } from "@/styles/settings";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { DesktopProvidersPanel } from "@/screens/settings/desktop-providers-panel";
+import { CLOUD_NAME } from "@/config/branding";
 
 export function ManagedProviderSettingsPage() {
   const { theme } = useUnistyles();
@@ -16,8 +17,8 @@ export function ManagedProviderSettingsPage() {
             endpoints. You can point each CLI at a different saved entry.
           </Text>
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs }}>
-            Paseo Cloud (account, keys, billing) lives in the sidebar under{" "}
-            <Text style={{ fontWeight: theme.fontWeight.medium }}>Paseo Cloud</Text>.
+            {CLOUD_NAME} (account, keys, billing) lives in the sidebar under{" "}
+            <Text style={{ fontWeight: theme.fontWeight.medium }}>{CLOUD_NAME}</Text>.
           </Text>
         </View>
       </SettingsSection>

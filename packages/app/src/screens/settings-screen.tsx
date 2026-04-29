@@ -63,6 +63,7 @@ import { PaseoCloudSettingsPage } from "@/screens/settings/paseo-cloud-settings-
 import { DesktopProvidersStoreProvider } from "@/screens/settings/desktop-providers-context";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
+import { APP_NAME, CLOUD_NAME } from "@/config/branding";
 import {
   buildHostOpenProjectRoute,
   buildSettingsHostRoute,
@@ -88,7 +89,7 @@ interface SidebarSectionItem {
 
 const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
   { id: "general", label: "General", icon: Settings },
-  { id: "paseo-cloud", label: "Paseo Cloud", icon: Cloud, desktopOnly: true },
+  { id: "paseo-cloud", label: CLOUD_NAME, icon: Cloud, desktopOnly: true },
   { id: "managed-provider", label: "Provider", icon: Server, desktopOnly: true },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard, desktopOnly: true },
   { id: "integrations", label: "Integrations", icon: Puzzle, desktopOnly: true },
@@ -330,7 +331,7 @@ function DesktopAppUpdateRow() {
 
     void confirmDialog({
       title: "Install desktop update",
-      message: "This updates Paseo on this computer",
+      message: `This updates ${APP_NAME} on this computer`,
       confirmLabel: "Install update",
       cancelLabel: "Cancel",
     })

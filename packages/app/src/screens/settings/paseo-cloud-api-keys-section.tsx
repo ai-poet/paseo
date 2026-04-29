@@ -13,6 +13,7 @@ import {
   useSub2APIKeys,
   useUpdateSub2APIKeyMutation,
 } from "@/hooks/use-sub2api-api";
+import { CLOUD_NAME, DESKTOP_DEFAULT_KEY_NAME } from "@/config/branding";
 import type { Sub2APIKey } from "@/lib/sub2api-client";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { useDesktopProvidersStore } from "@/screens/settings/desktop-providers-context";
@@ -75,7 +76,7 @@ export function PaseoCloudApiKeysSection({
   const [groupFilterId, setGroupFilterId] = useState<number | null>(null);
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [editingKey, setEditingKey] = useState<Sub2APIKey | null>(null);
-  const [draftName, setDraftName] = useState("Paseo Desktop");
+  const [draftName, setDraftName] = useState(DESKTOP_DEFAULT_KEY_NAME);
   const [draftGroupId, setDraftGroupId] = useState<number | null>(null);
   const [switchingKeyId, setSwitchingKeyId] = useState<number | null>(null);
 
@@ -194,13 +195,13 @@ export function PaseoCloudApiKeysSection({
   const closeModal = useCallback(() => {
     setCreateModalVisible(false);
     setEditingKey(null);
-    setDraftName("Paseo Desktop");
+    setDraftName(DESKTOP_DEFAULT_KEY_NAME);
     setDraftGroupId(scopedGroups[0]?.id ?? null);
   }, [scopedGroups]);
 
   const openCreateModal = useCallback(() => {
     setEditingKey(null);
-    setDraftName("Paseo Desktop");
+    setDraftName(DESKTOP_DEFAULT_KEY_NAME);
     setDraftGroupId(groupFilterId ?? scopedGroups[0]?.id ?? null);
     setCreateModalVisible(true);
   }, [groupFilterId, scopedGroups]);
@@ -256,7 +257,7 @@ export function PaseoCloudApiKeysSection({
         setActiveScope(resolved.scope);
         Alert.alert(
           "Moved to the matching tab",
-          `Key "${key.name}" belongs to ${targetMeta.cliLabel}. Paseo switched tabs for you so you can apply it there.`,
+          `Key "${key.name}" belongs to ${targetMeta.cliLabel}. ${CLOUD_NAME} switched tabs for you so you can apply it there.`,
         );
         return;
       }
@@ -266,7 +267,7 @@ export function PaseoCloudApiKeysSection({
         await setupDefaultProviderWithKey(key.key, activeScope, key.group?.name ?? key.name);
         Alert.alert(
           "Switched",
-          `Paseo Cloud key "${key.name}" now configures ${scopeMeta.cliLabel} only. Updated ${scopeMeta.configTarget}.`,
+          `${CLOUD_NAME} key "${key.name}" now configures ${scopeMeta.cliLabel} only. Updated ${scopeMeta.configTarget}.`,
         );
       } catch (error) {
         Alert.alert("Switch failed", getErrorMessage(error));
@@ -342,7 +343,7 @@ export function PaseoCloudApiKeysSection({
               <Text style={styles.emptyTitle}>No compatible groups yet</Text>
               <Text style={styles.emptyBody}>
                 Your current account does not have any {scopeMeta.platform} groups available for{" "}
-                {scopeMeta.cliLabel}. Add a compatible group in Paseo Cloud, or use BYOK for this
+                {scopeMeta.cliLabel}. Add a compatible group in {CLOUD_NAME}, or use BYOK for this
                 CLI.
               </Text>
               {alternateGroups.length > 0 ? (

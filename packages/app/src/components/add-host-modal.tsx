@@ -7,6 +7,7 @@ import type { HostProfile } from "@/types/host-connection";
 import { useHosts, useHostMutations } from "@/runtime/host-runtime";
 import { normalizeHostPort } from "@/utils/daemon-endpoints";
 import { DaemonConnectionTestError, connectToDaemon } from "@/utils/test-daemon-connection";
+import { APP_NAME } from "@/config/branding";
 import { AdaptiveModalSheet, AdaptiveTextInput } from "./adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 
@@ -238,7 +239,7 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostMod
       onClose={handleClose}
       testID="add-host-modal"
     >
-      <Text style={styles.helper}>Enter the address of a Paseo server.</Text>
+      <Text style={styles.helper}>Enter the address of a {APP_NAME} server.</Text>
 
       <View style={styles.field}>
         <Text style={styles.label}>Host</Text>

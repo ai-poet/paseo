@@ -33,12 +33,14 @@ import {
 import { registerOpenerHandlers } from "./features/opener.js";
 import { setupApplicationMenu } from "./features/menu.js";
 import { parseOpenProjectPathFromArgv } from "./open-project-routing.js";
+import { getDesktopBranding } from "./branding.js";
 
 const DEV_SERVER_URL = process.env.EXPO_DEV_URL ?? "http://localhost:8081";
 const APP_SCHEME = "paseo";
 const OPEN_PROJECT_EVENT = "paseo:event:open-project";
 const AUTH_CALLBACK_EVENT = "paseo:event:auth-callback";
-app.setName("Paseo");
+const desktopBranding = getDesktopBranding();
+app.setName(desktopBranding.appName);
 
 function normalizeAuthCallbackUrl(rawUrl: string | null | undefined): string | null {
   if (typeof rawUrl !== "string") {
@@ -94,7 +96,10 @@ if (!app.isPackaged) {
     );
     const isWorktree = path.resolve(topLevel, ".git") !== commonDir;
     if (isWorktree) {
-      app.setPath("userData", path.join(app.getPath("appData"), `Paseo-${devWorktreeName}`));
+      app.setPath(
+        "userData",
+        path.join(app.getPath("appData"), `${desktopBranding.appName}-${devWorktreeName}`),
+      );
       log.info("[worktree] isolated userData for worktree:", devWorktreeName);
     } else {
       devWorktreeName = null;
@@ -163,20 +168,32 @@ function getAppDistDir(): string {
   return path.resolve(__dirname, "../../app/dist");
 }
 
+function resolveConfiguredIconPath(iconPath: string): string {
+  if (path.isAbsolute(iconPath)) {
+    return iconPath;
+  }
+  return path.resolve(__dirname, "..", iconPath);
+}
+
+function getConfiguredWindowIconCandidates(): string[] {
+  if (process.platform === "win32") {
+    return [
+      resolveConfiguredIconPath(desktopBranding.desktopIconWin),
+      resolveConfiguredIconPath(desktopBranding.desktopIconPng),
+    ];
+  }
+
+  return [resolveConfiguredIconPath(desktopBranding.desktopIconPng)];
+}
+
 function getWindowIconPath(): string | null {
-  const candidates = app.isPackaged
+  const packagedCandidates = app.isPackaged
     ? process.platform === "win32"
       ? [path.join(process.resourcesPath, "icon.ico"), path.join(process.resourcesPath, "icon.png")]
       : [path.join(process.resourcesPath, "icon.png")]
-    : process.platform === "darwin"
-      ? [path.resolve(__dirname, "../assets/icon.png")]
-      : process.platform === "win32"
-        ? [
-            path.resolve(__dirname, "../assets/icon.ico"),
-            path.resolve(__dirname, "../assets/icon.png"),
-          ]
-        : [path.resolve(__dirname, "../assets/icon.png")];
+    : [];
 
+  const candidates = [...getConfiguredWindowIconCandidates(), ...packagedCandidates];
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
@@ -185,8 +202,8 @@ function applyAppIcon(): void {
     return;
   }
 
-  const iconPath = path.resolve(__dirname, "../assets/icon.png");
-  if (!existsSync(iconPath)) {
+  const iconPath = getWindowIconPath();
+  if (!iconPath || !existsSync(iconPath)) {
     return;
   }
 
@@ -202,7 +219,9 @@ async function createMainWindow(): Promise<void> {
   const iconPath = getWindowIconPath();
   const systemTheme = resolveSystemWindowTheme();
 
-  const title = devWorktreeName ? `Paseo (${devWorktreeName})` : "Paseo";
+  const title = devWorktreeName
+    ? `${desktopBranding.appName} (${devWorktreeName})`
+    : desktopBranding.appName;
   const mainWindow = new BrowserWindow({
     title,
     width: 1200,

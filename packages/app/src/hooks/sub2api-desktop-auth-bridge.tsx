@@ -14,6 +14,7 @@ import { cloudServiceQueryKeys } from "@/hooks/use-sub2api-api";
 import { parseSub2APIAuthCallback } from "@/screens/settings/sub2api-auth-bridge";
 import { resolveScopedActiveProviderIds } from "@/screens/settings/desktop-providers-context";
 import type { ProviderStore } from "@/screens/settings/sub2api-provider-types";
+import { CLOUD_NAME } from "@/config/branding";
 
 let lastHandledCallbackUrl: string | null = null;
 
@@ -44,7 +45,7 @@ async function configureMissingManagedRoutes(session: ReturnType<typeof parseSub
         endpoint: session.endpoint,
         apiKey: session.claudeApiKey,
         scope: "claude",
-        name: "Paseo Cloud",
+        name: CLOUD_NAME,
       }),
     );
   }
@@ -54,7 +55,7 @@ async function configureMissingManagedRoutes(session: ReturnType<typeof parseSub
         endpoint: session.endpoint,
         apiKey: session.codexApiKey,
         scope: "codex",
-        name: "Paseo Cloud",
+        name: CLOUD_NAME,
       }),
     );
   }
@@ -72,7 +73,7 @@ async function configureMissingManagedRoutes(session: ReturnType<typeof parseSub
         endpoint: session.endpoint,
         apiKey: session.apiKey,
         scope: "both",
-        name: "Paseo Cloud",
+        name: CLOUD_NAME,
       }),
     );
   }

@@ -25,6 +25,7 @@ import { SettingsSection } from "@/screens/settings/settings-section";
 import { ProvidersSection } from "@/screens/settings/providers-section";
 import { PairDeviceModal } from "@/desktop/components/pair-device-modal";
 import { LocalDaemonSection } from "@/desktop/components/desktop-updates-section";
+import { APP_NAME } from "@/config/branding";
 
 const RESTART_CONFIRMATION_MESSAGE =
   "This will restart the daemon. Agents running on it will keep going; the app will reconnect automatically.";
@@ -483,7 +484,7 @@ function RestartDaemonCard({ host }: { host: HostProfile }) {
     if (!isHostConnected()) {
       Alert.alert(
         "Host offline",
-        "This host is offline. Paseo reconnects automatically—wait until it's back online before restarting.",
+        `This host is offline. ${APP_NAME} reconnects automatically - wait until it's back online before restarting.`,
       );
       return;
     }
@@ -506,7 +507,7 @@ function RestartDaemonCard({ host }: { host: HostProfile }) {
             setIsRestarting(false);
             Alert.alert(
               "Error",
-              "Failed to send the restart request. Paseo reconnects automatically—try again once the host shows as online.",
+              `Failed to send the restart request. ${APP_NAME} reconnects automatically - try again once the host shows as online.`,
             );
           });
         void waitForDaemonRestart();
@@ -551,9 +552,9 @@ function InjectPaseoToolsCard({ serverId }: { serverId: string }) {
     <View style={settingsStyles.card} testID="host-page-inject-mcp-card">
       <View style={settingsStyles.row}>
         <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>Inject Paseo tools</Text>
+          <Text style={settingsStyles.rowTitle}>Inject {APP_NAME} tools</Text>
           <Text style={settingsStyles.rowHint}>
-            Automatically inject Paseo MCP tools into new agents
+            Automatically inject {APP_NAME} MCP tools into new agents
           </Text>
         </View>
         <SegmentedControl

@@ -12,6 +12,7 @@ import {
   hasExplicitManagedServiceUrlEnv,
   isManagedServiceUrlEnvValid,
 } from "@/config/managed-service-env";
+import { APP_NAME, CLOUD_NAME } from "@/config/branding";
 
 const styles = StyleSheet.create((theme) => ({
   root: {
@@ -179,9 +180,9 @@ export function LoginScreen() {
         <View style={styles.content}>
           <PaseoLogo size={96} />
           <View style={styles.copyBlock}>
-            <Text style={styles.title}>Sign in to Paseo</Text>
+            <Text style={styles.title}>Sign in to {APP_NAME}</Text>
             <Text style={styles.subtitle}>
-              Complete sign-in in your browser for Paseo Cloud. On first sign-in, Paseo tries to
+              Complete sign-in in your browser for {CLOUD_NAME}. On first sign-in, {APP_NAME} tries to
               configure any missing Claude Code and Codex routes for you without replacing routes
               that already exist on this device.
             </Text>

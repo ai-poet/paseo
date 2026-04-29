@@ -11,6 +11,7 @@ import { getDesktopDaemonLogs, type DesktopDaemonLogs } from "@/desktop/daemon/d
 import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
 import { isWeb } from "@/constants/platform";
 import { useWebScrollbarStyle } from "@/hooks/use-web-scrollbar-style";
+import { APP_NAME } from "@/config/branding";
 
 type StartupSplashScreenProps = {
   bootstrapState?: {
@@ -263,7 +264,7 @@ export function StartupSplashScreen({ bootstrapState }: StartupSplashScreenProps
         <TitlebarDragRegion />
         <View style={styles.centeredContent}>
           <PaseoLogo size={96} />
-          <Text style={styles.title}>Welcome to Paseo</Text>
+          <Text style={styles.title}>Welcome to {APP_NAME}</Text>
           <View style={styles.progressSteps}>
             {progressSteps.map((step) => (
               <View key={step.key} style={styles.progressStepRow}>

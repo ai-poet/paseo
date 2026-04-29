@@ -1,6 +1,7 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { app, BrowserWindow, Notification, ipcMain, nativeImage } from "electron";
+import { getDesktopBranding } from "../branding.js";
 
 type NotificationInput = {
   title?: unknown;
@@ -29,7 +30,11 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function getNotificationIcon(): Electron.NativeImage | null {
+  const desktopBranding = getDesktopBranding();
   const candidates = [
+    path.isAbsolute(desktopBranding.desktopIconPng)
+      ? desktopBranding.desktopIconPng
+      : path.resolve(__dirname, "..", desktopBranding.desktopIconPng),
     path.resolve(__dirname, "../assets/icon.png"),
     path.resolve(__dirname, "../assets/64x64.png"),
     path.resolve(__dirname, "../assets/128x128.png"),

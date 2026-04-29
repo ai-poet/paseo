@@ -48,11 +48,26 @@ vi.mock("react-native-unistyles", () => ({
   },
 }));
 
+vi.mock("lucide-react-native", () => ({
+  Cloud: (props: Record<string, unknown>) => React.createElement("span", props, "cloud"),
+}));
+
 vi.mock("react-native", () => {
+  const normalizeStyle = (style: unknown) => {
+    if (Array.isArray(style)) {
+      return Object.assign(
+        {},
+        ...style.filter((item) => typeof item === "object" && item !== null && !Array.isArray(item)),
+      );
+    }
+    return typeof style === "object" && style !== null ? style : undefined;
+  };
+
   const mapProps = (props: Record<string, unknown>) => {
-    const { testID, children, onPress, ...rest } = props;
+    const { testID, children, onPress, style, numberOfLines, ...rest } = props;
     return {
       ...rest,
+      ...(normalizeStyle(style) ? { style: normalizeStyle(style) } : {}),
       ...(typeof testID === "string" ? { "data-testid": testID } : {}),
       ...(typeof onPress === "function" ? { onClick: onPress } : {}),
       children,
@@ -73,6 +88,16 @@ vi.mock("react-native", () => {
 
 vi.mock("@/constants/layout", () => ({
   useIsCompactFormFactor: () => false,
+}));
+
+vi.mock("@/config/branding", () => ({
+  APP_NAME: "Paseo",
+  CLOUD_NAME: "Paseo Cloud",
+  DESKTOP_DEFAULT_KEY_NAME: "Paseo Desktop",
+}));
+
+vi.mock("expo-constants", () => ({
+  default: { expoConfig: { extra: { brand: { appName: "Paseo", cloudName: "Paseo Cloud" } } } },
 }));
 
 vi.mock("expo-router", () => ({
@@ -188,6 +213,19 @@ vi.mock("@/screens/settings/sub2api-models-section", () => ({
   Sub2APIModelsSection: () => React.createElement("div", null, "Model catalog section content"),
 }));
 
+vi.mock("@/screens/settings/paseo-cloud-referral-section", () => ({
+  PaseoCloudReferralSection: () => React.createElement("div", null, "Referral section content"),
+}));
+
+vi.mock("@/screens/settings/paseo-cloud-usage-section", () => ({
+  PaseoCloudUsageSection: () => React.createElement("div", null, "Usage section content"),
+}));
+
+vi.mock("@/screens/settings/paseo-cloud-model-status-section", () => ({
+  PaseoCloudModelStatusSection: () =>
+    React.createElement("div", null, "Model status section content"),
+}));
+
 vi.mock("@/screens/settings/sub2api-pay-modal", () => ({
   Sub2APIPayModal: () => null,
 }));
@@ -207,8 +245,8 @@ describe("PaseoCloudPanel", () => {
 
     expect(screen.queryByText("Signed in as alice")).not.toBeNull();
     expect(screen.queryByText("Current routes")).not.toBeNull();
-    expect(screen.queryByText("Anthropic Group")).not.toBeNull();
-    expect(screen.queryByText("OpenAI Group")).not.toBeNull();
+    expect(screen.queryByText(/Anthropic Group/)).not.toBeNull();
+    expect(screen.queryByText(/OpenAI Group/)).not.toBeNull();
 
     fireEvent.click(screen.getByTestId("paseo-cloud-section-keys"));
     expect(screen.queryByText("API keys section content")).not.toBeNull();
@@ -218,5 +256,11 @@ describe("PaseoCloudPanel", () => {
 
     fireEvent.click(screen.getByTestId("paseo-cloud-section-catalog"));
     expect(screen.queryByText("Model catalog section content")).not.toBeNull();
+
+    fireEvent.click(screen.getByTestId("paseo-cloud-section-usage"));
+    expect(screen.queryByText("Usage section content")).not.toBeNull();
+
+    fireEvent.click(screen.getByTestId("paseo-cloud-section-status"));
+    expect(screen.queryByText("Model status section content")).not.toBeNull();
   });
 });

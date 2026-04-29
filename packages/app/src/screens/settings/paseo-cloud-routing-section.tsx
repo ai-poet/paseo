@@ -9,6 +9,7 @@ import {
   useSub2APIGroupStatuses,
   useSub2APIKeys,
 } from "@/hooks/use-sub2api-api";
+import { CLOUD_NAME } from "@/config/branding";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { useDesktopProvidersStore } from "@/screens/settings/desktop-providers-context";
 import {
@@ -226,7 +227,7 @@ export function PaseoCloudRoutingSection({
         setActiveScope(resolved.scope);
         Alert.alert(
           "Moved to the matching tab",
-          `Group "${group.name}" belongs to ${targetMeta.cliLabel}. Paseo switched tabs for you so you can apply it there.`,
+          `Group "${group.name}" belongs to ${targetMeta.cliLabel}. ${CLOUD_NAME} switched tabs for you so you can apply it there.`,
         );
         return;
       }
@@ -305,7 +306,7 @@ export function PaseoCloudRoutingSection({
             <Text style={styles.emptyTitle}>No routing groups available</Text>
             <Text style={styles.emptyBody}>
               This account does not currently expose any {scopeMeta.platform} routing groups for{" "}
-              {scopeMeta.cliLabel}. Add a compatible group in Paseo Cloud, or use BYOK for this CLI.
+              {scopeMeta.cliLabel}. Add a compatible group in {CLOUD_NAME}, or use BYOK for this CLI.
             </Text>
             {alternateScopeGroups.length > 0 ? (
               <Pressable

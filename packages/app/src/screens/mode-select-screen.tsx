@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowRight, Cloud, KeyRound } from "lucide-react-native";
 import { PaseoLogo } from "@/components/icons/paseo-logo";
 import { useAppSettings, type AccessMode } from "@/hooks/use-settings";
+import { CLOUD_NAME } from "@/config/branding";
 
 const styles = StyleSheet.create((theme) => ({
   root: {
@@ -159,14 +160,14 @@ export function ModeSelectScreen() {
           <View style={styles.copyBlock}>
             <Text style={styles.title}>How do you want to connect?</Text>
             <Text style={styles.subtitle}>
-              Use Paseo Cloud, or bring your own API keys (BYOK) for model access.
+              Use {CLOUD_NAME}, or bring your own API keys (BYOK) for model access.
             </Text>
           </View>
 
           <View style={styles.cards}>
             <ModeCard
               icon={<Cloud size={20} color={theme.colors.accent} />}
-              title="Paseo Cloud"
+              title={CLOUD_NAME}
               description="Sign in for managed Claude Code / Codex routing, usage-based billing, and quick setup."
               metaText="Sign in · Recommended"
               metaAccent

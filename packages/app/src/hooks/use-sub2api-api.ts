@@ -6,15 +6,21 @@ import {
   type Sub2APICreateKeyRequest,
   type Sub2APIModelCatalog,
   type Sub2APIPaginatedData,
+  type Sub2APIGroupStatusHistoryPeriod,
   type Sub2APIUsagePeriod,
+  type Sub2APIUsageLogsQuery,
   type Sub2APIUsageStatsQuery,
   type Sub2APIUsageStats,
+  type Sub2APIUsageLog,
   type Sub2APIUser,
   type Sub2APIKey,
   type Sub2APIGroup,
   type Sub2APIClient,
   type Sub2APIUpdateKeyRequest,
   type Sub2APIGroupStatusItem,
+  type Sub2APIGroupStatusHistoryBucket,
+  type Sub2APIGroupStatusRecord,
+  type Sub2APIGroupStatusEvent,
   type Sub2APIReferralInfo,
   type Sub2APIUserReferral,
   type Sub2APIRedeemResult,
@@ -46,6 +52,16 @@ function normalizeUsageQuery(
     period: input.period ?? "today",
     apiKeyId: typeof input.apiKeyId === "number" ? input.apiKeyId : null,
     timezone: input.timezone?.trim() ?? "",
+    startDate: input.startDate?.trim() ?? "",
+    endDate: input.endDate?.trim() ?? "",
+  };
+}
+
+function normalizeUsageLogsQuery(input: Sub2APIUsageLogsQuery): Required<Sub2APIUsageLogsQuery> {
+  return {
+    page: typeof input.page === "number" ? input.page : 1,
+    pageSize: typeof input.pageSize === "number" ? input.pageSize : 20,
+    apiKeyId: typeof input.apiKeyId === "number" ? input.apiKeyId : null,
     startDate: input.startDate?.trim() ?? "",
     endDate: input.endDate?.trim() ?? "",
   };
@@ -94,6 +110,24 @@ export const cloudServiceQueryKeys = {
       normalized.endDate || "none",
     ] as const;
   },
+  usageLogs: (
+    endpoint: string | null | undefined,
+    sessionKey: string | null | undefined,
+    query: Sub2APIUsageLogsQuery,
+  ) => {
+    const normalized = normalizeUsageLogsQuery(query);
+    return [
+      CLOUD_SERVICE_QUERY_ROOT,
+      normalizeSessionKey(sessionKey),
+      normalizeEndpointKey(endpoint),
+      "usageLogs",
+      normalized.page,
+      normalized.pageSize,
+      normalized.apiKeyId ?? "all",
+      normalized.startDate || "none",
+      normalized.endDate || "none",
+    ] as const;
+  },
   models: (endpoint: string | null | undefined, sessionKey: string | null | undefined) =>
     [
       CLOUD_SERVICE_QUERY_ROOT,
@@ -107,6 +141,48 @@ export const cloudServiceQueryKeys = {
       normalizeSessionKey(sessionKey),
       normalizeEndpointKey(endpoint),
       "groupStatuses",
+    ] as const,
+  groupStatusHistory: (
+    endpoint: string | null | undefined,
+    sessionKey: string | null | undefined,
+    groupId: number | null | undefined,
+    period: Sub2APIGroupStatusHistoryPeriod,
+  ) =>
+    [
+      CLOUD_SERVICE_QUERY_ROOT,
+      normalizeSessionKey(sessionKey),
+      normalizeEndpointKey(endpoint),
+      "groupStatusHistory",
+      groupId ?? "none",
+      period,
+    ] as const,
+  groupStatusRecords: (
+    endpoint: string | null | undefined,
+    sessionKey: string | null | undefined,
+    groupId: number | null | undefined,
+    limit: number,
+  ) =>
+    [
+      CLOUD_SERVICE_QUERY_ROOT,
+      normalizeSessionKey(sessionKey),
+      normalizeEndpointKey(endpoint),
+      "groupStatusRecords",
+      groupId ?? "none",
+      limit,
+    ] as const,
+  groupStatusEvents: (
+    endpoint: string | null | undefined,
+    sessionKey: string | null | undefined,
+    groupId: number | null | undefined,
+    limit: number,
+  ) =>
+    [
+      CLOUD_SERVICE_QUERY_ROOT,
+      normalizeSessionKey(sessionKey),
+      normalizeEndpointKey(endpoint),
+      "groupStatusEvents",
+      groupId ?? "none",
+      limit,
     ] as const,
   referralInfo: (endpoint: string | null | undefined, sessionKey: string | null | undefined) =>
     [
@@ -218,6 +294,22 @@ export function useSub2APIUsageStats(
   });
 }
 
+export function useSub2APIUsageLogs(query: Sub2APIUsageLogsQuery, options?: { enabled?: boolean }) {
+  const { client, endpoint, sessionKey, isReady } = useSub2APIClient();
+  const normalizedQuery = useMemo(() => normalizeUsageLogsQuery(query), [query]);
+  return useQuery({
+    queryKey: cloudServiceQueryKeys.usageLogs(endpoint, sessionKey, normalizedQuery),
+    enabled: (options?.enabled ?? true) && isReady && client !== null,
+    staleTime: 15_000,
+    queryFn: async (): Promise<Sub2APIPaginatedData<Sub2APIUsageLog>> => {
+      if (!client) {
+        throw new Error("Service client is unavailable.");
+      }
+      return await client.listUsageLogs(normalizedQuery);
+    },
+  });
+}
+
 export function useSub2APIModelCatalog() {
   const { client, endpoint, sessionKey, isReady } = useSub2APIClient();
   return useQuery({
@@ -319,6 +411,63 @@ export function useSub2APIGroupStatuses() {
         throw new Error("Service client is unavailable.");
       }
       return await client.getGroupStatuses();
+    },
+  });
+}
+
+export function useSub2APIGroupStatusHistory(
+  groupId: number | null,
+  period: Sub2APIGroupStatusHistoryPeriod,
+  options?: { enabled?: boolean },
+) {
+  const { client, endpoint, sessionKey, isReady } = useSub2APIClient();
+  return useQuery({
+    queryKey: cloudServiceQueryKeys.groupStatusHistory(endpoint, sessionKey, groupId, period),
+    enabled: (options?.enabled ?? true) && groupId !== null && isReady && client !== null,
+    staleTime: 30_000,
+    queryFn: async (): Promise<Sub2APIGroupStatusHistoryBucket[]> => {
+      if (!client || groupId === null) {
+        throw new Error("Service client is unavailable.");
+      }
+      return await client.getGroupStatusHistory(groupId, period);
+    },
+  });
+}
+
+export function useSub2APIGroupStatusRecords(
+  groupId: number | null,
+  limit = 24,
+  options?: { enabled?: boolean },
+) {
+  const { client, endpoint, sessionKey, isReady } = useSub2APIClient();
+  return useQuery({
+    queryKey: cloudServiceQueryKeys.groupStatusRecords(endpoint, sessionKey, groupId, limit),
+    enabled: (options?.enabled ?? true) && groupId !== null && isReady && client !== null,
+    staleTime: 30_000,
+    queryFn: async (): Promise<Sub2APIGroupStatusRecord[]> => {
+      if (!client || groupId === null) {
+        throw new Error("Service client is unavailable.");
+      }
+      return await client.getGroupStatusRecords(groupId, limit);
+    },
+  });
+}
+
+export function useSub2APIGroupStatusEvents(
+  groupId: number | null,
+  limit = 20,
+  options?: { enabled?: boolean },
+) {
+  const { client, endpoint, sessionKey, isReady } = useSub2APIClient();
+  return useQuery({
+    queryKey: cloudServiceQueryKeys.groupStatusEvents(endpoint, sessionKey, groupId, limit),
+    enabled: (options?.enabled ?? true) && groupId !== null && isReady && client !== null,
+    staleTime: 30_000,
+    queryFn: async (): Promise<Sub2APIGroupStatusEvent[]> => {
+      if (!client || groupId === null) {
+        throw new Error("Service client is unavailable.");
+      }
+      return await client.getGroupStatusEvents(groupId, limit);
     },
   });
 }

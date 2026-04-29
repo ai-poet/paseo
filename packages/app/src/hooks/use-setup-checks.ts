@@ -17,6 +17,7 @@ import {
   resolveManagedCloudRouteForGroup,
   resolveManagedCloudRouteForKey,
 } from "@/screens/settings/managed-cloud-scope";
+import { CLOUD_NAME } from "@/config/branding";
 
 export type CheckStatus = "pending" | "checking" | "passed" | "failed" | "skipped";
 
@@ -167,7 +168,7 @@ export function describeManagedCloudAvailability(
     return {
       status: "failed",
       description: "Your current API keys are not bound to Claude Code or Codex compatible routes",
-      error: "Assign an anthropic or openai group in Paseo Cloud before continuing.",
+      error: `Assign an anthropic or openai group in ${CLOUD_NAME} before continuing.`,
       fixLabel: "Manage Routes",
     };
   }

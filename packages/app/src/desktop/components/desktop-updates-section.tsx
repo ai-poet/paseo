@@ -20,6 +20,7 @@ import {
 } from "@/desktop/daemon/desktop-daemon";
 import { useDaemonStatus } from "@/desktop/hooks/use-daemon-status";
 import { resolveAppVersion } from "@/utils/app-version";
+import { APP_NAME } from "@/config/branding";
 
 export function LocalDaemonSection() {
   const { theme } = useUnistyles();
@@ -279,7 +280,7 @@ export function LocalDaemonSection() {
                 <Text style={settingsStyles.rowHint}>
                   {isDaemonManagementPaused
                     ? "Paused. The built-in daemon stays stopped until you start it again."
-                    : "Enabled. Paseo can manage the built-in daemon from the desktop app."}
+                    : `Enabled. ${APP_NAME} can manage the built-in daemon from the desktop app.`}
                 </Text>
               </View>
               <Button

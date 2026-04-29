@@ -20,6 +20,7 @@ import { buildHostRootRoute } from "@/utils/host-routes";
 import { PaseoLogo } from "@/components/icons/paseo-logo";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { isWeb, isNative } from "@/constants/platform";
+import { APP_NAME } from "@/config/branding";
 
 type WelcomeAction = {
   key: "scan-qr" | "direct-connection" | "paste-pairing-link";
@@ -322,7 +323,7 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
         <View style={styles.content}>
           <PaseoLogo size={96} />
           <View style={styles.copyBlock}>
-            <Text style={styles.title}>Welcome to Paseo</Text>
+            <Text style={styles.title}>Welcome to {APP_NAME}</Text>
             {showHostList ? (
               <Text style={styles.subtitle}>Connecting to your hosts…</Text>
             ) : (

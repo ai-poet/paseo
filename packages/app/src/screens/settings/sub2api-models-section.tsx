@@ -6,6 +6,7 @@ import { settingsStyles } from "@/styles/settings";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { useSub2APIGroupStatuses, useSub2APIModelCatalog } from "@/hooks/use-sub2api-api";
 import { ModelCard } from "@/components/model-square/group-card";
+import { CLOUD_NAME } from "@/config/branding";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -35,7 +36,7 @@ export function Sub2APIModelsSection() {
     <SettingsSection title="Model catalog">
       {!isLoggedIn ? (
         <View style={[settingsStyles.card, styles.cardBody]}>
-          <Text style={styles.hintText}>Sign in to Paseo Cloud to browse the model catalog.</Text>
+          <Text style={styles.hintText}>Sign in to {CLOUD_NAME} to browse the model catalog.</Text>
         </View>
       ) : null}
 
