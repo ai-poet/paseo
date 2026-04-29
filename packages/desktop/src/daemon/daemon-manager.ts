@@ -559,8 +559,7 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
     restore_config: (args?: Record<string, unknown>) =>
       restoreConfig(args as unknown as ConfigBackup),
     open_provider_config_file: async (args?: Record<string, unknown>) => {
-      const target =
-        typeof args?.target === "string" ? args.target : "claude-settings";
+      const target = typeof args?.target === "string" ? args.target : "claude-settings";
       const paths = getProviderConfigPaths();
       const filePath =
         target === "codex-auth"

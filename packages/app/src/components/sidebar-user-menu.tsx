@@ -108,9 +108,13 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
         <DropdownMenuContent align="end" width={220}>
           {/* User info */}
           <View style={styles.userInfoSection}>
-            <Text style={styles.userName} numberOfLines={1}>{displayName}</Text>
+            <Text style={styles.userName} numberOfLines={1}>
+              {displayName}
+            </Text>
             {displayEmail ? (
-              <Text style={styles.userEmail} numberOfLines={1}>{displayEmail}</Text>
+              <Text style={styles.userEmail} numberOfLines={1}>
+                {displayEmail}
+              </Text>
             ) : null}
           </View>
 
@@ -125,7 +129,8 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
               </Text>
             </View>
             <Text style={styles.usageHint}>
-              Today: {formatUsd(usageTodayQuery.data?.total_cost)} ({usageTodayQuery.data?.total_requests ?? 0} req)
+              Today: {formatUsd(usageTodayQuery.data?.total_cost)} (
+              {usageTodayQuery.data?.total_requests ?? 0} req)
             </Text>
           </View>
 

@@ -106,7 +106,9 @@ describe("sub2api-client", () => {
     await client.getGroupStatusRecords(42, 12);
     await client.getGroupStatusEvents(42, 8);
 
-    const requestedUrls = fetchMock.mock.calls.map((call: [string, RequestInit?]) => call[0]);
+    const requestedUrls = (fetchMock.mock.calls as unknown as Array<[string, RequestInit?]>).map(
+      (call) => call[0],
+    );
     expect(requestedUrls).toEqual([
       "https://api.example.com/api/v1/group-status/42/history?period=7d",
       "https://api.example.com/api/v1/group-status/42/records?limit=12",

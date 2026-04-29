@@ -226,17 +226,17 @@ function selectWorkspaceStructureProjects(
     byProject.set(workspace.projectId, project);
   }
 
-  const projects = Array.from(byProject.values()).map(
-    ({ workspaceEntries, ...project }) => {
-      const sortedWorkspaces = [...workspaceEntries].sort(compareWorkspaceStructureItems);
+  const projects = Array.from(byProject.values()).map(({ workspaceEntries, ...project }) => {
+    const sortedWorkspaces = [...workspaceEntries].sort(compareWorkspaceStructureItems);
 
-      return {
-        ...project,
-        workspaceKeys: sortedWorkspaces.map((workspace) => workspace.workspaceId),
-        workspaces: sortedWorkspaces.map(({ workspaceKey: _workspaceKey, ...workspace }) => workspace),
-      };
-    },
-  );
+    return {
+      ...project,
+      workspaceKeys: sortedWorkspaces.map((workspace) => workspace.workspaceId),
+      workspaces: sortedWorkspaces.map(
+        ({ workspaceKey: _workspaceKey, ...workspace }) => workspace,
+      ),
+    };
+  });
 
   projects.sort(compareWorkspaceStructureProjects);
   return projects;

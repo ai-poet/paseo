@@ -182,8 +182,8 @@ export function LoginScreen() {
           <View style={styles.copyBlock}>
             <Text style={styles.title}>Sign in to {APP_NAME}</Text>
             <Text style={styles.subtitle}>
-              Complete sign-in in your browser for {CLOUD_NAME}. On first sign-in, {APP_NAME} tries to
-              configure any missing Claude Code and Codex routes for you without replacing routes
+              Complete sign-in in your browser for {CLOUD_NAME}. On first sign-in, {APP_NAME} tries
+              to configure any missing Claude Code and Codex routes for you without replacing routes
               that already exist on this device.
             </Text>
           </View>

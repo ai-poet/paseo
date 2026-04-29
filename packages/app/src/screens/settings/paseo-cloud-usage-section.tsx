@@ -5,11 +5,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { CLOUD_NAME } from "@/config/branding";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
-import {
-  useSub2APIKeys,
-  useSub2APIUsageLogs,
-  useSub2APIUsageStats,
-} from "@/hooks/use-sub2api-api";
+import { useSub2APIKeys, useSub2APIUsageLogs, useSub2APIUsageStats } from "@/hooks/use-sub2api-api";
 import type { Sub2APIKey, Sub2APIUsageLog, Sub2APIUsageLogsQuery } from "@/lib/sub2api-client";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { formatUsd, getErrorMessage } from "@/screens/settings/managed-provider-settings-shared";

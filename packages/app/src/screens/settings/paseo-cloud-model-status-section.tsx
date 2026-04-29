@@ -313,7 +313,9 @@ function DetailPanel({
     <View style={[settingsStyles.card, styles.cardBody]}>
       <View style={styles.detailHeader}>
         <View>
-          <Text style={styles.cardTitle}>{selected.group_name || `Group #${selected.group_id}`}</Text>
+          <Text style={styles.cardTitle}>
+            {selected.group_name || `Group #${selected.group_id}`}
+          </Text>
           <Text style={styles.hintText}>History, recent probe records, and status events.</Text>
         </View>
         <SegmentedControl

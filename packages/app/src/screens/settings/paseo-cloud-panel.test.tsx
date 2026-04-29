@@ -57,7 +57,9 @@ vi.mock("react-native", () => {
     if (Array.isArray(style)) {
       return Object.assign(
         {},
-        ...style.filter((item) => typeof item === "object" && item !== null && !Array.isArray(item)),
+        ...style.filter(
+          (item) => typeof item === "object" && item !== null && !Array.isArray(item),
+        ),
       );
     }
     return typeof style === "object" && style !== null ? style : undefined;

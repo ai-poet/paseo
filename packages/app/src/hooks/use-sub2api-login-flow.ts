@@ -5,7 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { useSub2APIAuth, type Sub2APIAuthState } from "@/hooks/use-sub2api-auth";
-import { buildSub2APILoginBridgeUrl, isValidSub2APIEndpoint } from "@/screens/settings/sub2api-auth-bridge";
+import {
+  buildSub2APILoginBridgeUrl,
+  isValidSub2APIEndpoint,
+} from "@/screens/settings/sub2api-auth-bridge";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

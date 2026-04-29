@@ -139,13 +139,7 @@ function CheckIcon({ status }: { status: CheckItem["status"] }) {
   }
 }
 
-function CheckRow({
-  item,
-  onFix,
-}: {
-  item: CheckItem;
-  onFix: (id: CheckItem["id"]) => void;
-}) {
+function CheckRow({ item, onFix }: { item: CheckItem; onFix: (id: CheckItem["id"]) => void }) {
   return (
     <View style={styles.checkCard}>
       <View style={styles.checkIconBox}>
@@ -231,9 +225,7 @@ export function SetupCheckScreen() {
               onPress={handleContinue}
               disabled={!allPassed}
             >
-              <Text style={styles.continueBtnText}>
-                {allPassed ? "Continue" : "Continue"}
-              </Text>
+              <Text style={styles.continueBtnText}>{allPassed ? "Continue" : "Continue"}</Text>
             </Pressable>
             <Pressable style={styles.skipBtn} onPress={handleSkip}>
               <Text style={styles.skipBtnText}>Skip</Text>

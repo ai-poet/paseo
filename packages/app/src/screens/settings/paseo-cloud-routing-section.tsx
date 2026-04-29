@@ -306,7 +306,8 @@ export function PaseoCloudRoutingSection({
             <Text style={styles.emptyTitle}>No routing groups available</Text>
             <Text style={styles.emptyBody}>
               This account does not currently expose any {scopeMeta.platform} routing groups for{" "}
-              {scopeMeta.cliLabel}. Add a compatible group in {CLOUD_NAME}, or use BYOK for this CLI.
+              {scopeMeta.cliLabel}. Add a compatible group in {CLOUD_NAME}, or use BYOK for this
+              CLI.
             </Text>
             {alternateScopeGroups.length > 0 ? (
               <Pressable

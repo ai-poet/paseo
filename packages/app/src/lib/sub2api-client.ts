@@ -377,9 +377,7 @@ export interface Sub2APIClient {
   deleteKey: (id: number) => Promise<void>;
   getAvailableGroups: () => Promise<Sub2APIGroup[]>;
   getModelCatalog: () => Promise<Sub2APIModelCatalog>;
-  listUsageLogs: (
-    query?: Sub2APIUsageLogsQuery,
-  ) => Promise<Sub2APIPaginatedData<Sub2APIUsageLog>>;
+  listUsageLogs: (query?: Sub2APIUsageLogsQuery) => Promise<Sub2APIPaginatedData<Sub2APIUsageLog>>;
   getUsageStats: (query: Sub2APIUsagePeriod | Sub2APIUsageStatsQuery) => Promise<Sub2APIUsageStats>;
   getGroupStatuses: () => Promise<Sub2APIGroupStatusItem[]>;
   getGroupStatusHistory: (
