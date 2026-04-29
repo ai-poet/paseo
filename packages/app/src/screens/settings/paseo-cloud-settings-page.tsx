@@ -6,8 +6,11 @@ import { SettingsSection } from "@/screens/settings/settings-section";
 import { PaseoCloudPanel } from "@/screens/settings/paseo-cloud-panel";
 import { CLOUD_NAME } from "@/config/branding";
 import { isPaseoCloudTab } from "@/utils/host-routes";
+import { getSub2APIMessages } from "@/i18n/sub2api";
 
-export function PaseoCloudSettingsPage() {
+type SettingsText = ReturnType<typeof getSub2APIMessages>["settings"];
+
+export function PaseoCloudSettingsPage({ text }: { text: SettingsText }) {
   const { theme } = useUnistyles();
   const params = useLocalSearchParams<{ tab?: string | string[] }>();
   const rawTab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
@@ -23,8 +26,7 @@ export function PaseoCloudSettingsPage() {
               fontSize: theme.fontSize.sm,
             }}
           >
-            Account sign-in, balance, routing groups, API keys, and the model catalog for the
-            managed service. This is separate from the on-device Claude/Codex routes under Provider.
+            {text.paseoCloudBody}
           </Text>
         </View>
       </SettingsSection>

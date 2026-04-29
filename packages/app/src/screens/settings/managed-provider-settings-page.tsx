@@ -4,21 +4,22 @@ import { settingsStyles } from "@/styles/settings";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { DesktopProvidersPanel } from "@/screens/settings/desktop-providers-panel";
 import { CLOUD_NAME } from "@/config/branding";
+import { getSub2APIMessages } from "@/i18n/sub2api";
 
-export function ManagedProviderSettingsPage() {
+type SettingsText = ReturnType<typeof getSub2APIMessages>["settings"];
+
+export function ManagedProviderSettingsPage({ text }: { text: SettingsText }) {
   const { theme } = useUnistyles();
 
   return (
     <View testID="managed-provider-settings">
-      <SettingsSection title="This device">
+      <SettingsSection title={text.managedProviderTitle}>
         <View style={[settingsStyles.card, { padding: theme.spacing[4], gap: theme.spacing[2] }]}>
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm }}>
-            Active Claude Code and Codex API routes on this computer, plus saved and custom
-            endpoints. You can point each CLI at a different saved entry.
+            {text.managedProviderBody}
           </Text>
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs }}>
-            {CLOUD_NAME} (account, keys, billing) lives in the sidebar under{" "}
-            <Text style={{ fontWeight: theme.fontWeight.medium }}>{CLOUD_NAME}</Text>.
+            {text.managedProviderCloudHint(CLOUD_NAME)}
           </Text>
         </View>
       </SettingsSection>

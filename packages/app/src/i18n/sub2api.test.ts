@@ -57,5 +57,7 @@ describe("sub2api i18n helpers", () => {
     expect(getSub2APIMessages("en").pay.addBalance).toBe("Add balance");
     expect(getSub2APIMessages("zh").modelCatalog.title).toBe("模型广场");
     expect(getSub2APIMessages("en").modelCatalog.title).toBe("Model catalog");
+    expect(getSub2APIMessages("zh").settings.sections.general).toBe("通用");
+    expect(getSub2APIMessages("en").settings.sections.general).toBe("General");
   });
 });

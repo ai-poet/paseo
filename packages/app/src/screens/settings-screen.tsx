@@ -68,7 +68,8 @@ import { PaseoCloudSettingsPage } from "@/screens/settings/paseo-cloud-settings-
 import { DesktopProvidersStoreProvider } from "@/screens/settings/desktop-providers-context";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
-import { APP_NAME, CLOUD_NAME } from "@/config/branding";
+import { APP_NAME } from "@/config/branding";
+import { getSub2APIMessages, resolveSub2APILocaleFromPreference } from "@/i18n/sub2api";
 import {
   buildHostOpenProjectRoute,
   buildSettingsHostRoute,
@@ -87,21 +88,43 @@ export type SettingsView =
 
 interface SidebarSectionItem {
   id: SettingsSectionSlug;
-  label: string;
   icon: ComponentType<{ size: number; color: string }>;
   desktopOnly?: boolean;
 }
 
 const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
-  { id: "general", label: "General", icon: Settings },
-  { id: "paseo-cloud", label: CLOUD_NAME, icon: Cloud, desktopOnly: true },
-  { id: "managed-provider", label: "Provider", icon: Server, desktopOnly: true },
-  { id: "shortcuts", label: "Shortcuts", icon: Keyboard, desktopOnly: true },
-  { id: "integrations", label: "Integrations", icon: Puzzle, desktopOnly: true },
-  { id: "permissions", label: "Permissions", icon: Shield, desktopOnly: true },
-  { id: "diagnostics", label: "Diagnostics", icon: Stethoscope },
-  { id: "about", label: "About", icon: Info },
+  { id: "general", icon: Settings },
+  { id: "paseo-cloud", icon: Cloud, desktopOnly: true },
+  { id: "managed-provider", icon: Server, desktopOnly: true },
+  { id: "shortcuts", icon: Keyboard, desktopOnly: true },
+  { id: "integrations", icon: Puzzle, desktopOnly: true },
+  { id: "permissions", icon: Shield, desktopOnly: true },
+  { id: "diagnostics", icon: Stethoscope },
+  { id: "about", icon: Info },
 ];
+
+type SettingsText = ReturnType<typeof getSub2APIMessages>["settings"];
+
+function getSettingsSectionLabel(section: SettingsSectionSlug, text: SettingsText): string {
+  switch (section) {
+    case "general":
+      return text.sections.general;
+    case "paseo-cloud":
+      return text.sections.paseoCloud;
+    case "managed-provider":
+      return text.sections.managedProvider;
+    case "shortcuts":
+      return text.sections.shortcuts;
+    case "integrations":
+      return text.sections.integrations;
+    case "permissions":
+      return text.sections.permissions;
+    case "diagnostics":
+      return text.sections.diagnostics;
+    case "about":
+      return text.sections.about;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Theme helpers (General section)
@@ -143,21 +166,7 @@ function ThemeSwatch({ color, size }: { color: string; size: number }) {
   );
 }
 
-const THEME_LABELS: Record<AppSettings["theme"], string> = {
-  light: "Light",
-  dark: "Dark",
-  zinc: "Zinc",
-  midnight: "Midnight",
-  claude: "Claude",
-  ghostty: "Ghostty",
-  auto: "System",
-};
-
-const LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [
-  { value: "auto", label: "System" },
-  { value: "zh", label: "中文" },
-  { value: "en", label: "English" },
-];
+const LANGUAGE_VALUES: AppLanguage[] = ["auto", "zh", "en"];
 
 // ---------------------------------------------------------------------------
 // Section components
@@ -165,6 +174,7 @@ const LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [
 
 interface GeneralSectionProps {
   settings: AppSettings;
+  text: SettingsText;
   handleThemeChange: (theme: AppSettings["theme"]) => void;
   handleLanguageChange: (language: AppLanguage) => void;
   handleSendBehaviorChange: (behavior: SendBehavior) => void;
@@ -172,6 +182,7 @@ interface GeneralSectionProps {
 
 function GeneralSection({
   settings,
+  text,
   handleThemeChange,
   handleLanguageChange,
   handleSendBehaviorChange,
@@ -181,18 +192,18 @@ function GeneralSection({
   const iconColor = theme.colors.foregroundMuted;
 
   return (
-    <SettingsSection title="General">
+    <SettingsSection title={text.general}>
       <View style={settingsStyles.card}>
         <View style={settingsStyles.row}>
           <View style={settingsStyles.rowContent}>
-            <Text style={settingsStyles.rowTitle}>Theme</Text>
+            <Text style={settingsStyles.rowTitle}>{text.theme}</Text>
           </View>
           <DropdownMenu>
             <DropdownMenuTrigger
               style={({ pressed }) => [styles.themeTrigger, pressed && { opacity: 0.85 }]}
             >
               <ThemeIcon theme={settings.theme} size={iconSize} color={iconColor} />
-              <Text style={styles.themeTriggerText}>{THEME_LABELS[settings.theme]}</Text>
+              <Text style={styles.themeTriggerText}>{text.themes[settings.theme]}</Text>
               <ChevronDown size={theme.iconSize.sm} color={iconColor} />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="bottom" align="end" width={200}>
@@ -203,7 +214,7 @@ function GeneralSection({
                   onSelect={() => handleThemeChange(t)}
                   leading={<ThemeIcon theme={t} size={iconSize} color={iconColor} />}
                 >
-                  {THEME_LABELS[t]}
+                  {text.themes[t]}
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
@@ -214,7 +225,7 @@ function GeneralSection({
                   onSelect={() => handleThemeChange(t)}
                   leading={<ThemeIcon theme={t} size={iconSize} color={iconColor} />}
                 >
-                  {THEME_LABELS[t]}
+                  {text.themes[t]}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -222,32 +233,28 @@ function GeneralSection({
         </View>
         <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
           <View style={settingsStyles.rowContent}>
-            <Text style={settingsStyles.rowTitle}>Language</Text>
-            <Text style={settingsStyles.rowHint}>
-              Used for Paseo Cloud, payments, and the model catalog
-            </Text>
+            <Text style={settingsStyles.rowTitle}>{text.language}</Text>
+            <Text style={settingsStyles.rowHint}>{text.languageHint}</Text>
           </View>
           <SegmentedControl
             size="sm"
             value={settings.language}
             onValueChange={handleLanguageChange}
-            options={LANGUAGE_OPTIONS}
+            options={LANGUAGE_VALUES.map((value) => ({ value, label: text.languages[value] }))}
           />
         </View>
         <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
           <View style={settingsStyles.rowContent}>
-            <Text style={settingsStyles.rowTitle}>Default send</Text>
-            <Text style={settingsStyles.rowHint}>
-              What happens when you press Enter while the agent is running
-            </Text>
+            <Text style={settingsStyles.rowTitle}>{text.defaultSend}</Text>
+            <Text style={settingsStyles.rowHint}>{text.defaultSendHint}</Text>
           </View>
           <SegmentedControl
             size="sm"
             value={settings.sendBehavior}
             onValueChange={handleSendBehaviorChange}
             options={[
-              { value: "interrupt", label: "Interrupt" },
-              { value: "queue", label: "Queue" },
+              { value: "interrupt", label: text.interrupt },
+              { value: "queue", label: text.queue },
             ]}
           />
         </View>
@@ -257,6 +264,7 @@ function GeneralSection({
 }
 
 interface DiagnosticsSectionProps {
+  text: SettingsText;
   voiceAudioEngine: ReturnType<typeof useVoiceAudioEngineOptional>;
   isPlaybackTestRunning: boolean;
   playbackTestResult: string | null;
@@ -264,17 +272,18 @@ interface DiagnosticsSectionProps {
 }
 
 function DiagnosticsSection({
+  text,
   voiceAudioEngine,
   isPlaybackTestRunning,
   playbackTestResult,
   handlePlaybackTest,
 }: DiagnosticsSectionProps) {
   return (
-    <SettingsSection title="Diagnostics">
+    <SettingsSection title={text.diagnostics}>
       <View style={settingsStyles.card}>
         <View style={settingsStyles.row}>
           <View style={settingsStyles.rowContent}>
-            <Text style={settingsStyles.rowTitle}>Test audio</Text>
+            <Text style={settingsStyles.rowTitle}>{text.testAudio}</Text>
             {playbackTestResult ? (
               <Text style={settingsStyles.rowHint}>{playbackTestResult}</Text>
             ) : null}
@@ -285,7 +294,7 @@ function DiagnosticsSection({
             onPress={() => void handlePlaybackTest()}
             disabled={!voiceAudioEngine || isPlaybackTestRunning}
           >
-            {isPlaybackTestRunning ? "Playing..." : "Play test"}
+            {isPlaybackTestRunning ? text.playing : text.playTest}
           </Button>
         </View>
       </View>
@@ -294,27 +303,28 @@ function DiagnosticsSection({
 }
 
 interface AboutSectionProps {
+  text: SettingsText;
   appVersionText: string;
   isDesktopApp: boolean;
 }
 
-function AboutSection({ appVersionText, isDesktopApp }: AboutSectionProps) {
+function AboutSection({ text, appVersionText, isDesktopApp }: AboutSectionProps) {
   return (
-    <SettingsSection title="About">
+    <SettingsSection title={text.about}>
       <View style={settingsStyles.card}>
         <View style={settingsStyles.row}>
           <View style={settingsStyles.rowContent}>
-            <Text style={settingsStyles.rowTitle}>Version</Text>
+            <Text style={settingsStyles.rowTitle}>{text.version}</Text>
           </View>
           <Text style={styles.aboutValue}>{appVersionText}</Text>
         </View>
-        {isDesktopApp ? <DesktopAppUpdateRow /> : null}
+        {isDesktopApp ? <DesktopAppUpdateRow text={text} /> : null}
       </View>
     </SettingsSection>
   );
 }
 
-function DesktopAppUpdateRow() {
+function DesktopAppUpdateRow({ text }: { text: SettingsText }) {
   const { settings, updateSettings } = useAppSettings();
   const {
     isDesktopApp,
@@ -357,10 +367,10 @@ function DesktopAppUpdateRow() {
     }
 
     void confirmDialog({
-      title: "Install desktop update",
-      message: `This updates ${APP_NAME} on this computer`,
-      confirmLabel: "Install update",
-      cancelLabel: "Cancel",
+      title: text.installDesktopUpdate,
+      message: text.installDesktopUpdateMessage(APP_NAME),
+      confirmLabel: text.installUpdate,
+      cancelLabel: text.cancel,
     })
       .then((confirmed) => {
         if (!confirmed) {
@@ -370,9 +380,9 @@ function DesktopAppUpdateRow() {
       })
       .catch((error) => {
         console.error("[Settings] Failed to open app update confirmation", error);
-        Alert.alert("Error", "Unable to open the update confirmation dialog.");
+        Alert.alert(text.error, text.unableOpenUpdateConfirmation);
       });
-  }, [installUpdate, isDesktopApp]);
+  }, [installUpdate, isDesktopApp, text]);
 
   if (!isDesktopApp) {
     return null;
@@ -382,28 +392,26 @@ function DesktopAppUpdateRow() {
     <>
       <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
         <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>Release channel</Text>
-          <Text style={settingsStyles.rowHint}>
-            Switch to Beta to get updates sooner and help shape them
-          </Text>
+          <Text style={settingsStyles.rowTitle}>{text.releaseChannel}</Text>
+          <Text style={settingsStyles.rowHint}>{text.releaseChannelHint}</Text>
         </View>
         <SegmentedControl
           size="sm"
           value={settings.releaseChannel}
           onValueChange={handleReleaseChannelChange}
           options={[
-            { value: "stable", label: "Stable" },
-            { value: "beta", label: "Beta" },
+            { value: "stable", label: text.stable },
+            { value: "beta", label: text.beta },
           ]}
         />
       </View>
       <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
         <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>App updates</Text>
+          <Text style={settingsStyles.rowTitle}>{text.appUpdates}</Text>
           <Text style={settingsStyles.rowHint}>{statusText}</Text>
           {availableUpdate?.latestVersion ? (
             <Text style={settingsStyles.rowHint}>
-              Ready to install: {formatVersionWithPrefix(availableUpdate.latestVersion)}
+              {text.readyToInstall(formatVersionWithPrefix(availableUpdate.latestVersion))}
             </Text>
           ) : null}
           {errorMessage ? <Text style={styles.aboutErrorText}>{errorMessage}</Text> : null}
@@ -415,7 +423,7 @@ function DesktopAppUpdateRow() {
             onPress={handleCheckForUpdates}
             disabled={isChecking || isInstalling}
           >
-            {isChecking ? "Checking..." : "Check"}
+            {isChecking ? text.checking : text.check}
           </Button>
           <Button
             variant="default"
@@ -424,10 +432,10 @@ function DesktopAppUpdateRow() {
             disabled={isChecking || isInstalling || !availableUpdate}
           >
             {isInstalling
-              ? "Installing..."
+              ? text.installing
               : availableUpdate?.latestVersion
-                ? `Update to ${formatVersionWithPrefix(availableUpdate.latestVersion)}`
-                : "Update"}
+                ? text.updateTo(formatVersionWithPrefix(availableUpdate.latestVersion))
+                : text.update}
           </Button>
         </View>
       </View>
@@ -465,6 +473,7 @@ function useAnyOnlineHostServerId(serverIds: string[]): string | null {
 
 interface SettingsSidebarProps {
   view: SettingsView;
+  text: SettingsText;
   onSelectSection: (section: SettingsSectionSlug) => void;
   onSelectHost: (serverId: string) => void;
   onAddHost: () => void;
@@ -474,6 +483,7 @@ interface SettingsSidebarProps {
 
 function SettingsSidebar({
   view,
+  text,
   onSelectSection,
   onSelectHost,
   onAddHost,
@@ -515,7 +525,7 @@ function SettingsSidebar({
       {isDesktop ? (
         <SidebarHeaderRow
           icon={ArrowLeft}
-          label="Back"
+          label={text.back}
           onPress={onBackToWorkspace}
           testID="settings-back-to-workspace"
         />
@@ -544,7 +554,7 @@ function SettingsSidebar({
                 style={[sidebarStyles.label, isSelected && { color: theme.colors.foreground }]}
                 numberOfLines={1}
               >
-                {item.label}
+                {getSettingsSectionLabel(item.id, text)}
               </Text>
             </Pressable>
           );
@@ -580,7 +590,7 @@ function SettingsSidebar({
               </Text>
               {isLocal ? (
                 <Text style={sidebarStyles.localMarker} testID="settings-host-local-marker">
-                  Local
+                  {text.local}
                 </Text>
               ) : null}
             </Pressable>
@@ -588,7 +598,7 @@ function SettingsSidebar({
         })}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Add host"
+          accessibilityLabel={text.addHost}
           onPress={onAddHost}
           testID="settings-add-host"
           style={({ hovered = false }) => [
@@ -598,7 +608,7 @@ function SettingsSidebar({
         >
           <Plus size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
           <Text style={sidebarStyles.label} numberOfLines={1}>
-            Add host
+            {text.addHost}
           </Text>
         </Pressable>
       </View>
@@ -619,6 +629,11 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
   const { theme } = useUnistyles();
   const voiceAudioEngine = useVoiceAudioEngineOptional();
   const { settings, isLoading: settingsLoading, updateSettings } = useAppSettings();
+  const appLocale = useMemo(
+    () => resolveSub2APILocaleFromPreference(settings.language),
+    [settings.language],
+  );
+  const settingsText = useMemo(() => getSub2APIMessages(appLocale).settings, [appLocale]);
   const [isAddHostMethodVisible, setIsAddHostMethodVisible] = useState(false);
   const [isDirectHostVisible, setIsDirectHostVisible] = useState(false);
   const [isPasteLinkVisible, setIsPasteLinkVisible] = useState(false);
@@ -677,11 +692,11 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("[Settings] Playback test failed", error);
-      setPlaybackTestResult(`Playback failed: ${message}`);
+      setPlaybackTestResult(settingsText.playbackFailed(message));
     } finally {
       setIsPlaybackTestRunning(false);
     }
-  }, [isPlaybackTestRunning, voiceAudioEngine]);
+  }, [isPlaybackTestRunning, settingsText, voiceAudioEngine]);
 
   const closeAddConnectionFlow = useCallback(() => {
     setIsAddHostMethodVisible(false);
@@ -789,7 +804,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
     if (view.kind === "section") {
       const item = SIDEBAR_SECTION_ITEMS.find((s) => s.id === view.section);
       if (!item) return null;
-      return { title: item.label, Icon: item.icon };
+      return { title: getSettingsSectionLabel(item.id, settingsText), Icon: item.icon };
     }
     return null;
   })();
@@ -804,15 +819,16 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
           return (
             <GeneralSection
               settings={settings}
+              text={settingsText}
               handleThemeChange={handleThemeChange}
               handleLanguageChange={handleLanguageChange}
               handleSendBehaviorChange={handleSendBehaviorChange}
             />
           );
         case "paseo-cloud":
-          return isDesktopApp ? <PaseoCloudSettingsPage /> : null;
+          return isDesktopApp ? <PaseoCloudSettingsPage text={settingsText} /> : null;
         case "managed-provider":
-          return isDesktopApp ? <ManagedProviderSettingsPage /> : null;
+          return isDesktopApp ? <ManagedProviderSettingsPage text={settingsText} /> : null;
         case "shortcuts":
           return isDesktopApp ? <KeyboardShortcutsSection /> : null;
         case "integrations":
@@ -822,6 +838,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
         case "diagnostics":
           return (
             <DiagnosticsSection
+              text={settingsText}
               voiceAudioEngine={voiceAudioEngine}
               isPlaybackTestRunning={isPlaybackTestRunning}
               playbackTestResult={playbackTestResult}
@@ -829,7 +846,13 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
             />
           );
         case "about":
-          return <AboutSection appVersionText={appVersionText} isDesktopApp={isDesktopApp} />;
+          return (
+            <AboutSection
+              text={settingsText}
+              appVersionText={appVersionText}
+              isDesktopApp={isDesktopApp}
+            />
+          );
       }
     }
     return null;
@@ -849,7 +872,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
   if (settingsLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading settings...</Text>
+        <Text style={styles.loadingText}>{settingsText.loadingSettings}</Text>
       </View>
     );
   }
@@ -888,13 +911,14 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
   if (isCompactLayout && view.kind === "root") {
     return (
       <View style={styles.container}>
-        <BackHeader title="Settings" onBack={handleBackToWorkspace} />
+        <BackHeader title={settingsText.title} onBack={handleBackToWorkspace} />
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={{ paddingBottom: insets.bottom }}
         >
           <SettingsSidebar
             view={view}
+            text={settingsText}
             onSelectSection={handleSelectSection}
             onSelectHost={handleSelectHost}
             onAddHost={handleAddHost}
@@ -935,6 +959,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
       <View style={desktopStyles.row}>
         <SettingsSidebar
           view={view}
+          text={settingsText}
           onSelectSection={handleSelectSection}
           onSelectHost={handleSelectHost}
           onAddHost={handleAddHost}

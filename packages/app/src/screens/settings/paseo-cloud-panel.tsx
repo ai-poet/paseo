@@ -1,5 +1,4 @@
-import React from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useUnistyles } from "react-native-unistyles";
@@ -37,10 +36,10 @@ type PaseoCloudSection =
   | "status"
   | "referral";
 
-const SECTION_OPTIONS: Array<{
+const SECTION_OPTIONS: {
   id: PaseoCloudSection;
   testID: string;
-}> = [
+}[] = [
   { id: "overview", testID: "paseo-cloud-section-overview" },
   { id: "keys", testID: "paseo-cloud-section-keys" },
   { id: "routing", testID: "paseo-cloud-section-routing" },

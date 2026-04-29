@@ -401,11 +401,12 @@ export function Sub2APIPayModal({
   const statusDescriptor = currentOrderStatus
     ? describeOrderStatus(currentOrderStatus, clientLocale)
     : null;
-  const timeRemaining = useMemo(
-    () =>
-      currentOrderStatus ? formatTimeRemaining(currentOrderStatus.expiresAt, text.expired) : "--",
-    [countdownTick, currentOrderStatus, text.expired],
-  );
+  const timeRemaining = useMemo(() => {
+    void countdownTick;
+    return currentOrderStatus
+      ? formatTimeRemaining(currentOrderStatus.expiresAt, text.expired)
+      : "--";
+  }, [countdownTick, currentOrderStatus, text.expired]);
 
   const resetOrderState = useCallback(() => {
     setActiveOrder(null);
