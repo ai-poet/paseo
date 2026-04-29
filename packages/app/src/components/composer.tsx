@@ -854,11 +854,11 @@ export function Composer({
   const leftContent = useMemo(
     () =>
       resolveStatusControlMode(statusControls) === "draft" && statusControls ? (
-        <DraftAgentStatusBar {...statusControls} />
+        <DraftAgentStatusBar {...statusControls} serverId={serverId} cwd={cwd} />
       ) : (
         <AgentStatusBar agentId={agentId} serverId={serverId} onDropdownClose={focusInput} />
       ),
-    [agentId, focusInput, serverId, statusControls],
+    [agentId, cwd, focusInput, serverId, statusControls],
   );
 
   const handleAttachButtonRef = useCallback((node: View | null) => {

@@ -1,5 +1,5 @@
 import React from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useUnistyles } from "react-native-unistyles";
@@ -35,11 +35,19 @@ type PaseoCloudSection =
   | "status"
   | "referral";
 
-const SECTION_OPTIONS: Array<{ id: PaseoCloudSection; label: string; testID: string }> = [
+const SECTION_OPTIONS: Array<{
+  id: PaseoCloudSection;
+  label: string;
+  testID: string;
+}> = [
   { id: "overview", label: "Overview", testID: "paseo-cloud-section-overview" },
   { id: "keys", label: "API Keys", testID: "paseo-cloud-section-keys" },
   { id: "routing", label: "Routing", testID: "paseo-cloud-section-routing" },
-  { id: "catalog", label: "Model Catalog", testID: "paseo-cloud-section-catalog" },
+  {
+    id: "catalog",
+    label: "Model Catalog",
+    testID: "paseo-cloud-section-catalog",
+  },
   { id: "usage", label: "Usage", testID: "paseo-cloud-section-usage" },
   { id: "status", label: "Model Status", testID: "paseo-cloud-section-status" },
   { id: "referral", label: "Referral", testID: "paseo-cloud-section-referral" },
@@ -177,6 +185,9 @@ function PaseoCloudOverviewSection(props: {
   usageMonthCost: number | null | undefined;
   usageMonthRequests: number | null | undefined;
   routeCards: RouteUsageCard[];
+  onOpenKeys: () => void;
+  onOpenRouting: () => void;
+  onOpenCatalog: () => void;
 }) {
   const { theme } = useUnistyles();
 
@@ -233,6 +244,41 @@ function PaseoCloudOverviewSection(props: {
       </SettingsSection>
 
       {props.isLoggedIn ? (
+        <SettingsSection title="Cloud control">
+          <View style={[settingsStyles.card, styles.cardBody]}>
+            <Text style={styles.sectionHint}>
+              Choose a Cloud group/route first; {CLOUD_NAME} will create or reuse an API key when a
+              route needs one. Existing running agents keep their current route, and new sessions
+              pick up changes from the model selector.
+            </Text>
+            <View style={styles.scopeActionsRow}>
+              <Pressable
+                onPress={props.onOpenKeys}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+                testID="paseo-cloud-overview-open-keys"
+              >
+                <Text style={styles.secondaryButtonText}>Create API key</Text>
+              </Pressable>
+              <Pressable
+                onPress={props.onOpenRouting}
+                style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
+                testID="paseo-cloud-overview-open-routing"
+              >
+                <Text style={styles.primaryButtonText}>Switch group</Text>
+              </Pressable>
+              <Pressable
+                onPress={props.onOpenCatalog}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+                testID="paseo-cloud-overview-open-catalog"
+              >
+                <Text style={styles.secondaryButtonText}>View models</Text>
+              </Pressable>
+            </View>
+          </View>
+        </SettingsSection>
+      ) : null}
+
+      {props.isLoggedIn ? (
         <SettingsSection title="Balance & usage">
           <View style={[settingsStyles.card, styles.cardBody]}>
             {props.meError ? (
@@ -287,16 +333,24 @@ function PaseoCloudOverviewSection(props: {
   );
 }
 
-export function PaseoCloudPanel() {
+export function PaseoCloudPanel({ initialSection }: { initialSection?: PaseoCloudSection } = {}) {
   const router = useRouter();
   const isCompact = useIsCompactFormFactor();
   const { settings } = useAppSettings();
   const { getAccessToken } = useSub2APIAuth();
   const { activeClaudeProvider, activeCodexProvider } = useDesktopProvidersStore();
-  const [activeSection, setActiveSection] = useState<PaseoCloudSection>("overview");
+  const [activeSection, setActiveSection] = useState<PaseoCloudSection>(
+    initialSection ?? "overview",
+  );
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [payToken, setPayToken] = useState<string | null>(null);
   const timezone = useMemo(() => getLocalTimeZone(), []);
+
+  useEffect(() => {
+    if (initialSection) {
+      setActiveSection(initialSection);
+    }
+  }, [initialSection]);
 
   const meQuery = useSub2APIMe();
   const keysQuery = useSub2APIKeys(1, 200);
@@ -492,6 +546,9 @@ export function PaseoCloudPanel() {
             usageMonthCost={usageMonthQuery.data?.total_cost}
             usageMonthRequests={usageMonthQuery.data?.total_requests}
             routeCards={routeCards}
+            onOpenKeys={() => setActiveSection("keys")}
+            onOpenRouting={() => setActiveSection("routing")}
+            onOpenCatalog={() => setActiveSection("catalog")}
           />
         );
     }

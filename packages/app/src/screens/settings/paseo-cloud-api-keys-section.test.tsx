@@ -6,14 +6,17 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PaseoCloudApiKeysSection } from "./paseo-cloud-api-keys-section";
 
-const { mocks } = vi.hoisted(() => ({
-  mocks: {
-    loadProviders: vi.fn(),
-    createKey: vi.fn(),
-    updateKey: vi.fn(),
-    deleteKey: vi.fn(),
-  },
-}));
+const { mocks } = vi.hoisted(() => {
+  (globalThis as typeof globalThis & { __DEV__?: boolean }).__DEV__ = false;
+  return {
+    mocks: {
+      loadProviders: vi.fn(),
+      createKey: vi.fn(),
+      updateKey: vi.fn(),
+      deleteKey: vi.fn(),
+    },
+  };
+});
 
 const { theme } = vi.hoisted(() => ({
   theme: {
@@ -149,8 +152,18 @@ vi.mock("@/hooks/use-sub2api-api", () => ({
   }),
   useSub2APIAvailableGroups: () => ({
     data: [
-      { id: 11, name: "Anthropic Group", platform: "anthropic", rate_multiplier: 1 },
-      { id: 22, name: "OpenAI Group", platform: "openai", rate_multiplier: 1.5 },
+      {
+        id: 11,
+        name: "Anthropic Group",
+        platform: "anthropic",
+        rate_multiplier: 1,
+      },
+      {
+        id: 22,
+        name: "OpenAI Group",
+        platform: "openai",
+        rate_multiplier: 1.5,
+      },
     ],
     isFetching: false,
     error: null,

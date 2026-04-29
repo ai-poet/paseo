@@ -31,6 +31,7 @@ import {
   ArrowDownNarrowWide,
   Check,
   ChevronsDownUp,
+  Cloud,
   FolderPlus,
   MessageSquarePlus,
   Settings,
@@ -69,6 +70,7 @@ import { formatConnectionStatus } from "@/utils/daemons";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import {
   buildHostSessionsRoute,
+  buildPaseoCloudRoute,
   buildSettingsRoute,
   mapPathnameToServer,
 } from "@/utils/host-routes";
@@ -108,6 +110,7 @@ interface SidebarSharedProps {
   handleRefresh: () => void;
   handleHostSelect: (nextServerId: string) => void;
   handleOpenProject: () => void;
+  handlePaseoCloud: () => void;
   handleSettings: () => void;
   renderHostOption: (input: {
     option: ComboboxOption;
@@ -229,6 +232,15 @@ export const LeftSidebar = memo(function LeftSidebar({
     void openProjectPicker();
   }, [openProjectPicker]);
 
+  const handlePaseoCloudMobile = useCallback(() => {
+    showMobileAgent();
+    router.push(buildPaseoCloudRoute());
+  }, [showMobileAgent]);
+
+  const handlePaseoCloudDesktop = useCallback(() => {
+    router.push(buildPaseoCloudRoute());
+  }, []);
+
   const handleSettingsMobile = useCallback(() => {
     showMobileAgent();
     router.push(buildSettingsRoute());
@@ -308,6 +320,7 @@ export const LeftSidebar = memo(function LeftSidebar({
         isOpen={isOpen}
         closeToAgent={showMobileAgent}
         handleOpenProject={handleOpenProjectMobile}
+        handlePaseoCloud={handlePaseoCloudMobile}
         handleSettings={handleSettingsMobile}
         handleViewMoreNavigate={handleViewMoreNavigate}
       />
@@ -320,6 +333,7 @@ export const LeftSidebar = memo(function LeftSidebar({
       insetsTop={insets.top}
       isOpen={isOpen}
       handleOpenProject={handleOpenProjectDesktop}
+      handlePaseoCloud={handlePaseoCloudDesktop}
       handleSettings={handleSettingsDesktop}
       handleViewMore={handleViewMoreNavigate}
     />
@@ -432,6 +446,7 @@ function MobileSidebar({
   handleHostSelect,
   renderHostOption,
   handleOpenProject,
+  handlePaseoCloud,
   handleSettings,
   insetsTop,
   insetsBottom,
@@ -557,7 +572,11 @@ function MobileSidebar({
   );
 
   const mobileSidebarInsetStyle = useMemo(
-    () => ({ width: windowWidth, paddingTop: insetsTop, paddingBottom: insetsBottom }),
+    () => ({
+      width: windowWidth,
+      paddingTop: insetsTop,
+      paddingBottom: insetsBottom,
+    }),
     [windowWidth, insetsTop, insetsBottom],
   );
 
@@ -696,6 +715,23 @@ function MobileSidebar({
               <View style={styles.footerIconRow}>
                 <Pressable
                   style={styles.footerIconButton}
+                  testID="sidebar-paseo-cloud"
+                  nativeID="sidebar-paseo-cloud"
+                  collapsable={false}
+                  accessible
+                  accessibilityLabel="Paseo Cloud"
+                  accessibilityRole="button"
+                  onPress={handlePaseoCloud}
+                >
+                  {({ hovered }) => (
+                    <Cloud
+                      size={theme.iconSize.md}
+                      color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+                    />
+                  )}
+                </Pressable>
+                <Pressable
+                  style={styles.footerIconButton}
                   testID="sidebar-settings"
                   nativeID="sidebar-settings"
                   collapsable={false}
@@ -756,6 +792,7 @@ function DesktopSidebar({
   handleHostSelect,
   renderHostOption,
   handleOpenProject,
+  handlePaseoCloud,
   handleSettings,
   insetsTop,
   isOpen,
@@ -921,6 +958,23 @@ function DesktopSidebar({
             </Pressable>
           </View>
           <View style={styles.footerIconRow}>
+            <Pressable
+              style={styles.footerIconButton}
+              testID="sidebar-paseo-cloud"
+              nativeID="sidebar-paseo-cloud"
+              collapsable={false}
+              accessible
+              accessibilityLabel="Paseo Cloud"
+              accessibilityRole="button"
+              onPress={handlePaseoCloud}
+            >
+              {({ hovered }) => (
+                <Cloud
+                  size={theme.iconSize.md}
+                  color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+                />
+              )}
+            </Pressable>
             <Pressable
               style={styles.footerIconButton}
               testID="sidebar-settings"

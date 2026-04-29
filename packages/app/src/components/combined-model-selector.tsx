@@ -11,7 +11,7 @@ import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb as platformIsWeb } from "@/constants/platform";
-import { ArrowLeft, ChevronDown, ChevronRight, Search, Star } from "lucide-react-native";
+import { ArrowLeft, ChevronDown, ChevronRight, Cloud, Search, Star } from "lucide-react-native";
 import type { AgentModelDefinition, AgentProvider } from "@server/server/agent/agent-sdk-types";
 import type { AgentProviderDefinition } from "@server/server/agent/provider-manifest";
 const IS_WEB = platformIsWeb;
@@ -21,9 +21,13 @@ import { getProviderIcon } from "@/components/provider-icons";
 import type { FavoriteModelRow } from "@/hooks/use-form-preferences";
 import {
   buildModelRows,
+  buildCloudGroupModelRows,
+  buildOtherAvailableModelRows,
   buildSelectedTriggerLabel,
+  cloudGroupsForProvider,
   matchesSearch,
   resolveProviderLabel,
+  type SelectorCloudGroup,
   type SelectorModelRow,
 } from "./combined-model-selector.utils";
 
@@ -32,7 +36,14 @@ const PROVIDERS_WITH_MODEL_DESCRIPTIONS = new Set(["opencode", "pi"]);
 
 type SelectorView =
   | { kind: "all" }
-  | { kind: "provider"; providerId: string; providerLabel: string };
+  | { kind: "provider"; providerId: string; providerLabel: string }
+  | {
+      kind: "cloudGroup";
+      providerId: string;
+      providerLabel: string;
+      groupId: number;
+      groupLabel: string;
+    };
 
 interface CombinedModelSelectorProps {
   providerDefinitions: AgentProviderDefinition[];
@@ -40,6 +51,12 @@ interface CombinedModelSelectorProps {
   selectedProvider: string;
   selectedModel: string;
   onSelect: (provider: AgentProvider, modelId: string) => void;
+  cloudGroups?: SelectorCloudGroup[];
+  onSelectCloudModel?: (
+    provider: AgentProvider,
+    modelId: string,
+    group: SelectorCloudGroup,
+  ) => void;
   isLoading: boolean;
   canSelectProvider?: (provider: string) => boolean;
   favoriteKeys?: Set<string>;
@@ -65,9 +82,17 @@ interface SelectorContentProps {
   onSearchChange: (query: string) => void;
   favoriteKeys: Set<string>;
   onSelect: (provider: string, modelId: string) => void;
+  cloudGroups: SelectorCloudGroup[];
+  onSelectCloudModel?: (provider: string, modelId: string, group: SelectorCloudGroup) => void;
   canSelectProvider: (provider: string) => boolean;
   onToggleFavorite?: (provider: string, modelId: string) => void;
   onDrillDown: (providerId: string, providerLabel: string) => void;
+  onDrillDownCloudGroup: (
+    providerId: string,
+    providerLabel: string,
+    groupId: number,
+    groupLabel: string,
+  ) => void;
 }
 
 function resolveDefaultModelLabel(models: AgentModelDefinition[] | undefined): string {
@@ -115,9 +140,11 @@ function sortFavoritesFirst(
   return [...favorites, ...rest];
 }
 
-function groupRowsByProvider(
-  rows: SelectorModelRow[],
-): Array<{ providerId: string; providerLabel: string; rows: SelectorModelRow[] }> {
+function groupRowsByProvider(rows: SelectorModelRow[]): Array<{
+  providerId: string;
+  providerLabel: string;
+  rows: SelectorModelRow[];
+}> {
   const grouped = new Map<
     string,
     { providerId: string; providerLabel: string; rows: SelectorModelRow[] }
@@ -264,20 +291,33 @@ function GroupedProviderRows({
   selectedModel,
   favoriteKeys,
   onSelect,
+  cloudGroups,
   canSelectProvider,
   onToggleFavorite,
   onDrillDown,
+  onDrillDownCloudGroup,
   viewKind,
 }: {
   providerDefinitions: AgentProviderDefinition[];
-  groupedRows: Array<{ providerId: string; providerLabel: string; rows: SelectorModelRow[] }>;
+  groupedRows: Array<{
+    providerId: string;
+    providerLabel: string;
+    rows: SelectorModelRow[];
+  }>;
   selectedProvider: string;
   selectedModel: string;
   favoriteKeys: Set<string>;
   onSelect: (provider: string, modelId: string) => void;
+  cloudGroups: SelectorCloudGroup[];
   canSelectProvider: (provider: string) => boolean;
   onToggleFavorite?: (provider: string, modelId: string) => void;
   onDrillDown: (providerId: string, providerLabel: string) => void;
+  onDrillDownCloudGroup: (
+    providerId: string,
+    providerLabel: string,
+    groupId: number,
+    groupLabel: string,
+  ) => void;
   viewKind: SelectorView["kind"];
 }) {
   const { theme } = useUnistyles();
@@ -290,11 +330,77 @@ function GroupedProviderRows({
         );
         const ProvIcon = getProviderIcon(group.providerId);
         const isInline = viewKind === "provider";
+        const providerCloudGroups = cloudGroupsForProvider(cloudGroups, group.providerId);
+        const otherRows = buildOtherAvailableModelRows(group.rows, providerCloudGroups);
+        const providerCanBeSelected = canSelectProvider(group.providerId);
 
         return (
           <View key={group.providerId}>
             {index > 0 ? <View style={styles.separator} /> : null}
-            {isInline ? (
+            {isInline && providerCloudGroups.length > 0 ? (
+              <>
+                <View style={styles.sectionHeading}>
+                  <Text style={styles.sectionHeadingText}>Cloud groups</Text>
+                </View>
+                {providerCloudGroups.map((cloudGroup) => (
+                  <Pressable
+                    key={`${cloudGroup.provider}:${cloudGroup.groupId}`}
+                    disabled={!providerCanBeSelected}
+                    onPress={() =>
+                      onDrillDownCloudGroup(
+                        group.providerId,
+                        group.providerLabel,
+                        cloudGroup.groupId,
+                        cloudGroup.groupLabel,
+                      )
+                    }
+                    style={({ pressed, hovered }) => [
+                      styles.drillDownRow,
+                      hovered && styles.drillDownRowHovered,
+                      pressed && styles.drillDownRowPressed,
+                      !providerCanBeSelected && styles.drillDownRowDisabled,
+                    ]}
+                  >
+                    <Cloud size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
+                    <View style={styles.drillDownMain}>
+                      <Text style={styles.drillDownText}>{cloudGroup.groupLabel}</Text>
+                      {cloudGroup.description ? (
+                        <Text style={styles.drillDownDescription} numberOfLines={1}>
+                          {cloudGroup.description}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <View style={styles.drillDownTrailing}>
+                      <Text style={styles.drillDownCount}>
+                        {cloudGroup.models.length}{" "}
+                        {cloudGroup.models.length === 1 ? "model" : "models"}
+                      </Text>
+                      <ChevronRight size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
+                    </View>
+                  </Pressable>
+                ))}
+                {otherRows.length > 0 ? (
+                  <>
+                    <View style={styles.sectionHeading}>
+                      <Text style={styles.sectionHeadingText}>Other available models</Text>
+                    </View>
+                    {sortFavoritesFirst(otherRows, favoriteKeys).map((row) => (
+                      <ModelRow
+                        key={row.favoriteKey}
+                        row={row}
+                        isSelected={
+                          row.provider === selectedProvider && row.modelId === selectedModel
+                        }
+                        isFavorite={favoriteKeys.has(row.favoriteKey)}
+                        disabled={!canSelectProvider(row.provider)}
+                        onPress={() => onSelect(row.provider, row.modelId)}
+                        onToggleFavorite={onToggleFavorite}
+                      />
+                    ))}
+                  </>
+                ) : null}
+              </>
+            ) : isInline ? (
               <>
                 {sortFavoritesFirst(group.rows, favoriteKeys).map((row) => (
                   <ModelRow
@@ -347,6 +453,7 @@ function ProviderSearchInput({
   const inputRef = useRef<TextInput>(null);
   const isMobile = useIsCompactFormFactor();
   const InputComponent = isMobile ? BottomSheetTextInput : TextInput;
+  const webOutlineStyle = platformIsWeb ? ({ outlineStyle: "none" } as any) : null;
 
   useEffect(() => {
     if (autoFocus && platformIsWeb && inputRef.current) {
@@ -362,8 +469,7 @@ function ProviderSearchInput({
       <Search size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
       <InputComponent
         ref={inputRef as any}
-        // @ts-expect-error - outlineStyle is web-only
-        style={[styles.providerSearchInput, platformIsWeb && { outlineStyle: "none" }]}
+        style={[styles.providerSearchInput, webOutlineStyle]}
         placeholder="Search models..."
         placeholderTextColor={theme.colors.foregroundMuted}
         value={value}
@@ -385,9 +491,12 @@ function SelectorContent({
   onSearchChange,
   favoriteKeys,
   onSelect,
+  cloudGroups,
+  onSelectCloudModel,
   canSelectProvider,
   onToggleFavorite,
   onDrillDown,
+  onDrillDownCloudGroup,
 }: SelectorContentProps) {
   const { theme } = useUnistyles();
   const allRows = useMemo(
@@ -399,8 +508,19 @@ function SelectorContent({
     if (view.kind === "provider") {
       return allRows.filter((row) => row.provider === view.providerId);
     }
+    if (view.kind === "cloudGroup") {
+      const group = cloudGroups.find(
+        (entry) => entry.provider === view.providerId && entry.groupId === view.groupId,
+      );
+      return group
+        ? buildCloudGroupModelRows({
+            providerLabel: view.providerLabel,
+            group,
+          })
+        : [];
+    }
     return allRows;
-  }, [allRows, view]);
+  }, [allRows, cloudGroups, view]);
 
   const normalizedQuery = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
 
@@ -420,7 +540,7 @@ function SelectorContent({
 
   // When searching at Level 1, filter grouped rows to only providers whose name or models match
   const filteredGroupedRows = useMemo(() => {
-    if (view.kind === "provider" || !normalizedQuery) {
+    if (view.kind === "provider" || view.kind === "cloudGroup" || !normalizedQuery) {
       return allGroupedRows;
     }
     return allGroupedRows.filter(
@@ -429,7 +549,51 @@ function SelectorContent({
     );
   }, [allGroupedRows, normalizedQuery, view.kind]);
 
+  const activeCloudGroup =
+    view.kind === "cloudGroup"
+      ? (cloudGroups.find(
+          (entry) => entry.provider === view.providerId && entry.groupId === view.groupId,
+        ) ?? null)
+      : null;
   const hasResults = favoriteRows.length > 0 || filteredGroupedRows.length > 0;
+
+  if (view.kind === "cloudGroup") {
+    return (
+      <View>
+        {visibleRows.length > 0 && activeCloudGroup ? (
+          <>
+            <View style={styles.sectionHeading}>
+              <Text style={styles.sectionHeadingText}>{activeCloudGroup.groupLabel}</Text>
+            </View>
+            {sortFavoritesFirst(visibleRows, favoriteKeys).map((row) => (
+              <ModelRow
+                key={row.favoriteKey}
+                row={row}
+                isSelected={row.provider === selectedProvider && row.modelId === selectedModel}
+                isFavorite={favoriteKeys.has(row.favoriteKey)}
+                disabled={!canSelectProvider(row.provider)}
+                onPress={() => {
+                  if (onSelectCloudModel) {
+                    onSelectCloudModel(row.provider, row.modelId, activeCloudGroup);
+                    return;
+                  }
+                  onSelect(row.provider, row.modelId);
+                }}
+                onToggleFavorite={onToggleFavorite}
+              />
+            ))}
+          </>
+        ) : null}
+
+        {visibleRows.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Search size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
+            <Text style={styles.emptyStateText}>No models match your search</Text>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
 
   return (
     <View>
@@ -453,9 +617,11 @@ function SelectorContent({
           selectedModel={selectedModel}
           favoriteKeys={favoriteKeys}
           onSelect={onSelect}
+          cloudGroups={cloudGroups}
           canSelectProvider={canSelectProvider}
           onToggleFavorite={onToggleFavorite}
           onDrillDown={onDrillDown}
+          onDrillDownCloudGroup={onDrillDownCloudGroup}
           viewKind={view.kind}
         />
       ) : null}
@@ -508,6 +674,8 @@ export function CombinedModelSelector({
   selectedProvider,
   selectedModel,
   onSelect,
+  cloudGroups = [],
+  onSelectCloudModel,
   isLoading,
   canSelectProvider = () => true,
   favoriteKeys = new Set<string>(),
@@ -539,7 +707,11 @@ export function CombinedModelSelector({
     const selectedFavoriteKey = `${selectedProvider}:${selectedModel}`;
     if (selectedProvider && selectedModel && !favoriteKeys.has(selectedFavoriteKey)) {
       const label = resolveProviderLabel(providerDefinitions, selectedProvider);
-      return { kind: "provider", providerId: selectedProvider, providerLabel: label };
+      return {
+        kind: "provider",
+        providerId: selectedProvider,
+        providerLabel: label,
+      };
     }
 
     return { kind: "all" };
@@ -568,6 +740,19 @@ export function CombinedModelSelector({
     [onSelect],
   );
 
+  const handleSelectCloudModel = useCallback(
+    (provider: string, modelId: string, group: SelectorCloudGroup) => {
+      if (onSelectCloudModel) {
+        onSelectCloudModel(provider as AgentProvider, modelId, group);
+      } else {
+        onSelect(provider as AgentProvider, modelId);
+      }
+      setIsOpen(false);
+      setSearchQuery("");
+    },
+    [onSelect, onSelectCloudModel],
+  );
+
   const hasSelectedProvider = selectedProvider.trim().length > 0;
   const ProviderIcon = hasSelectedProvider ? getProviderIcon(selectedProvider) : null;
 
@@ -580,20 +765,48 @@ export function CombinedModelSelector({
     }
     const models = allProviderModels.get(selectedProvider);
     if (!models) {
+      const cloudModel = cloudGroups
+        .filter((group) => group.provider === selectedProvider)
+        .flatMap((group) => group.models)
+        .find((entry) => entry.id === selectedModel);
+      if (cloudModel) {
+        return cloudModel.label;
+      }
       return isLoading ? "Loading..." : "Select model";
     }
     const model = models.find((entry) => entry.id === selectedModel);
-    return model?.label ?? resolveDefaultModelLabel(models);
-  }, [allProviderModels, hasSelectedProvider, isLoading, selectedModel, selectedProvider]);
+    if (model) {
+      return model.label;
+    }
+    const cloudModel = cloudGroups
+      .filter((group) => group.provider === selectedProvider)
+      .flatMap((group) => group.models)
+      .find((entry) => entry.id === selectedModel);
+    return cloudModel?.label ?? resolveDefaultModelLabel(models);
+  }, [
+    allProviderModels,
+    cloudGroups,
+    hasSelectedProvider,
+    isLoading,
+    selectedModel,
+    selectedProvider,
+  ]);
 
   const desktopFixedHeight = useMemo(() => {
+    if (view.kind === "cloudGroup") {
+      const group = cloudGroups.find(
+        (entry) => entry.provider === view.providerId && entry.groupId === view.groupId,
+      );
+      const modelCount = group?.models.length ?? 0;
+      return Math.min(80 + modelCount * 40, 400);
+    }
     if (view.kind !== "provider") {
       return undefined;
     }
     const models = allProviderModels.get(view.providerId);
     const modelCount = models?.length ?? 0;
     return Math.min(80 + modelCount * 40, 400);
-  }, [allProviderModels, view]);
+  }, [allProviderModels, cloudGroups, view]);
 
   const triggerLabel = useMemo(() => {
     if (selectedModelLabel === "Loading..." || selectedModelLabel === "Select model") {
@@ -669,14 +882,22 @@ export function CombinedModelSelector({
         desktopFixedHeight={desktopFixedHeight}
         title="Select model"
         stickyHeader={
-          view.kind === "provider" ? (
+          view.kind !== "all" ? (
             <View style={styles.level2Header}>
-              {!singleProviderView ? (
+              {view.kind === "cloudGroup" || !singleProviderView ? (
                 <ProviderBackButton
                   providerId={view.providerId}
-                  providerLabel={view.providerLabel}
+                  providerLabel={view.kind === "cloudGroup" ? view.groupLabel : view.providerLabel}
                   onBack={() => {
-                    setView({ kind: "all" });
+                    if (view.kind === "cloudGroup") {
+                      setView({
+                        kind: "provider",
+                        providerId: view.providerId,
+                        providerLabel: view.providerLabel,
+                      });
+                    } else {
+                      setView({ kind: "all" });
+                    }
                     setSearchQuery("");
                   }}
                 />
@@ -701,10 +922,22 @@ export function CombinedModelSelector({
             onSearchChange={setSearchQuery}
             favoriteKeys={favoriteKeys}
             onSelect={handleSelect}
+            cloudGroups={cloudGroups}
+            onSelectCloudModel={handleSelectCloudModel}
             canSelectProvider={canSelectProvider}
             onToggleFavorite={onToggleFavorite}
             onDrillDown={(providerId, providerLabel) => {
               setView({ kind: "provider", providerId, providerLabel });
+            }}
+            onDrillDownCloudGroup={(providerId, providerLabel, groupId, groupLabel) => {
+              setView({
+                kind: "cloudGroup",
+                providerId,
+                providerLabel,
+                groupId,
+                groupLabel,
+              });
+              setSearchQuery("");
             }}
           />
         ) : (
@@ -789,10 +1022,20 @@ const styles = StyleSheet.create((theme) => ({
   drillDownRowPressed: {
     backgroundColor: theme.colors.surface2,
   },
-  drillDownText: {
+  drillDownRowDisabled: {
+    opacity: 0.5,
+  },
+  drillDownMain: {
     flex: 1,
+    minWidth: 0,
+  },
+  drillDownText: {
     fontSize: theme.fontSize.sm,
     color: theme.colors.foreground,
+  },
+  drillDownDescription: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.foregroundMuted,
   },
   drillDownTrailing: {
     flexDirection: "row",

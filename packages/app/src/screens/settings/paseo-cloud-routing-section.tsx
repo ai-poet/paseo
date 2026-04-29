@@ -37,7 +37,11 @@ const SCOPE_OPTIONS: Array<{
   label: string;
   testID: string;
 }> = [
-  { value: "claude", label: "Claude Code", testID: "sub2api-routing-tab-claude" },
+  {
+    value: "claude",
+    label: "Claude Code",
+    testID: "sub2api-routing-tab-claude",
+  },
   { value: "codex", label: "Codex", testID: "sub2api-routing-tab-codex" },
 ];
 
@@ -245,8 +249,8 @@ export function PaseoCloudRoutingSection({
         await setupDefaultProviderWithKey(keyToUse.key, activeScope, group.name);
         await keysQuery.refetch();
         Alert.alert(
-          "Switched",
-          `Group "${group.name}" now configures ${scopeMeta.cliLabel} only. Updated ${scopeMeta.configTarget}.`,
+          "Global CLI default updated",
+          `Group "${group.name}" now configures ${scopeMeta.cliLabel} only. Updated ${scopeMeta.configTarget}. New workspace sessions can also use group routing from the model selector without changing this global default.`,
         );
       } catch (error) {
         Alert.alert("Switch failed", getErrorMessage(error));
@@ -267,11 +271,12 @@ export function PaseoCloudRoutingSection({
   );
 
   return (
-    <SettingsSection title="Routing">
+    <SettingsSection title="Routing groups">
       <View style={[settingsStyles.card, styles.cardBody]}>
         <Text style={styles.sectionHint}>
-          Select a routing group explicitly for one CLI at a time. There is no route selector in the
-          key list anymore.
+          Choose a Cloud group to start using a route. This Settings page applies a group as a
+          global CLI default; the new-agent model selector can set a group only for the current
+          workspace.
         </Text>
 
         <View style={styles.tabBar}>
@@ -378,12 +383,12 @@ export function PaseoCloudRoutingSection({
                       </Text>
                     ) : groupKeys.length > 0 ? (
                       <Text style={styles.usageHint}>
-                        {groupKeys.length} key{groupKeys.length === 1 ? "" : "s"} available for
-                        reuse
+                        {groupKeys.length} key
+                        {groupKeys.length === 1 ? "" : "s"} available for reuse
                       </Text>
                     ) : (
                       <Text style={styles.usageHint}>
-                        No existing key yet. Use group will create one automatically.
+                        No existing key yet. Applying this group will create one automatically.
                       </Text>
                     )}
                     {recommended ? (
@@ -399,7 +404,8 @@ export function PaseoCloudRoutingSection({
                       </Text>
                     ) : null}
                     <Text style={styles.usageHint}>
-                      Writes <Text style={styles.sectionHintEm}>{scopeMeta.configTarget}</Text>
+                      Advanced action: writes{" "}
+                      <Text style={styles.sectionHintEm}>{scopeMeta.configTarget}</Text>
                     </Text>
                   </View>
                   <Pressable
@@ -420,7 +426,7 @@ export function PaseoCloudRoutingSection({
                         ? "Applying…"
                         : activeKey
                           ? `Active · ${scopeMeta.cliLabel}`
-                          : "Use group"}
+                          : "Set as global CLI default"}
                     </Text>
                   </Pressable>
                 </View>

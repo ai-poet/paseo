@@ -44,7 +44,11 @@ const SCOPE_OPTIONS: Array<{
   label: string;
   testID: string;
 }> = [
-  { value: "claude", label: "Claude Code", testID: "sub2api-api-keys-tab-claude" },
+  {
+    value: "claude",
+    label: "Claude Code",
+    testID: "sub2api-api-keys-tab-claude",
+  },
   { value: "codex", label: "Codex", testID: "sub2api-api-keys-tab-codex" },
 ];
 
@@ -266,7 +270,7 @@ export function PaseoCloudApiKeysSection({
       try {
         await setupDefaultProviderWithKey(key.key, activeScope, key.group?.name ?? key.name);
         Alert.alert(
-          "Switched",
+          "Global CLI default updated",
           `${CLOUD_NAME} key "${key.name}" now configures ${scopeMeta.cliLabel} only. Updated ${scopeMeta.configTarget}.`,
         );
       } catch (error) {
@@ -300,14 +304,15 @@ export function PaseoCloudApiKeysSection({
 
   return (
     <>
-      <SettingsSection title="API Keys">
+      <SettingsSection title="API Keys (advanced)">
         <View style={[settingsStyles.card, styles.cardBody]}>
           <View style={styles.statusRow}>
             <View style={settingsStyles.rowContent}>
               <Text style={styles.formTitle}>{scopeMeta.cliLabel}</Text>
               <Text style={styles.sectionHint}>
-                Manage only the {scopeMeta.platform} keys that can route{" "}
-                <Text style={styles.sectionHintEm}>{scopeMeta.cliLabel}</Text> on this device.
+                Advanced key management for {scopeMeta.platform} routes. In the normal flow,
+                choosing a Cloud group automatically creates or reuses a key for{" "}
+                <Text style={styles.sectionHintEm}>{scopeMeta.cliLabel}</Text>.
               </Text>
             </View>
             <Pressable
@@ -336,7 +341,7 @@ export function PaseoCloudApiKeysSection({
 
           <Text style={styles.usageHint}>
             This page only filters and manages keys. It does not change CLI routing until you press{" "}
-            <Text style={styles.sectionHintEm}>Use key</Text>.
+            <Text style={styles.sectionHintEm}>Set as global CLI default</Text>.
           </Text>
           {scopedGroups.length === 0 ? (
             <View style={styles.dashedCard}>
@@ -466,7 +471,8 @@ export function PaseoCloudApiKeysSection({
                       </View>
                       {keyRoute.ok ? (
                         <Text style={styles.usageHint}>
-                          Writes <Text style={styles.sectionHintEm}>{scopeMeta.configTarget}</Text>
+                          Advanced action: writes{" "}
+                          <Text style={styles.sectionHintEm}>{scopeMeta.configTarget}</Text>
                         </Text>
                       ) : (
                         <Text style={styles.errorHint}>{keyRoute.reason}</Text>
@@ -516,7 +522,7 @@ export function PaseoCloudApiKeysSection({
                             ? "Applying…"
                             : activeForScope
                               ? `Active · ${scopeMeta.cliLabel}`
-                              : "Use key"}
+                              : "Set as global CLI default"}
                         </Text>
                       </Pressable>
                       <Pressable

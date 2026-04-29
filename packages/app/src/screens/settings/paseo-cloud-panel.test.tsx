@@ -2,8 +2,8 @@
  * @vitest-environment jsdom
  */
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mocks } = vi.hoisted(() => ({
   mocks: {
@@ -99,7 +99,11 @@ vi.mock("@/config/branding", () => ({
 }));
 
 vi.mock("expo-constants", () => ({
-  default: { expoConfig: { extra: { brand: { appName: "Paseo", cloudName: "Paseo Cloud" } } } },
+  default: {
+    expoConfig: {
+      extra: { brand: { appName: "Paseo", cloudName: "Paseo Cloud" } },
+    },
+  },
 }));
 
 vi.mock("expo-router", () => ({
@@ -233,6 +237,10 @@ vi.mock("@/screens/settings/sub2api-pay-modal", () => ({
 }));
 
 describe("PaseoCloudPanel", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     mocks.getAccessToken.mockReset();
     mocks.loadProviders.mockReset();
@@ -264,5 +272,21 @@ describe("PaseoCloudPanel", () => {
 
     fireEvent.click(screen.getByTestId("paseo-cloud-section-status"));
     expect(screen.queryByText("Model status section content")).not.toBeNull();
+  });
+
+  it("supports deep-linked initial sections and overview quick actions", async () => {
+    const { PaseoCloudPanel } = await import("./paseo-cloud-panel");
+
+    render(<PaseoCloudPanel initialSection="keys" />);
+
+    expect(screen.queryByText("API keys section content")).not.toBeNull();
+
+    fireEvent.click(screen.getByTestId("paseo-cloud-section-overview"));
+    fireEvent.click(screen.getByTestId("paseo-cloud-overview-open-routing"));
+    expect(screen.queryByText("Routing section content")).not.toBeNull();
+
+    fireEvent.click(screen.getByTestId("paseo-cloud-section-overview"));
+    fireEvent.click(screen.getByTestId("paseo-cloud-overview-open-catalog"));
+    expect(screen.queryByText("Model catalog section content")).not.toBeNull();
   });
 });

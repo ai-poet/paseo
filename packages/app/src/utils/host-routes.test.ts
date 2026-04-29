@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPaseoCloudRoute,
   buildHostAgentDetailRoute,
   buildHostRootRoute,
   buildHostWorkspaceOpenRoute,
@@ -131,5 +132,15 @@ describe("workspace route parsing", () => {
     const encoded = encodeWorkspaceIdForPathSegment(id);
     expect(encoded).toBe("b64_dGVhbS9zZXR1cDppZCMx");
     expect(decodeWorkspaceIdFromPathSegment(encoded)).toBe("team/setup:id#1");
+  });
+});
+
+describe("Paseo Cloud routes", () => {
+  it("builds overview and tab deep links", () => {
+    expect(buildPaseoCloudRoute()).toBe("/settings/paseo-cloud");
+    expect(buildPaseoCloudRoute("overview")).toBe("/settings/paseo-cloud?tab=overview");
+    expect(buildPaseoCloudRoute("keys")).toBe("/settings/paseo-cloud?tab=keys");
+    expect(buildPaseoCloudRoute("routing")).toBe("/settings/paseo-cloud?tab=routing");
+    expect(buildPaseoCloudRoute("catalog")).toBe("/settings/paseo-cloud?tab=catalog");
   });
 });

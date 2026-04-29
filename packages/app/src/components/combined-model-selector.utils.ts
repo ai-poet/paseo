@@ -4,6 +4,21 @@ import { buildFavoriteModelKey, type FavoriteModelRow } from "@/hooks/use-form-p
 
 export type SelectorModelRow = FavoriteModelRow;
 
+export interface SelectorCloudModel {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface SelectorCloudGroup {
+  provider: string;
+  groupId: number;
+  groupLabel: string;
+  platform: string;
+  description?: string;
+  models: SelectorCloudModel[];
+}
+
 export function resolveProviderLabel(
   providerDefinitions: AgentProviderDefinition[],
   providerId: string,
@@ -30,7 +45,10 @@ export function buildModelRows(
     const providerLabel = providerLabelMap.get(definition.id) ?? definition.label;
     for (const model of allProviderModels.get(definition.id) ?? []) {
       rows.push({
-        favoriteKey: buildFavoriteModelKey({ provider: definition.id, modelId: model.id }),
+        favoriteKey: buildFavoriteModelKey({
+          provider: definition.id,
+          modelId: model.id,
+        }),
         provider: definition.id,
         providerLabel,
         modelId: model.id,
@@ -41,6 +59,43 @@ export function buildModelRows(
   }
 
   return rows;
+}
+
+export function cloudGroupsForProvider(
+  cloudGroups: SelectorCloudGroup[] | undefined,
+  providerId: string,
+): SelectorCloudGroup[] {
+  return (cloudGroups ?? []).filter((group) => group.provider === providerId);
+}
+
+export function buildCloudGroupModelRows(input: {
+  providerLabel: string;
+  group: SelectorCloudGroup;
+}): SelectorModelRow[] {
+  return input.group.models.map((model) => ({
+    favoriteKey: buildFavoriteModelKey({
+      provider: input.group.provider,
+      modelId: model.id,
+    }),
+    provider: input.group.provider,
+    providerLabel: input.providerLabel,
+    modelId: model.id,
+    modelLabel: model.label,
+    description: model.description,
+  }));
+}
+
+export function buildOtherAvailableModelRows(
+  providerRows: SelectorModelRow[],
+  cloudGroups: SelectorCloudGroup[] | undefined,
+): SelectorModelRow[] {
+  const cloudModelIds = new Set<string>();
+  for (const group of cloudGroups ?? []) {
+    for (const model of group.models) {
+      cloudModelIds.add(model.id);
+    }
+  }
+  return providerRows.filter((row) => !cloudModelIds.has(row.modelId));
 }
 
 export function matchesSearch(row: SelectorModelRow, normalizedQuery: string): boolean {

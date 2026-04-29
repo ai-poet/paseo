@@ -294,7 +294,9 @@ export function buildHostWorkspaceRoute(serverId: string, workspaceId: string) {
   if (!encodedWorkspaceId) {
     return "/" as const;
   }
-  return `/h/${encodeSegment(normalizedServerId)}/workspace/${encodeSegment(encodedWorkspaceId)}` as const;
+  return `/h/${encodeSegment(normalizedServerId)}/workspace/${encodeSegment(
+    encodedWorkspaceId,
+  )}` as const;
 }
 
 export function buildHostWorkspaceOpenRoute(
@@ -328,7 +330,9 @@ export function buildHostAgentDetailRoute(serverId: string, agentId: string, wor
   if (!normalizedServerId || !normalizedAgentId) {
     return "/" as const;
   }
-  return `${buildHostRootRoute(normalizedServerId)}/agent/${encodeSegment(normalizedAgentId)}` as const;
+  return `${buildHostRootRoute(normalizedServerId)}/agent/${encodeSegment(
+    normalizedAgentId,
+  )}` as const;
 }
 
 export function buildHostRootRoute(serverId: string) {
@@ -395,6 +399,30 @@ export function buildSettingsRoute() {
 
 export function buildSettingsSectionRoute(section: SettingsSectionSlug) {
   return `/settings/${section}` as const;
+}
+
+export const PASEO_CLOUD_TABS = [
+  "overview",
+  "keys",
+  "routing",
+  "catalog",
+  "usage",
+  "status",
+  "referral",
+] as const;
+
+export type PaseoCloudTab = (typeof PASEO_CLOUD_TABS)[number];
+
+export function isPaseoCloudTab(value: string): value is PaseoCloudTab {
+  return (PASEO_CLOUD_TABS as readonly string[]).includes(value);
+}
+
+export function buildPaseoCloudRoute(tab?: PaseoCloudTab) {
+  const base = buildSettingsSectionRoute("paseo-cloud");
+  if (!tab) {
+    return base;
+  }
+  return `${base}?tab=${encodeURIComponent(tab)}` as const;
 }
 
 export function buildSettingsHostRoute(serverId: string) {

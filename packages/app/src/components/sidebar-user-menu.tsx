@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { LogOut, Settings, Wallet } from "lucide-react-native";
+import { Cloud, KeyRound, LogOut, Route, Settings, Wallet } from "lucide-react-native";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +14,7 @@ import { useAppSettings } from "@/hooks/use-settings";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { useSub2APIMe, useSub2APIUsageStats } from "@/hooks/use-sub2api-api";
 import { Sub2APIPayModal } from "@/screens/settings/sub2api-pay-modal";
-import { buildSettingsRoute } from "@/utils/host-routes";
+import { buildPaseoCloudRoute } from "@/utils/host-routes";
 import { formatUsd, getErrorMessage } from "@/screens/settings/managed-provider-settings-shared";
 
 function getInitial(username: string | undefined, email: string | undefined): string {
@@ -76,6 +76,18 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
     await logout();
     router.replace("/login");
   }, [logout, router]);
+
+  const handleOpenPaseoCloud = useCallback(() => {
+    router.push(buildPaseoCloudRoute());
+  }, [router]);
+
+  const handleOpenApiKeys = useCallback(() => {
+    router.push(buildPaseoCloudRoute("keys"));
+  }, [router]);
+
+  const handleOpenRoutingGroups = useCallback(() => {
+    router.push(buildPaseoCloudRoute("routing"));
+  }, [router]);
 
   const user = meQuery.data;
   const initial = getInitial(user?.username, user?.email);
@@ -142,6 +154,24 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
             onSelect={() => void handleOpenPayModal()}
           >
             Recharge
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            leading={<Cloud size={16} color={theme.colors.foregroundMuted} />}
+            onSelect={handleOpenPaseoCloud}
+          >
+            Paseo Cloud
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            leading={<KeyRound size={16} color={theme.colors.foregroundMuted} />}
+            onSelect={handleOpenApiKeys}
+          >
+            API keys
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            leading={<Route size={16} color={theme.colors.foregroundMuted} />}
+            onSelect={handleOpenRoutingGroups}
+          >
+            Routing groups
           </DropdownMenuItem>
           <DropdownMenuItem
             leading={<Settings size={16} color={theme.colors.foregroundMuted} />}

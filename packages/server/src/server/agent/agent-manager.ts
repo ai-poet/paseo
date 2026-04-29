@@ -49,6 +49,7 @@ import {
   AgentStreamCoalescer,
 } from "./agent-stream-coalescer.js";
 import { getAgentProviderDefinition } from "./provider-manifest.js";
+import type { WorkspaceCloudRouteStore } from "../workspace-cloud-route-store.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
@@ -116,6 +117,7 @@ export type AgentManagerOptions = {
   onAgentAttention?: AgentAttentionCallback;
   durableTimelineStore?: AgentTimelineStore;
   terminalManager?: TerminalManager | null;
+  workspaceCloudRouteStore?: WorkspaceCloudRouteStore | null;
   mcpBaseUrl?: string;
   agentStreamCoalesceWindowMs?: number;
   rescueTimeouts?: AgentManagerRescueTimeouts;
@@ -337,6 +339,7 @@ export class AgentManager {
   private onAgentAttention?: AgentAttentionCallback;
   private logger: Logger;
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
+  private readonly workspaceCloudRouteStore: WorkspaceCloudRouteStore | null;
 
   constructor(options: AgentManagerOptions) {
     this.idFactory = options?.idFactory ?? (() => randomUUID());
@@ -344,6 +347,7 @@ export class AgentManager {
     this.durableTimelineStore = options?.durableTimelineStore;
     this.onAgentAttention = options?.onAgentAttention;
     this.mcpBaseUrl = options?.mcpBaseUrl ?? null;
+    this.workspaceCloudRouteStore = options?.workspaceCloudRouteStore ?? null;
     this.logger = options.logger.child({ module: "agent", component: "agent-manager" });
     this.rescueTimeouts = {
       reloadSessionCloseMs:
@@ -652,7 +656,7 @@ export class AgentManager {
             },
           };
     const normalizedConfig = await this.normalizeConfig(injectedConfig);
-    const launchContext = this.buildLaunchContext(resolvedAgentId);
+    const launchContext = this.buildLaunchContext(resolvedAgentId, normalizedConfig);
     const client = this.requireClient(normalizedConfig.provider);
     const available = await client.isAvailable();
     if (!available) {
@@ -695,7 +699,7 @@ export class AgentManager {
       normalizedConfig.model !== mergedConfig.model
         ? { ...overrides, model: normalizedConfig.model }
         : overrides;
-    const launchContext = this.buildLaunchContext(resolvedAgentId);
+    const launchContext = this.buildLaunchContext(resolvedAgentId, normalizedConfig);
     const client = this.requireClient(handle.provider);
     const available = await client.isAvailable();
     if (!available) {
@@ -731,7 +735,7 @@ export class AgentManager {
       provider,
     } as AgentSessionConfig;
     const normalizedConfig = await this.normalizeConfig(refreshConfig);
-    const launchContext = this.buildLaunchContext(agentId);
+    const launchContext = this.buildLaunchContext(agentId, normalizedConfig);
 
     const session = handle
       ? await client.resumeSession(handle, normalizedConfig, launchContext)
@@ -2862,9 +2866,14 @@ export class AgentManager {
     return normalized;
   }
 
-  private buildLaunchContext(agentId: string): AgentLaunchContext {
+  private buildLaunchContext(agentId: string, config?: AgentSessionConfig): AgentLaunchContext {
+    const routeEnv =
+      config && this.workspaceCloudRouteStore
+        ? this.workspaceCloudRouteStore.buildLaunchEnv(config.cwd, config.provider)
+        : {};
     return {
       env: {
+        ...routeEnv,
         PASEO_AGENT_ID: agentId,
       },
     };

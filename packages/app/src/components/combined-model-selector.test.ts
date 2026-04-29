@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { AgentModelDefinition } from "@server/server/agent/agent-sdk-types";
 import {
   buildModelRows,
+  buildCloudGroupModelRows,
+  buildOtherAvailableModelRows,
   buildSelectedTriggerLabel,
   matchesSearch,
   resolveProviderLabel,
@@ -70,5 +72,42 @@ describe("combined model selector helpers", () => {
   it("keeps the selected trigger label model-only", () => {
     expect(resolveProviderLabel(providerDefinitions, "codex")).toBe("Codex");
     expect(buildSelectedTriggerLabel("GPT-5.4")).toBe("GPT-5.4");
+  });
+
+  it("builds cloud group rows and keeps unmatched provider models visible", () => {
+    const providerRows = buildModelRows(
+      providerDefinitions,
+      new Map([
+        [
+          "claude",
+          [
+            ...claudeModels,
+            {
+              provider: "claude",
+              id: "opus-4.6",
+              label: "Opus 4.6",
+            },
+          ],
+        ],
+      ]),
+    );
+    const cloudGroup = {
+      provider: "claude",
+      groupId: 12,
+      groupLabel: "Claude Fast",
+      platform: "anthropic",
+      models: [{ id: "sonnet-4.6", label: "Sonnet 4.6" }],
+    };
+
+    expect(buildCloudGroupModelRows({ providerLabel: "Claude", group: cloudGroup })).toEqual([
+      expect.objectContaining({
+        provider: "claude",
+        modelId: "sonnet-4.6",
+        modelLabel: "Sonnet 4.6",
+      }),
+    ]);
+    expect(
+      buildOtherAvailableModelRows(providerRows, [cloudGroup]).map((row) => row.modelId),
+    ).toEqual(["opus-4.6"]);
   });
 });

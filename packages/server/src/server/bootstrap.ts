@@ -88,6 +88,7 @@ function formatListenTarget(listenTarget: ListenTarget | null): string | null {
 
 import { VoiceAssistantWebSocketServer } from "./websocket-server.js";
 import { createGitHubService } from "../services/github-service.js";
+import { WorkspaceCloudRouteStore } from "./workspace-cloud-route-store.js";
 import { createPaseoWorktree } from "./paseo-worktree-service.js";
 import { createWorktreeCoreDeps } from "./worktree-core.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
@@ -413,6 +414,7 @@ export async function createPaseoDaemon(
     });
     const terminalManager = createTerminalManager();
     const github = createGitHubService();
+    const workspaceCloudRouteStore = new WorkspaceCloudRouteStore(config.paseoHome);
     const workspaceGitService = new WorkspaceGitServiceImpl({
       logger,
       paseoHome: config.paseoHome,
@@ -432,6 +434,7 @@ export async function createPaseoDaemon(
       },
       registry: agentStorage,
       logger,
+      workspaceCloudRouteStore,
     });
     const providerRegistry = buildProviderRegistry(logger, {
       runtimeSettings: config.agentProviderSettings,
@@ -733,6 +736,7 @@ export async function createPaseoDaemon(
               (hostname) => scriptHealthMonitor.getHealthForHostname(hostname),
               workspaceGitService,
               github,
+              workspaceCloudRouteStore,
             );
 
             if (typeof process.send === "function" && process.env.PASEO_SUPERVISED === "1") {

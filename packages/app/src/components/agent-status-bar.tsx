@@ -15,8 +15,20 @@ import {
 } from "lucide-react-native";
 import { getProviderIcon } from "@/components/provider-icons";
 import { CombinedModelSelector } from "@/components/combined-model-selector";
+import type { SelectorCloudGroup } from "@/components/combined-model-selector.utils";
 import { useSessionStore } from "@/stores/session-store";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
+import {
+  useCreateSub2APIKeyMutation,
+  useSub2APIClient,
+  useSub2APIGroupStatuses,
+  useSub2APIKeys,
+  useSub2APIModelCatalog,
+} from "@/hooks/use-sub2api-api";
+import {
+  useSetWorkspaceCloudRouteMutation,
+  useWorkspaceCloudRoutes,
+} from "@/hooks/use-workspace-cloud-routes";
 import { resolveProviderDefinition } from "@/utils/provider-definitions";
 import {
   buildFavoriteModelKey,
@@ -24,6 +36,9 @@ import {
   toggleFavoriteModel,
   useFormPreferences,
 } from "@/hooks/use-form-preferences";
+import { buildGroupFirstModelCatalog } from "@/screens/settings/paseo-cloud-catalog-utils";
+import { resolveManagedCloudRouteFromPlatform } from "@/screens/settings/managed-cloud-scope";
+import { findReusableKey } from "@/screens/settings/managed-provider-settings-shared";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +60,7 @@ import {
   type AgentModeColorTier,
   type AgentModeIcon,
 } from "@server/server/agent/provider-manifest";
+import type { WorkspaceCloudRouteProvider } from "@server/shared/messages";
 import {
   getFeatureHighlightColor,
   getFeatureTooltip,
@@ -88,9 +104,17 @@ type ControlledAgentStatusBarProps = {
   onSetFeature?: (featureId: string, value: unknown) => void;
   onDropdownClose?: () => void;
   onModelSelectorOpen?: () => void;
+  cloudGroups?: SelectorCloudGroup[];
+  onSelectCloudModel?: (
+    provider: AgentProvider,
+    modelId: string,
+    group: SelectorCloudGroup,
+  ) => void;
 };
 
 export interface DraftAgentStatusBarProps {
+  serverId?: string;
+  cwd?: string;
   providerDefinitions: AgentProviderDefinition[];
   selectedProvider: AgentProvider | null;
   onSelectProvider: (provider: AgentProvider) => void;
@@ -219,6 +243,8 @@ function ControlledStatusBar({
   onSetFeature,
   onDropdownClose,
   onModelSelectorOpen,
+  cloudGroups = [],
+  onSelectCloudModel,
 }: ControlledAgentStatusBarProps) {
   const { theme } = useUnistyles();
   const [prefsOpen, setPrefsOpen] = useState(false);
@@ -410,6 +436,8 @@ function ControlledStatusBar({
                         onSelectModel?.(modelId);
                       }
                     }}
+                    cloudGroups={cloudGroups}
+                    onSelectCloudModel={onSelectCloudModel}
                     favoriteKeys={favoriteKeys}
                     onToggleFavorite={onToggleFavoriteModel}
                     isLoading={isModelLoading}
@@ -653,6 +681,8 @@ function ControlledStatusBar({
                       onSelectModel?.(modelId);
                     }
                   }}
+                  cloudGroups={cloudGroups}
+                  onSelectCloudModel={onSelectCloudModel}
                   favoriteKeys={favoriteKeys}
                   onToggleFavorite={onToggleFavoriteModel}
                   isLoading={isModelLoading}
@@ -925,7 +955,10 @@ export const AgentStatusBar = memo(function AgentStatusBar({
   }, [availableModes]);
 
   const modelOptions = useMemo<StatusOption[]>(() => {
-    return (models ?? []).map((model) => ({ id: model.id, label: model.label }));
+    return (models ?? []).map((model) => ({
+      id: model.id,
+      label: model.label,
+    }));
   }, [models]);
   const favoriteKeys = useMemo(
     () =>
@@ -1056,6 +1089,8 @@ export const AgentStatusBar = memo(function AgentStatusBar({
 });
 
 export function DraftAgentStatusBar({
+  serverId,
+  cwd,
   providerDefinitions,
   selectedProvider,
   onSelectProvider,
@@ -1079,6 +1114,14 @@ export function DraftAgentStatusBar({
   disabled = false,
 }: DraftAgentStatusBarProps) {
   const { preferences, updatePreferences } = useFormPreferences();
+  const toast = useToast();
+  const cloudClient = useSub2APIClient();
+  const cloudCatalogQuery = useSub2APIModelCatalog();
+  const cloudStatusesQuery = useSub2APIGroupStatuses();
+  const cloudKeysQuery = useSub2APIKeys(1, 200);
+  const createCloudKeyMutation = useCreateSub2APIKeyMutation();
+  const workspaceCloudRoutesQuery = useWorkspaceCloudRoutes(serverId, cwd);
+  const setWorkspaceCloudRouteMutation = useSetWorkspaceCloudRouteMutation(serverId);
 
   const mappedModeOptions = useMemo<StatusOption[]>(() => {
     if (modeOptions.length === 0) {
@@ -1091,7 +1134,10 @@ export function DraftAgentStatusBar({
   }, [modeOptions]);
 
   const mappedThinkingOptions = useMemo<StatusOption[]>(() => {
-    return thinkingOptions.map((option) => ({ id: option.id, label: option.label }));
+    return thinkingOptions.map((option) => ({
+      id: option.id,
+      label: option.label,
+    }));
   }, [thinkingOptions]);
   const favoriteKeys = useMemo(
     () =>
@@ -1099,6 +1145,132 @@ export function DraftAgentStatusBar({
         (preferences.favoriteModels ?? []).map((favorite) => buildFavoriteModelKey(favorite)),
       ),
     [preferences.favoriteModels],
+  );
+
+  const cloudGroups = useMemo<SelectorCloudGroup[]>(() => {
+    if (!cloudClient.isLoggedIn || !cloudClient.endpoint || !cloudCatalogQuery.data) {
+      return [];
+    }
+    const supportedProviderIds = new Set(providerDefinitions.map((definition) => definition.id));
+    const activeGroupByProvider = new Map(
+      (workspaceCloudRoutesQuery.data ?? []).map(
+        (route) => [route.provider, route.groupId] as const,
+      ),
+    );
+    const groups: SelectorCloudGroup[] = [];
+    for (const platform of ["anthropic", "openai"]) {
+      const route = resolveManagedCloudRouteFromPlatform(platform);
+      if (!route.ok || !supportedProviderIds.has(route.scope)) {
+        continue;
+      }
+      const catalog = buildGroupFirstModelCatalog({
+        catalog: cloudCatalogQuery.data,
+        statuses: cloudStatusesQuery.data,
+        platform,
+      });
+      for (const group of catalog.groups) {
+        const seenModelIds = new Set<string>();
+        const models = group.models
+          .filter((entry) => {
+            if (seenModelIds.has(entry.item.model)) {
+              return false;
+            }
+            seenModelIds.add(entry.item.model);
+            return true;
+          })
+          .map((entry) => ({
+            id: entry.item.model,
+            label: entry.item.display_name || entry.item.model,
+            description: `${group.group.rate_multiplier}x · ${entry.item.billing_mode}`,
+          }));
+        if (models.length === 0) {
+          continue;
+        }
+        const status = group.status?.stable_status || group.status?.latest_status;
+        const isActiveForWorkspace = activeGroupByProvider.get(route.scope) === group.group.id;
+        groups.push({
+          provider: route.scope,
+          groupId: group.group.id,
+          groupLabel: group.group.name,
+          platform,
+          description: `${isActiveForWorkspace ? "Current workspace · " : ""}${route.cliLabel} · ${
+            group.group.rate_multiplier
+          }x${status ? ` · ${status}` : ""}`,
+          models,
+        });
+      }
+    }
+    const getActiveGroupId = (provider: string) =>
+      provider === "claude" || provider === "codex"
+        ? activeGroupByProvider.get(provider)
+        : undefined;
+    return groups.sort((a, b) => {
+      const aActive = getActiveGroupId(a.provider) === a.groupId;
+      const bActive = getActiveGroupId(b.provider) === b.groupId;
+      return Number(bActive) - Number(aActive);
+    });
+  }, [
+    cloudCatalogQuery.data,
+    cloudClient.endpoint,
+    cloudClient.isLoggedIn,
+    cloudStatusesQuery.data,
+    providerDefinitions,
+    workspaceCloudRoutesQuery.data,
+  ]);
+
+  const handleSelectCloudModel = useCallback(
+    async (provider: AgentProvider, modelId: string, group: SelectorCloudGroup) => {
+      const endpoint = cloudClient.endpoint;
+      const normalizedCwd = cwd?.trim();
+      if (
+        !serverId ||
+        !normalizedCwd ||
+        !endpoint ||
+        !cloudClient.isLoggedIn ||
+        (provider !== "claude" && provider !== "codex")
+      ) {
+        onSelectProviderAndModel(provider, modelId);
+        return;
+      }
+
+      try {
+        const reusable = findReusableKey(cloudKeysQuery.data?.items ?? [], group.groupId);
+        const keyToUse =
+          reusable ??
+          (await createCloudKeyMutation.mutateAsync({
+            name: `${group.groupLabel} Key`,
+            group_id: group.groupId,
+          }));
+
+        await setWorkspaceCloudRouteMutation.mutateAsync({
+          cwd: normalizedCwd,
+          provider: provider as WorkspaceCloudRouteProvider,
+          endpoint,
+          apiKey: keyToUse.key,
+          apiKeyId: keyToUse.id,
+          groupId: group.groupId,
+          groupName: group.groupLabel,
+          platform: group.platform,
+        });
+        onSelectProviderAndModel(provider, modelId);
+        toast.show(`${group.groupLabel} will apply to new sessions in this workspace.`, {
+          variant: "success",
+        });
+      } catch (error) {
+        toast.error(`Could not switch Cloud group: ${toErrorMessage(error)}`);
+      }
+    },
+    [
+      cloudClient.endpoint,
+      cloudClient.isLoggedIn,
+      cloudKeysQuery.data?.items,
+      createCloudKeyMutation,
+      cwd,
+      onSelectProviderAndModel,
+      serverId,
+      setWorkspaceCloudRouteMutation,
+      toast,
+    ],
   );
 
   const effectiveSelectedMode = selectedMode || mappedModeOptions[0]?.id || "";
@@ -1115,6 +1287,8 @@ export function DraftAgentStatusBar({
           selectedProvider={selectedProvider ?? ""}
           selectedModel={selectedModel}
           onSelect={onSelectProviderAndModel}
+          cloudGroups={cloudGroups}
+          onSelectCloudModel={handleSelectCloudModel}
           favoriteKeys={favoriteKeys}
           onToggleFavorite={(provider, modelId) => {
             void updatePreferences((current) =>
@@ -1166,6 +1340,8 @@ export function DraftAgentStatusBar({
         selectedModelId={selectedModel}
         onSelectModel={(modelId) => onSelectModel(modelId)}
         onSelectProviderAndModel={onSelectProviderAndModel}
+        cloudGroups={cloudGroups}
+        onSelectCloudModel={handleSelectCloudModel}
         isModelLoading={isAllModelsLoading}
         favoriteKeys={favoriteKeys}
         onToggleFavoriteModel={(provider, modelId) => {
