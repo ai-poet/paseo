@@ -70,14 +70,39 @@ export async function listDirectoryEntries({
   root,
   relativePath = ".",
 }: ListDirectoryParams): Promise<FileExplorerDirectory> {
-  const directoryPath = await resolveScopedPath({ root, relativePath });
-  const stats = await fs.stat(directoryPath);
+  let directoryPath: string;
+  try {
+    directoryPath = await resolveScopedPath({ root, relativePath });
+  } catch (error) {
+    if (isMissingEntryError(error)) {
+      return buildEmptyDirectoryPayload({ root, relativePath });
+    }
+    throw error;
+  }
+
+  let stats;
+  try {
+    stats = await fs.stat(directoryPath);
+  } catch (error) {
+    if (isMissingEntryError(error)) {
+      return buildEmptyDirectoryPayload({ root, relativePath });
+    }
+    throw error;
+  }
 
   if (!stats.isDirectory()) {
     throw new Error("Requested path is not a directory");
   }
 
-  const dirents = await fs.readdir(directoryPath, { withFileTypes: true });
+  let dirents;
+  try {
+    dirents = await fs.readdir(directoryPath, { withFileTypes: true });
+  } catch (error) {
+    if (isMissingEntryError(error)) {
+      return buildEmptyDirectoryPayload({ root, relativePath });
+    }
+    throw error;
+  }
 
   const entriesWithNulls = await Promise.all(
     dirents.map(async (dirent) => {
@@ -113,6 +138,18 @@ export async function listDirectoryEntries({
   return {
     path: normalizeRelativePath({ root, targetPath: directoryPath }),
     entries,
+  };
+}
+
+function buildEmptyDirectoryPayload({
+  root,
+  relativePath = ".",
+}: ListDirectoryParams): FileExplorerDirectory {
+  const normalizedRoot = path.resolve(root);
+  const targetPath = resolvePathFromBase(normalizedRoot, relativePath);
+  return {
+    path: normalizeRelativePath({ root, targetPath }),
+    entries: [],
   };
 }
 
