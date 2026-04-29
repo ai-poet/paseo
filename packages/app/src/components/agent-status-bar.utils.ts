@@ -1,10 +1,20 @@
 import type { AgentFeature, AgentModelDefinition } from "@server/server/agent/agent-sdk-types";
 
-export type ExplainedStatusSelector = "mode" | "model" | "thinking";
+export type ExplainedStatusSelector = "mode" | "model" | "thinking" | "cloud-group";
 export type FeatureHighlightColor = "blue" | "default" | "yellow";
+
+export type CloudGroupSelectorSummary = {
+  provider: string;
+  groupId: number;
+  groupLabel: string;
+  description?: string;
+  isActiveForWorkspace?: boolean;
+};
 
 export function getStatusSelectorHint(selector: ExplainedStatusSelector): string {
   switch (selector) {
+    case "cloud-group":
+      return "Cloud group";
     case "thinking":
       return "Thinking mode";
     case "model":
@@ -12,6 +22,31 @@ export function getStatusSelectorHint(selector: ExplainedStatusSelector): string
     case "mode":
       return "Change permission mode";
   }
+}
+
+export function cloudGroupsForStatusProvider<T extends CloudGroupSelectorSummary>(
+  cloudGroups: T[] | undefined,
+  provider: string,
+): T[] {
+  return (cloudGroups ?? []).filter((group) => group.provider === provider);
+}
+
+export function resolveActiveCloudGroup<T extends CloudGroupSelectorSummary>(
+  cloudGroups: T[] | undefined,
+  provider: string,
+): T | null {
+  return (
+    cloudGroupsForStatusProvider(cloudGroups, provider).find(
+      (group) => group.isActiveForWorkspace,
+    ) ?? null
+  );
+}
+
+export function resolveCloudGroupDisplayLabel(
+  cloudGroups: CloudGroupSelectorSummary[] | undefined,
+  provider: string,
+): string | null {
+  return resolveActiveCloudGroup(cloudGroups, provider)?.groupLabel ?? null;
 }
 
 export function normalizeModelId(modelId: string | null | undefined): string | null {

@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import type { AgentProviderDefinition } from "@server/server/agent/provider-manifest";
 import type { AgentProvider } from "@server/server/agent/agent-sdk-types";
 import type { SelectorCloudGroup } from "@/components/combined-model-selector.utils";
+import { useAppSettings } from "@/hooks/use-settings";
 import {
   useCreateSub2APIKeyMutation,
   useSub2APIClient,
@@ -31,6 +32,7 @@ export function useCloudModelRouting(input: {
   cwd: string | null | undefined;
   providerDefinitions: AgentProviderDefinition[];
 }) {
+  const { settings } = useAppSettings();
   const cloudClient = useSub2APIClient();
   const cloudCatalogQuery = useSub2APIModelCatalog();
   const cloudStatusesQuery = useSub2APIGroupStatuses();
@@ -42,7 +44,10 @@ export function useCloudModelRouting(input: {
 
   const cloudGroups = useMemo(
     () =>
-      cloudClient.isLoggedIn && cloudClient.endpoint && cloudCatalogQuery.data
+      settings.accessMode === "builtin" &&
+      cloudClient.isLoggedIn &&
+      cloudClient.endpoint &&
+      cloudCatalogQuery.data
         ? buildCloudModelRoutingGroups({
             catalog: cloudCatalogQuery.data,
             statuses: cloudStatusesQuery.data,
@@ -56,6 +61,7 @@ export function useCloudModelRouting(input: {
       cloudClient.isLoggedIn,
       cloudStatusesQuery.data,
       input.providerDefinitions,
+      settings.accessMode,
       workspaceCloudRoutesQuery.data,
     ],
   );

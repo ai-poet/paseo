@@ -70,6 +70,7 @@ export function buildCloudModelRoutingGroups(input: {
         groupId: group.group.id,
         groupLabel: group.group.name,
         platform,
+        isActiveForWorkspace,
         description: `${isActiveForWorkspace ? "Current workspace · " : ""}${route.cliLabel} · ${
           group.group.rate_multiplier
         }x${status ? ` · ${status}` : ""}`,

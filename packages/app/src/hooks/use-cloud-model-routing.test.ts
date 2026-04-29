@@ -119,6 +119,7 @@ describe("buildCloudModelRoutingGroups", () => {
         groupId: 10,
         groupLabel: "Claude Fast",
         platform: "anthropic",
+        isActiveForWorkspace: true,
         description: expect.stringContaining("Current workspace"),
         models: [
           expect.objectContaining({

@@ -16,6 +16,7 @@ export interface SelectorCloudGroup {
   groupLabel: string;
   platform: string;
   description?: string;
+  isActiveForWorkspace?: boolean;
   models: SelectorCloudModel[];
 }
 
@@ -87,9 +88,8 @@ export function buildCloudGroupModelRows(input: {
 
 export function buildOtherAvailableModelRows(
   providerRows: SelectorModelRow[],
-  cloudGroups: SelectorCloudGroup[] | undefined,
+  _cloudGroups: SelectorCloudGroup[] | undefined,
 ): SelectorModelRow[] {
-  void cloudGroups;
   return providerRows;
 }
 

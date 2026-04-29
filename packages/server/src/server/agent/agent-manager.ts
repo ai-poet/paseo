@@ -305,6 +305,10 @@ function createAbortError(signal: AbortSignal | undefined, fallbackMessage: stri
   return Object.assign(new Error(message), { name: "AbortError" });
 }
 
+function isMissingWorkingDirectoryError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("Working directory does not exist:");
+}
+
 function validateAgentId(agentId: string, source: string): string {
   const result = AgentIdSchema.safeParse(agentId);
   if (!result.success) {
@@ -585,7 +589,19 @@ export class AgentManager {
   }
 
   async listDraftFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
-    const normalizedConfig = await this.normalizeConfig(config);
+    let normalizedConfig: AgentSessionConfig;
+    try {
+      normalizedConfig = await this.normalizeConfig(config);
+    } catch (error) {
+      if (isMissingWorkingDirectoryError(error)) {
+        this.logger.debug(
+          { err: error, provider: config.provider, cwd: config.cwd },
+          "Skipping draft feature listing because the workspace cwd is not ready",
+        );
+        return [];
+      }
+      throw error;
+    }
     const client = this.requireClient(normalizedConfig.provider);
     const available = await client.isAvailable();
     if (!available) {

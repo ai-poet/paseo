@@ -6,6 +6,7 @@ import { useStoreWithEqualityFn } from "zustand/traditional";
 import {
   Brain,
   ChevronDown,
+  Cloud,
   ListTodo,
   Settings2,
   ShieldAlert,
@@ -18,10 +19,7 @@ import { CombinedModelSelector } from "@/components/combined-model-selector";
 import type { SelectorCloudGroup } from "@/components/combined-model-selector.utils";
 import { useSessionStore } from "@/stores/session-store";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
-import {
-  formatWorkspaceCloudRouteSwitchError,
-  useCloudModelRouting,
-} from "@/hooks/use-cloud-model-routing";
+import { useCloudModelRouting } from "@/hooks/use-cloud-model-routing";
 import { resolveProviderDefinition } from "@/utils/provider-definitions";
 import {
   buildFavoriteModelKey,
@@ -51,6 +49,7 @@ import {
   type AgentModeIcon,
 } from "@server/server/agent/provider-manifest";
 import {
+  resolveCloudGroupDisplayLabel,
   getFeatureHighlightColor,
   getFeatureTooltip,
   getStatusSelectorHint,
@@ -65,7 +64,12 @@ type StatusOption = {
   label: string;
 };
 
-type StatusSelector = "provider" | "mode" | "model" | "thinking" | `feature-${string}`;
+type StatusSelector =
+  | "provider"
+  | "mode"
+  | "model"
+  | "thinking"
+  | `feature-${string}`;
 
 type ControlledAgentStatusBarProps = {
   provider: string;
@@ -94,11 +98,6 @@ type ControlledAgentStatusBarProps = {
   onDropdownClose?: () => void;
   onModelSelectorOpen?: () => void;
   cloudGroups?: SelectorCloudGroup[];
-  onSelectCloudModel?: (
-    provider: AgentProvider,
-    modelId: string,
-    group: SelectorCloudGroup,
-  ) => void;
 };
 
 export interface DraftAgentStatusBarProps {
@@ -233,7 +232,6 @@ function ControlledStatusBar({
   onDropdownClose,
   onModelSelectorOpen,
   cloudGroups = [],
-  onSelectCloudModel,
 }: ControlledAgentStatusBarProps) {
   const { theme } = useUnistyles();
   const [prefsOpen, setPrefsOpen] = useState(false);
@@ -254,6 +252,7 @@ function ControlledStatusBar({
   );
 
   const displayProvider = findOptionLabel(providerOptions, selectedProviderId, "Provider");
+  const displayCloudGroup = resolveCloudGroupDisplayLabel(cloudGroups, provider);
   const displayMode = findOptionLabel(modeOptions, selectedModeId, "Default");
   const displayModel =
     isModelLoading && (!modelOptions || modelOptions.length === 0)
@@ -275,6 +274,7 @@ function ControlledStatusBar({
 
   const hasAnyControl =
     Boolean(providerOptions?.length) ||
+    Boolean(displayCloudGroup) ||
     Boolean(modeOptions?.length) ||
     canSelectModel ||
     Boolean(thinkingOptions?.length) ||
@@ -405,6 +405,22 @@ function ControlledStatusBar({
             </>
           ) : null}
 
+          {displayCloudGroup ? (
+            <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+              <TooltipTrigger asChild triggerRefProp="ref">
+                <View style={styles.modeBadge} testID="agent-cloud-group-status">
+                  <Cloud size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
+                  <Text style={styles.modeBadgeText} numberOfLines={1}>
+                    {displayCloudGroup}
+                  </Text>
+                </View>
+              </TooltipTrigger>
+              <TooltipContent side="top" align="center" offset={8}>
+                <Text style={styles.tooltipText}>{getStatusSelectorHint("cloud-group")}</Text>
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+
           {canSelectModel ? (
             <Tooltip
               key={`model-${displayModel}`}
@@ -421,12 +437,12 @@ function ControlledStatusBar({
                     selectedModel={selectedModelId ?? ""}
                     canSelectProvider={canSelectProviderInModelMenu}
                     onSelect={(selectedProviderId, modelId) => {
-                      if (selectedProviderId === provider) {
+                      if (onSelectProviderAndModel) {
+                        onSelectProviderAndModel(selectedProviderId, modelId);
+                      } else if (selectedProviderId === provider) {
                         onSelectModel?.(modelId);
                       }
                     }}
-                    cloudGroups={cloudGroups}
-                    onSelectCloudModel={onSelectCloudModel}
                     favoriteKeys={favoriteKeys}
                     onToggleFavorite={onToggleFavoriteModel}
                     isLoading={isModelLoading}
@@ -656,6 +672,19 @@ function ControlledStatusBar({
             onClose={() => setPrefsOpen(false)}
             testID="agent-preferences-sheet"
           >
+            {displayCloudGroup ? (
+              <View style={styles.sheetSection}>
+                <View
+                  style={styles.sheetSelect}
+                  accessibilityLabel="Current Cloud group"
+                  testID="agent-preferences-cloud-group"
+                >
+                  <Cloud size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
+                  <Text style={styles.sheetSelectText}>{displayCloudGroup}</Text>
+                </View>
+              </View>
+            ) : null}
+
             {canSelectModel ? (
               <View style={styles.sheetSection}>
                 <CombinedModelSelector
@@ -674,8 +703,6 @@ function ControlledStatusBar({
                       onSelectModel?.(modelId);
                     }
                   }}
-                  cloudGroups={cloudGroups}
-                  onSelectCloudModel={onSelectCloudModel}
                   favoriteKeys={favoriteKeys}
                   onToggleFavorite={onToggleFavoriteModel}
                   isLoading={isModelLoading}
@@ -919,8 +946,7 @@ export const AgentStatusBar = memo(function AgentStatusBar({
       : undefined;
     return definition ? [definition] : [];
   }, [agent?.provider, snapshotEntries]);
-  const { cloudGroups, clearCloudRouteForProvider, selectCloudModelForNextSession } =
-    useCloudModelRouting({
+  const { cloudGroups } = useCloudModelRouting({
     serverId,
     cwd: agent?.cwd,
     providerDefinitions: agentProviderDefinitions,
@@ -974,33 +1000,6 @@ export const AgentStatusBar = memo(function AgentStatusBar({
     }));
   }, [modelSelection.thinkingOptions]);
 
-  const handleSelectCloudModel = useCallback(
-    async (provider: AgentProvider, modelId: string, group: SelectorCloudGroup) => {
-      try {
-        const route = await selectCloudModelForNextSession(provider, modelId, group);
-        if (!route) {
-          return;
-        }
-        await updatePreferences((current) =>
-          mergeProviderPreferences({
-            preferences: current,
-            provider,
-            updates: {
-              model: modelId,
-            },
-          }),
-        );
-        toast.show(
-          `${group.groupLabel} will apply to new sessions in this workspace. Current session keeps its current route.`,
-          { variant: "success" },
-        );
-      } catch (error) {
-        toast.error(`Could not switch Cloud group: ${formatWorkspaceCloudRouteSwitchError(error)}`);
-      }
-    },
-    [selectCloudModelForNextSession, toast, updatePreferences],
-  );
-
   const handleSelectGlobalModel = useCallback(
     (modelId: string) => {
       if (!client || !agent?.provider) {
@@ -1008,7 +1007,6 @@ export const AgentStatusBar = memo(function AgentStatusBar({
       }
 
       void (async () => {
-        const clearedRoute = await clearCloudRouteForProvider(agent.provider);
         await updatePreferences((current) =>
           mergeProviderPreferences({
             preferences: current,
@@ -1019,18 +1017,12 @@ export const AgentStatusBar = memo(function AgentStatusBar({
           }),
         );
         await client.setAgentModel(agentId, modelId);
-        if (clearedRoute) {
-          toast.show(
-            "Global CLI config will apply to new sessions in this workspace. Current session keeps its current route.",
-            { variant: "success" },
-          );
-        }
       })().catch((error) => {
-        console.warn("[AgentStatusBar] switch to global model failed", error);
-        toast.error(`Could not switch to global config: ${formatWorkspaceCloudRouteSwitchError(error)}`);
+        console.warn("[AgentStatusBar] setAgentModel failed", error);
+        toast.error(toErrorMessage(error));
       });
     },
-    [agent?.provider, agentId, clearCloudRouteForProvider, client, toast, updatePreferences],
+    [agent?.provider, agentId, client, toast, updatePreferences],
   );
 
   if (!agent) {
@@ -1069,7 +1061,6 @@ export const AgentStatusBar = memo(function AgentStatusBar({
         });
       }}
       cloudGroups={cloudGroups}
-      onSelectCloudModel={handleSelectCloudModel}
       thinkingOptions={thinkingOptions.length > 1 ? thinkingOptions : undefined}
       selectedThinkingOptionId={modelSelection.selectedThinkingId ?? undefined}
       onSelectThinkingOption={(thinkingOptionId) => {
@@ -1155,9 +1146,7 @@ export function DraftAgentStatusBar({
   disabled = false,
 }: DraftAgentStatusBarProps) {
   const { preferences, updatePreferences } = useFormPreferences();
-  const toast = useToast();
-  const { cloudGroups, clearCloudRouteForProvider, selectCloudModelForNextSession } =
-    useCloudModelRouting({
+  const { cloudGroups } = useCloudModelRouting({
     serverId,
     cwd,
     providerDefinitions,
@@ -1187,88 +1176,17 @@ export function DraftAgentStatusBar({
     [preferences.favoriteModels],
   );
 
-  const handleSelectCloudModel = useCallback(
-    async (provider: AgentProvider, modelId: string, group: SelectorCloudGroup) => {
-      try {
-        const route = await selectCloudModelForNextSession(provider, modelId, group);
-        onSelectProviderAndModel(provider, modelId);
-        if (route) {
-          toast.show(`${group.groupLabel} will apply to new sessions in this workspace.`, {
-            variant: "success",
-          });
-        }
-      } catch (error) {
-        toast.error(`Could not switch Cloud group: ${formatWorkspaceCloudRouteSwitchError(error)}`);
-      }
-    },
-    [onSelectProviderAndModel, selectCloudModelForNextSession, toast],
-  );
-
   const handleSelectGlobalModel = useCallback(
     (provider: AgentProvider, modelId: string) => {
-      void (async () => {
-        const clearedRoute = await clearCloudRouteForProvider(provider);
-        onSelectProviderAndModel(provider, modelId);
-        if (clearedRoute) {
-          toast.show("Global CLI config will apply to new sessions in this workspace.", {
-            variant: "success",
-          });
-        }
-      })().catch((error) => {
-        toast.error(`Could not switch to global config: ${formatWorkspaceCloudRouteSwitchError(error)}`);
-      });
+      onSelectProviderAndModel(provider, modelId);
     },
-    [clearCloudRouteForProvider, onSelectProviderAndModel, toast],
+    [onSelectProviderAndModel],
   );
 
   const effectiveSelectedMode = selectedMode || mappedModeOptions[0]?.id || "";
   const effectiveSelectedThinkingOption =
     selectedThinkingOptionId || mappedThinkingOptions[0]?.id || undefined;
   const hasSelectedProvider = selectedProvider !== null;
-
-  if (platformIsWeb) {
-    return (
-      <View style={styles.container}>
-        <CombinedModelSelector
-          providerDefinitions={providerDefinitions}
-          allProviderModels={allProviderModels}
-          selectedProvider={selectedProvider ?? ""}
-          selectedModel={selectedModel}
-          onSelect={handleSelectGlobalModel}
-          cloudGroups={cloudGroups}
-          onSelectCloudModel={handleSelectCloudModel}
-          favoriteKeys={favoriteKeys}
-          onToggleFavorite={(provider, modelId) => {
-            void updatePreferences((current) =>
-              toggleFavoriteModel({ preferences: current, provider, modelId }),
-            ).catch((error) => {
-              console.warn("[DraftAgentStatusBar] toggle favorite model failed", error);
-            });
-          }}
-          isLoading={isAllModelsLoading}
-          disabled={disabled}
-          onOpen={onModelSelectorOpen}
-          onClose={onDropdownClose}
-        />
-        {selectedProvider ? (
-          <ControlledStatusBar
-            provider={selectedProvider}
-            providerDefinitions={providerDefinitions}
-            modeOptions={mappedModeOptions}
-            selectedModeId={effectiveSelectedMode}
-            onSelectMode={onSelectMode}
-            thinkingOptions={mappedThinkingOptions.length > 0 ? mappedThinkingOptions : undefined}
-            selectedThinkingOptionId={effectiveSelectedThinkingOption}
-            onSelectThinkingOption={onSelectThinkingOption}
-            features={features}
-            onSetFeature={onSetFeature}
-            onDropdownClose={onDropdownClose}
-            disabled={disabled}
-          />
-        ) : null}
-      </View>
-    );
-  }
 
   const modelOptions: StatusOption[] = models.map((model) => ({
     id: model.id,
@@ -1295,7 +1213,6 @@ export function DraftAgentStatusBar({
         }}
         onSelectProviderAndModel={handleSelectGlobalModel}
         cloudGroups={cloudGroups}
-        onSelectCloudModel={handleSelectCloudModel}
         isModelLoading={isAllModelsLoading}
         favoriteKeys={favoriteKeys}
         onToggleFavoriteModel={(provider, modelId) => {

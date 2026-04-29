@@ -3,6 +3,7 @@ import {
   getFeatureHighlightColor,
   getFeatureTooltip,
   getStatusSelectorHint,
+  resolveCloudGroupDisplayLabel,
   normalizeModelId,
   resolveAgentModelSelection,
 } from "./agent-status-bar.utils";
@@ -12,6 +13,35 @@ describe("getStatusSelectorHint", () => {
     expect(getStatusSelectorHint("thinking")).toBe("Thinking mode");
     expect(getStatusSelectorHint("model")).toBe("Change model");
     expect(getStatusSelectorHint("mode")).toBe("Change permission mode");
+    expect(getStatusSelectorHint("cloud-group")).toBe("Cloud group");
+  });
+});
+
+describe("cloud group status helpers", () => {
+  const groups = [
+    {
+      provider: "claude",
+      groupId: 10,
+      groupLabel: "Claude Fast",
+      platform: "anthropic",
+      description: "Claude · 0.8x · up",
+      isActiveForWorkspace: false,
+      models: [],
+    },
+    {
+      provider: "claude",
+      groupId: 12,
+      groupLabel: "GLM Pay As You Go",
+      platform: "anthropic",
+      description: "Current workspace · Claude · 0.25x · up",
+      isActiveForWorkspace: true,
+      models: [],
+    },
+  ];
+
+  it("resolves the active Cloud group as read-only status", () => {
+    expect(resolveCloudGroupDisplayLabel(groups, "claude")).toBe("GLM Pay As You Go");
+    expect(resolveCloudGroupDisplayLabel(groups, "codex")).toBeNull();
   });
 });
 

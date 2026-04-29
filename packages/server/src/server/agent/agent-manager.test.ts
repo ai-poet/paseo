@@ -842,6 +842,26 @@ describe("AgentManager", () => {
     ).rejects.toThrow("Working directory does not exist");
   });
 
+  test("listDraftFeatures tolerates a missing pending cwd during workspace setup", async () => {
+    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+    const storagePath = join(workdir, "agents");
+    const storage = new AgentStorage(storagePath, logger);
+    const manager = new AgentManager({
+      clients: {
+        codex: new TestAgentClient(),
+      },
+      registry: storage,
+      logger,
+    });
+
+    await expect(
+      manager.listDraftFeatures({
+        provider: "codex",
+        cwd: join(workdir, ".paseo", "pending", "rugged-kiwi"),
+      }),
+    ).resolves.toEqual([]);
+  });
+
   test("resumeAgentFromPersistence keeps metadata config, applies overrides, and passes launch env", async () => {
     const workdir = mkdtempSync(join(tmpdir(), "agent-manager-resume-"));
     const storagePath = join(workdir, "agents");
