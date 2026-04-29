@@ -67,8 +67,6 @@ const PID_POLL_INTERVAL_MS = 100;
 const KILL_TIMEOUT_MS = 3000;
 const DAEMON_LOG_FILENAME = "daemon.log";
 const DAEMON_PID_FILENAME = "paseo.pid";
-const DAEMON_DEV_ENTRYPOINT_ENV = "PASEO_DAEMON_DEV_ENTRYPOINT";
-const DESKTOP_DEV_ENTRYPOINT_ENV = "PASEO_DESKTOP_DEV_ENTRYPOINT";
 
 export const DEFAULT_STOP_TIMEOUT_MS = 15_000;
 
@@ -131,24 +129,11 @@ function resolveDaemonRunnerEntry(): string {
       try {
         const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { name?: string };
         if (packageJson.name === "@getpaseo/server") {
-          const sourceRunner = path.join(currentDir, "scripts", "supervisor-entrypoint.ts");
           const distRunner = path.join(currentDir, "dist", "scripts", "supervisor-entrypoint.js");
-          const entrypointPreference = (
-            process.env[DAEMON_DEV_ENTRYPOINT_ENV] ?? process.env[DESKTOP_DEV_ENTRYPOINT_ENV] ?? ""
-          )
-            .trim()
-            .toLowerCase();
-          const canRunTypeScriptEntrypoint =
-            entrypointPreference === "source" ||
-            process.execArgv.some((arg) => arg.includes("tsx") || arg.includes("ts-node"));
-          const preferDist = entrypointPreference === "dist" || !canRunTypeScriptEntrypoint;
-          const candidates = preferDist ? [distRunner, sourceRunner] : [sourceRunner, distRunner];
-          for (const candidate of candidates) {
-            if (existsSync(candidate)) {
-              return candidate;
-            }
+          if (existsSync(distRunner)) {
+            return distRunner;
           }
-          return sourceRunner;
+          return path.join(currentDir, "scripts", "supervisor-entrypoint.ts");
         }
       } catch {
         // Continue searching up if package.json exists but is invalid.

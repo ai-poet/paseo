@@ -1,31 +1,26 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { AgentProviderDefinition } from "@server/server/agent/provider-manifest";
-import type { AgentProvider } from "@server/server/agent/agent-sdk-types";
-import type { SelectorCloudGroup } from "@/components/combined-model-selector.utils";
+import { getIsElectron } from "@/constants/platform";
+import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import { useAppSettings } from "@/hooks/use-settings";
 import {
-  useCreateSub2APIKeyMutation,
+  useSub2APIAvailableGroups,
   useSub2APIClient,
-  useSub2APIGroupStatuses,
   useSub2APIKeys,
-  useSub2APIModelCatalog,
 } from "@/hooks/use-sub2api-api";
+import type { ProviderStore } from "@/screens/settings/sub2api-provider-types";
 import {
-  useClearWorkspaceCloudRouteMutation,
-  useSetWorkspaceCloudRouteMutation,
-  useWorkspaceCloudRoutes,
-} from "@/hooks/use-workspace-cloud-routes";
-import {
-  buildCloudModelRoutingGroups,
-  clearCloudRouteForProvider,
-  selectCloudModelForNextSession,
+  buildGlobalCloudRouteGroups,
+  resolveActiveGlobalCloudProviders,
 } from "@/hooks/cloud-model-routing-utils";
+
 export {
   buildCloudModelRoutingGroups,
-  clearCloudRouteForProvider,
-  formatWorkspaceCloudRouteSwitchError,
-  selectCloudModelForNextSession,
+  buildGlobalCloudRouteGroups,
 } from "@/hooks/cloud-model-routing-utils";
+
+const GLOBAL_PROVIDER_STORE_QUERY_KEY = ["desktop-provider-store", "cloud-route-status"] as const;
 
 export function useCloudModelRouting(input: {
   serverId: string | null | undefined;
@@ -34,77 +29,44 @@ export function useCloudModelRouting(input: {
 }) {
   const { settings } = useAppSettings();
   const cloudClient = useSub2APIClient();
-  const cloudCatalogQuery = useSub2APIModelCatalog();
-  const cloudStatusesQuery = useSub2APIGroupStatuses();
   const cloudKeysQuery = useSub2APIKeys(1, 200);
-  const workspaceCloudRoutesQuery = useWorkspaceCloudRoutes(input.serverId, input.cwd);
-  const createCloudKeyMutation = useCreateSub2APIKeyMutation();
-  const setWorkspaceCloudRouteMutation = useSetWorkspaceCloudRouteMutation(input.serverId);
-  const clearWorkspaceCloudRouteMutation = useClearWorkspaceCloudRouteMutation(input.serverId);
+  const cloudGroupsQuery = useSub2APIAvailableGroups();
+  const isElectron = getIsElectron();
+  const isCloudMode =
+    settings.accessMode === "builtin" && cloudClient.isLoggedIn && Boolean(cloudClient.endpoint);
+
+  const desktopProviderStoreQuery = useQuery({
+    queryKey: GLOBAL_PROVIDER_STORE_QUERY_KEY,
+    enabled: isElectron && isCloudMode,
+    staleTime: 5_000,
+    refetchInterval: isCloudMode ? 10_000 : false,
+    queryFn: async (): Promise<ProviderStore> => {
+      return await invokeDesktopCommand<ProviderStore>("get_providers");
+    },
+  });
 
   const cloudGroups = useMemo(
     () =>
-      settings.accessMode === "builtin" &&
-      cloudClient.isLoggedIn &&
-      cloudClient.endpoint &&
-      cloudCatalogQuery.data
-        ? buildCloudModelRoutingGroups({
-            catalog: cloudCatalogQuery.data,
-            statuses: cloudStatusesQuery.data,
+      isCloudMode
+        ? buildGlobalCloudRouteGroups({
+            activeProviders: resolveActiveGlobalCloudProviders(desktopProviderStoreQuery.data),
+            cloudEndpoint: cloudClient.endpoint,
+            keys: cloudKeysQuery.data?.items,
+            groups: cloudGroupsQuery.data,
             providerDefinitions: input.providerDefinitions,
-            workspaceRoutes: workspaceCloudRoutesQuery.data,
           })
         : [],
     [
-      cloudCatalogQuery.data,
       cloudClient.endpoint,
-      cloudClient.isLoggedIn,
-      cloudStatusesQuery.data,
-      input.providerDefinitions,
-      settings.accessMode,
-      workspaceCloudRoutesQuery.data,
-    ],
-  );
-
-  const selectForNextSession = useCallback(
-    async (provider: AgentProvider, _modelId: string, group: SelectorCloudGroup) =>
-      await selectCloudModelForNextSession({
-        serverId: input.serverId,
-        cwd: input.cwd,
-        endpoint: cloudClient.endpoint,
-        isLoggedIn: cloudClient.isLoggedIn,
-        keys: cloudKeysQuery.data?.items ?? [],
-        group,
-        provider,
-        createKey: (request) => createCloudKeyMutation.mutateAsync(request),
-        setWorkspaceCloudRoute: (route) => setWorkspaceCloudRouteMutation.mutateAsync(route),
-      }),
-    [
-      cloudClient.endpoint,
-      cloudClient.isLoggedIn,
+      cloudGroupsQuery.data,
       cloudKeysQuery.data?.items,
-      createCloudKeyMutation,
-      input.cwd,
-      input.serverId,
-      setWorkspaceCloudRouteMutation,
+      desktopProviderStoreQuery.data,
+      input.providerDefinitions,
+      isCloudMode,
     ],
-  );
-
-  const clearForProvider = useCallback(
-    async (provider: AgentProvider) =>
-      await clearCloudRouteForProvider({
-        serverId: input.serverId,
-        cwd: input.cwd,
-        provider,
-        clearWorkspaceCloudRoute: (request) =>
-          clearWorkspaceCloudRouteMutation.mutateAsync(request),
-      }),
-    [clearWorkspaceCloudRouteMutation, input.cwd, input.serverId],
   );
 
   return {
     cloudGroups,
-    clearCloudRouteForProvider: clearForProvider,
-    selectCloudModelForNextSession: selectForNextSession,
   };
 }

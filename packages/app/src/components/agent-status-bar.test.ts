@@ -33,8 +33,8 @@ describe("cloud group status helpers", () => {
       groupId: 12,
       groupLabel: "GLM Pay As You Go",
       platform: "anthropic",
-      description: "Current workspace · Claude · 0.25x · up",
-      isActiveForWorkspace: true,
+      description: "Claude Code · global CLI key",
+      isActiveForGlobalKey: true,
       models: [],
     },
   ];

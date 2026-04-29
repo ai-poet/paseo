@@ -55,11 +55,6 @@ import type {
   ListAvailableProvidersResponse,
   GetProvidersSnapshotResponseMessage,
   RefreshProvidersSnapshotResponseMessage,
-  GetWorkspaceCloudRoutesResponseMessage,
-  SetWorkspaceCloudRouteResponseMessage,
-  ClearWorkspaceCloudRouteResponseMessage,
-  WorkspaceCloudRouteProvider,
-  WorkspaceCloudRouteSetInput,
   ProviderDiagnosticResponseMessage,
   ListTerminalsResponse,
   CreateTerminalResponse,
@@ -279,9 +274,6 @@ type ListProviderModesPayload = ListProviderModesResponseMessage["payload"];
 type ListAvailableProvidersPayload = ListAvailableProvidersResponse["payload"];
 type GetProvidersSnapshotPayload = GetProvidersSnapshotResponseMessage["payload"];
 type RefreshProvidersSnapshotPayload = RefreshProvidersSnapshotResponseMessage["payload"];
-type GetWorkspaceCloudRoutesPayload = GetWorkspaceCloudRoutesResponseMessage["payload"];
-type SetWorkspaceCloudRoutePayload = SetWorkspaceCloudRouteResponseMessage["payload"];
-type ClearWorkspaceCloudRoutePayload = ClearWorkspaceCloudRouteResponseMessage["payload"];
 type ProviderDiagnosticPayload = ProviderDiagnosticResponseMessage["payload"];
 type ListCommandsPayload = ListCommandsResponse["payload"];
 type ListCommandsDraftConfig = Pick<
@@ -2923,55 +2915,6 @@ export class DaemonClient {
       },
       responseType: "refresh_providers_snapshot_response",
       timeout: 60000,
-    });
-  }
-
-  async getWorkspaceCloudRoutes(options: {
-    cwd: string;
-    provider?: WorkspaceCloudRouteProvider;
-    requestId?: string;
-  }): Promise<GetWorkspaceCloudRoutesPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "get_workspace_cloud_routes_request",
-        cwd: options.cwd,
-        provider: options.provider,
-      },
-      responseType: "get_workspace_cloud_routes_response",
-      timeout: 10000,
-    });
-  }
-
-  async setWorkspaceCloudRoute(
-    route: WorkspaceCloudRouteSetInput,
-    options?: { requestId?: string },
-  ): Promise<SetWorkspaceCloudRoutePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "set_workspace_cloud_route_request",
-        route,
-      },
-      responseType: "set_workspace_cloud_route_response",
-      timeout: 10000,
-    });
-  }
-
-  async clearWorkspaceCloudRoute(options: {
-    cwd: string;
-    provider: WorkspaceCloudRouteProvider;
-    requestId?: string;
-  }): Promise<ClearWorkspaceCloudRoutePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "clear_workspace_cloud_route_request",
-        cwd: options.cwd,
-        provider: options.provider,
-      },
-      responseType: "clear_workspace_cloud_route_response",
-      timeout: 10000,
     });
   }
 

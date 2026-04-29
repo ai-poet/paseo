@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
-import { WorkspaceCloudRouteStore } from "../workspace-cloud-route-store.js";
 import type {
   AgentClient,
   AgentFeature,
@@ -91,18 +90,6 @@ class TestAgentClient implements AgentClient {
       provider: "codex",
       cwd: config?.cwd ?? process.cwd(),
     });
-  }
-}
-
-class LaunchContextAgentClient extends TestAgentClient {
-  lastLaunchContext: AgentLaunchContext | undefined;
-
-  override async createSession(
-    config: AgentSessionConfig,
-    launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
-    this.lastLaunchContext = launchContext;
-    return new TestAgentSession(config);
   }
 }
 
@@ -685,47 +672,6 @@ describe("AgentManager", () => {
         PASEO_AGENT_ID: snapshot.id,
       },
     });
-  });
-
-  test("createAgent includes workspace cloud route env for the agent cwd and provider", async () => {
-    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-cloud-route-"));
-    const storagePath = join(workdir, "agents");
-    const storage = new AgentStorage(storagePath, logger);
-    const routeStore = new WorkspaceCloudRouteStore(workdir);
-    routeStore.setRoute({
-      cwd: workdir,
-      provider: "codex",
-      endpoint: "https://cloud.example.com/v1",
-      apiKey: "sk-workspace-codex",
-      apiKeyId: 7,
-      groupId: 42,
-      groupName: "OpenAI Workspace",
-      platform: "openai",
-    });
-
-    const client = new LaunchContextAgentClient();
-    const manager = new AgentManager({
-      clients: {
-        codex: client,
-      },
-      registry: storage,
-      logger,
-      workspaceCloudRouteStore: routeStore,
-      idFactory: () => "00000000-0000-4000-8000-000000000104",
-    });
-
-    const snapshot = await manager.createAgent({
-      provider: "codex",
-      cwd: workdir,
-    });
-
-    expect(client.lastLaunchContext?.env).toEqual(
-      expect.objectContaining({
-        PASEO_AGENT_ID: snapshot.id,
-        OPENAI_API_KEY: "sk-workspace-codex",
-      }),
-    );
-    expect(client.lastLaunchContext?.env?.CODEX_HOME).toMatch(/cloud-routes/);
   });
 
   test("createAgent injects paseo MCP server when manager has an MCP base URL", async () => {

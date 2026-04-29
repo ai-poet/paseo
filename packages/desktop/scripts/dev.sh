@@ -20,7 +20,7 @@ export EXPO_PORT
 export PASEO_CORS_ORIGINS="*"
 
 echo "══════════════════════════════════════════════════════"
-echo "  ${PASEO_APP_NAME:-Paseo} Desktop Dev"
+echo "  Paseo Desktop Dev"
 echo "══════════════════════════════════════════════════════"
 echo "  Metro:     http://localhost:${EXPO_PORT}"
 echo "══════════════════════════════════════════════════════"
@@ -30,5 +30,5 @@ exec "$ROOT_DIR/node_modules/.bin/concurrently" \
   --kill-others \
   --names "metro,electron" \
   --prefix-colors "magenta,cyan" \
-  "cd '$APP_DIR' && npx expo start --clear --port $EXPO_PORT" \
+  "cd '$APP_DIR' && npx expo start --port $EXPO_PORT" \
   "$ROOT_DIR/node_modules/.bin/wait-on tcp:$EXPO_PORT && EXPO_DEV_URL=http://localhost:$EXPO_PORT electron '$DESKTOP_DIR'"

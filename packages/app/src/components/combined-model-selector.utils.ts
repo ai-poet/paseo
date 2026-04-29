@@ -17,6 +17,7 @@ export interface SelectorCloudGroup {
   platform: string;
   description?: string;
   isActiveForWorkspace?: boolean;
+  isActiveForGlobalKey?: boolean;
   models: SelectorCloudModel[];
 }
 

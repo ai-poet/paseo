@@ -41,7 +41,6 @@ import { PushService } from "./push/push-service.js";
 import type { ScriptHealthState } from "./script-health-monitor.js";
 import type { ScriptRouteStore } from "./script-proxy.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
-import type { WorkspaceCloudRouteStore } from "./workspace-cloud-route-store.js";
 import type { SpeechReadinessSnapshot, SpeechService } from "./speech/speech-runtime.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "./voice-types.js";
 import { computeNotificationPlan, type ClientPresenceState } from "./agent-attention-policy.js";
@@ -324,7 +323,6 @@ export class VoiceAssistantWebSocketServer {
   private readonly providerOverrides: Record<string, ProviderOverride> | undefined;
   private readonly isDev: boolean;
   private readonly providerSnapshotManager: ProviderSnapshotManager;
-  private readonly workspaceCloudRouteStore: WorkspaceCloudRouteStore | null;
   private readonly onLifecycleIntent: ((intent: SessionLifecycleIntent) => void) | null;
   private readonly onBranchChanged:
     | ((workspaceId: string, oldBranch: string | null, newBranch: string | null) => void)
@@ -400,7 +398,6 @@ export class VoiceAssistantWebSocketServer {
     resolveScriptHealth?: (hostname: string) => ScriptHealthState | null,
     workspaceGitService?: WorkspaceGitServiceImpl,
     github?: GitHubService,
-    workspaceCloudRouteStore?: WorkspaceCloudRouteStore | null,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.serverId = serverId;
@@ -440,9 +437,7 @@ export class VoiceAssistantWebSocketServer {
     this.agentProviderRuntimeSettings = agentProviderRuntimeSettings;
     this.providerOverrides = providerOverrides;
     this.isDev = isDev === true;
-    const providerSnapshotLogger = this.logger.child({
-      module: "provider-snapshot-manager",
-    });
+    const providerSnapshotLogger = this.logger.child({ module: "provider-snapshot-manager" });
     this.providerSnapshotManager = new ProviderSnapshotManager(
       buildProviderRegistry(providerSnapshotLogger, {
         runtimeSettings: this.agentProviderRuntimeSettings,
@@ -451,7 +446,6 @@ export class VoiceAssistantWebSocketServer {
       }),
       providerSnapshotLogger,
     );
-    this.workspaceCloudRouteStore = workspaceCloudRouteStore ?? null;
     this.onLifecycleIntent = onLifecycleIntent ?? null;
     this.scriptRouteStore = scriptRouteStore ?? null;
     this.scriptRuntimeStore = scriptRuntimeStore ?? null;
@@ -772,7 +766,6 @@ export class VoiceAssistantWebSocketServer {
       tts: () => this.speech?.resolveTts() ?? null,
       terminalManager: this.terminalManager,
       providerSnapshotManager: this.providerSnapshotManager,
-      workspaceCloudRouteStore: this.workspaceCloudRouteStore ?? undefined,
       scriptRouteStore: this.scriptRouteStore ?? undefined,
       scriptRuntimeStore: this.scriptRuntimeStore ?? undefined,
       workspaceSetupSnapshots: this.workspaceSetupSnapshots,
@@ -928,7 +921,6 @@ export class VoiceAssistantWebSocketServer {
       features: {
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
         providersSnapshot: true,
-        workspaceCloudRoutes: true,
       },
     };
   }

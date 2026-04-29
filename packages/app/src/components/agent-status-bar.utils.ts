@@ -9,6 +9,7 @@ export type CloudGroupSelectorSummary = {
   groupLabel: string;
   description?: string;
   isActiveForWorkspace?: boolean;
+  isActiveForGlobalKey?: boolean;
 };
 
 export function getStatusSelectorHint(selector: ExplainedStatusSelector): string {
@@ -37,7 +38,7 @@ export function resolveActiveCloudGroup<T extends CloudGroupSelectorSummary>(
 ): T | null {
   return (
     cloudGroupsForStatusProvider(cloudGroups, provider).find(
-      (group) => group.isActiveForWorkspace,
+      (group) => group.isActiveForGlobalKey || group.isActiveForWorkspace,
     ) ?? null
   );
 }

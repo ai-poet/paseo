@@ -64,12 +64,7 @@ type StatusOption = {
   label: string;
 };
 
-type StatusSelector =
-  | "provider"
-  | "mode"
-  | "model"
-  | "thinking"
-  | `feature-${string}`;
+type StatusSelector = "provider" | "mode" | "model" | "thinking" | `feature-${string}`;
 
 type ControlledAgentStatusBarProps = {
   provider: string;
@@ -389,7 +384,9 @@ function ControlledStatusBar({
                 accessibilityLabel="Select agent provider"
                 testID="agent-provider-selector"
               >
-                <Text style={styles.modeBadgeText}>{displayProvider}</Text>
+                <Text style={styles.modeBadgeText} numberOfLines={1} ellipsizeMode="tail">
+                  {displayProvider}
+                </Text>
                 <ChevronDown size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
               </Pressable>
               <Combobox
@@ -408,9 +405,16 @@ function ControlledStatusBar({
           {displayCloudGroup ? (
             <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
               <TooltipTrigger asChild triggerRefProp="ref">
-                <View style={styles.modeBadge} testID="agent-cloud-group-status">
+                <View
+                  style={[styles.modeBadge, styles.cloudGroupBadge]}
+                  testID="agent-cloud-group-status"
+                >
                   <Cloud size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
-                  <Text style={styles.modeBadgeText} numberOfLines={1}>
+                  <Text
+                    style={[styles.modeBadgeText, styles.cloudGroupBadgeText]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
                     {displayCloudGroup}
                   </Text>
                 </View>
@@ -429,7 +433,7 @@ function ControlledStatusBar({
               enabledOnMobile={false}
             >
               <TooltipTrigger asChild triggerRefProp="ref">
-                <View>
+                <View style={styles.modelSelectorSlot}>
                   <CombinedModelSelector
                     providerDefinitions={effectiveProviderDefinitions}
                     allProviderModels={effectiveAllProviderModels}
@@ -478,7 +482,9 @@ function ControlledStatusBar({
                     testID="agent-thinking-selector"
                   >
                     <Brain size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
-                    <Text style={styles.modeBadgeText}>{displayThinking}</Text>
+                    <Text style={styles.modeBadgeText} numberOfLines={1} ellipsizeMode="tail">
+                      {displayThinking}
+                    </Text>
                     <ChevronDown size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
                   </Pressable>
                 </TooltipTrigger>
@@ -616,7 +622,7 @@ function ControlledStatusBar({
                           size={theme.iconSize.md}
                           color={theme.colors.foregroundMuted}
                         />
-                        <Text style={styles.modeBadgeText}>
+                        <Text style={styles.modeBadgeText} numberOfLines={1} ellipsizeMode="tail">
                           {selectedOption?.label ?? feature.label}
                         </Text>
                         <ChevronDown
@@ -1239,15 +1245,34 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "flex-end",
     gap: theme.spacing[1],
+    minWidth: 0,
+    maxWidth: "100%",
+    flexShrink: 1,
+    overflow: "hidden",
   },
   modeBadge: {
     height: 28,
+    minWidth: 0,
+    maxWidth: 220,
+    flexShrink: 1,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "transparent",
     gap: theme.spacing[1],
     paddingHorizontal: theme.spacing[2],
     borderRadius: theme.borderRadius["2xl"],
+  },
+  cloudGroupBadge: {
+    maxWidth: 260,
+    flexShrink: 2,
+  },
+  cloudGroupBadgeText: {
+    minWidth: 0,
+    flexShrink: 1,
+  },
+  modelSelectorSlot: {
+    minWidth: 0,
+    flexShrink: 1,
   },
   modeIconBadge: {
     width: 28,
@@ -1267,6 +1292,8 @@ const styles = StyleSheet.create((theme) => ({
     opacity: 0.5,
   },
   modeBadgeText: {
+    minWidth: 0,
+    flexShrink: 1,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,

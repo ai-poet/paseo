@@ -29,7 +29,7 @@ if [ -z "${PASEO_LOCAL_MODELS_DIR}" ]; then
 fi
 
 echo "══════════════════════════════════════════════════════"
-echo "  ${PASEO_APP_NAME:-Paseo} Dev"
+echo "  Paseo Dev"
 echo "══════════════════════════════════════════════════════"
 echo "  Home:    ${PASEO_HOME}"
 echo "  Models:  ${PASEO_LOCAL_MODELS_DIR}"

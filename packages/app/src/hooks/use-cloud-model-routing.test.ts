@@ -1,12 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { AgentProviderDefinition } from "@server/server/agent/provider-manifest";
-import type { WorkspaceCloudRoutePayload } from "@server/shared/messages";
-import type { Sub2APIGroupStatusItem, Sub2APIModelCatalog, Sub2APIKey } from "@/lib/sub2api-client";
+import type {
+  Sub2APIGroup,
+  Sub2APIGroupStatusItem,
+  Sub2APIKey,
+  Sub2APIModelCatalog,
+} from "@/lib/sub2api-client";
+import type { ProviderStore } from "@/screens/settings/sub2api-provider-types";
 import {
   buildCloudModelRoutingGroups,
-  clearCloudRouteForProvider,
-  formatWorkspaceCloudRouteSwitchError,
-  selectCloudModelForNextSession,
+  buildGlobalCloudRouteGroups,
+  resolveActiveGlobalCloudProviders,
 } from "./cloud-model-routing-utils";
 
 const providerDefinitions: AgentProviderDefinition[] = [
@@ -92,25 +96,26 @@ const statuses: Sub2APIGroupStatusItem[] = [
   },
 ];
 
+const claudeGroup: Sub2APIGroup = {
+  id: 10,
+  name: "Claude Fast",
+  description: "",
+  platform: "anthropic",
+  rate_multiplier: 0.8,
+  status: "active",
+  subscription_type: "pay_as_you_go",
+  allow_messages_dispatch: true,
+};
+
 describe("buildCloudModelRoutingGroups", () => {
-  it("builds selector cloud groups from the catalog for supported providers", () => {
+  it("builds selector cloud groups from the catalog and marks the current global key group", () => {
     const groups = buildCloudModelRoutingGroups({
       catalog,
       statuses,
       providerDefinitions,
-      workspaceRoutes: [
-        {
-          cwd: "/repo",
-          provider: "claude",
-          endpoint: "https://cloud.example",
-          maskedKey: "sk-***",
-          apiKeyId: 1,
-          groupId: 10,
-          groupName: "Claude Fast",
-          platform: "anthropic",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        } satisfies WorkspaceCloudRoutePayload,
-      ],
+      activeGroupIdsByProvider: {
+        claude: 10,
+      },
     });
 
     expect(groups).toEqual([
@@ -119,8 +124,8 @@ describe("buildCloudModelRoutingGroups", () => {
         groupId: 10,
         groupLabel: "Claude Fast",
         platform: "anthropic",
-        isActiveForWorkspace: true,
-        description: expect.stringContaining("Current workspace"),
+        isActiveForGlobalKey: true,
+        description: expect.stringContaining("Current global key"),
         models: [
           expect.objectContaining({
             id: "claude-sonnet",
@@ -132,81 +137,94 @@ describe("buildCloudModelRoutingGroups", () => {
   });
 });
 
-describe("selectCloudModelForNextSession", () => {
-  it("reuses an existing key before creating a new one and persists the workspace route", async () => {
-    const existingKey = {
-      id: 7,
-      key: "sk-existing",
-      group_id: 10,
-    } as Sub2APIKey;
-    const setWorkspaceCloudRoute = vi.fn(async (route) => ({
-      ...route,
-      maskedKey: "sk-***",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    }));
-    const createKey = vi.fn();
+describe("resolveActiveGlobalCloudProviders", () => {
+  it("resolves scoped active Claude and Codex providers from the desktop store", () => {
+    const store: ProviderStore = {
+      activeProviderId: null,
+      activeClaudeProviderId: "claude-cloud",
+      activeCodexProviderId: "codex-cloud",
+      providers: [
+        {
+          id: "claude-cloud",
+          name: "Cloud Claude",
+          type: "default",
+          endpoint: "https://cloud.example.com/v1",
+          apiKey: " sk-claude ",
+          isDefault: true,
+          target: "claude",
+        },
+        {
+          id: "codex-cloud",
+          name: "Cloud Codex",
+          type: "default",
+          endpoint: "https://cloud.example.com",
+          apiKey: "sk-codex",
+          isDefault: true,
+          target: "codex",
+        },
+      ],
+    };
 
-    await selectCloudModelForNextSession({
-      serverId: "local",
-      cwd: "/repo",
-      endpoint: "https://cloud.example",
-      isLoggedIn: true,
-      keys: [existingKey],
-      group: {
+    expect(resolveActiveGlobalCloudProviders(store)).toEqual([
+      expect.objectContaining({
+        provider: "claude",
+        apiKey: "sk-claude",
+        endpoint: "https://cloud.example.com",
+      }),
+      expect.objectContaining({
+        provider: "codex",
+        apiKey: "sk-codex",
+        endpoint: "https://cloud.example.com",
+      }),
+    ]);
+  });
+});
+
+describe("buildGlobalCloudRouteGroups", () => {
+  it("shows the group that owns the active global Cloud key", () => {
+    const keys: Sub2APIKey[] = [
+      {
+        id: 7,
+        user_id: 1,
+        key: "sk-global",
+        name: "Desktop Claude",
+        group_id: claudeGroup.id,
+        status: "active",
+        quota: 0,
+        quota_used: 0,
+        rate_limit_5h: 0,
+        rate_limit_1d: 0,
+        rate_limit_7d: 0,
+        usage_5h: 0,
+        usage_1d: 0,
+        usage_7d: 0,
+        created_at: "",
+        updated_at: "",
+        group: claudeGroup,
+      },
+    ];
+
+    const groups = buildGlobalCloudRouteGroups({
+      activeProviders: [
+        {
+          provider: "claude",
+          apiKey: "sk-global",
+          endpoint: "https://cloud.example.com",
+        },
+      ],
+      cloudEndpoint: "https://cloud.example.com/v1",
+      keys,
+      groups: [claudeGroup],
+      providerDefinitions,
+    });
+
+    expect(groups).toEqual([
+      expect.objectContaining({
         provider: "claude",
         groupId: 10,
         groupLabel: "Claude Fast",
-        platform: "anthropic",
-        models: [{ id: "claude-sonnet", label: "Claude Sonnet" }],
-      },
-      provider: "claude",
-      createKey,
-      setWorkspaceCloudRoute,
-    });
-
-    expect(createKey).not.toHaveBeenCalled();
-    expect(setWorkspaceCloudRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        cwd: "/repo",
-        provider: "claude",
-        endpoint: "https://cloud.example",
-        apiKey: "sk-existing",
-        apiKeyId: 7,
-        groupId: 10,
-        groupName: "Claude Fast",
-        platform: "anthropic",
+        isActiveForGlobalKey: true,
       }),
-    );
-  });
-});
-
-describe("clearCloudRouteForProvider", () => {
-  it("clears the workspace route so provider models use the global CLI config", async () => {
-    const clearWorkspaceCloudRoute = vi.fn(async () => null);
-
-    await clearCloudRouteForProvider({
-      serverId: "local",
-      cwd: "/repo",
-      provider: "claude",
-      clearWorkspaceCloudRoute,
-    });
-
-    expect(clearWorkspaceCloudRoute).toHaveBeenCalledWith({
-      cwd: "/repo",
-      provider: "claude",
-    });
-  });
-});
-
-describe("formatWorkspaceCloudRouteSwitchError", () => {
-  it("turns old daemon schema failures into a restart hint", () => {
-    const error = new Error(
-      "Unknown request schema requestType=set_workspace_cloud_route_request code=unknown_schema",
-    ) as Error & { code?: string; requestType?: string };
-    error.code = "unknown_schema";
-    error.requestType = "set_workspace_cloud_route_request";
-
-    expect(formatWorkspaceCloudRouteSwitchError(error)).toContain("Restart the local daemon");
-    expect(formatWorkspaceCloudRouteSwitchError(error)).toContain("Restarting Desktop alone");
+    ]);
   });
 });

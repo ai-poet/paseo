@@ -913,48 +913,6 @@ export const RefreshProvidersSnapshotRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
-export const WorkspaceCloudRouteProviderSchema = z.enum(["claude", "codex"]);
-
-export const WorkspaceCloudRoutePayloadSchema = z.object({
-  cwd: z.string().min(1),
-  provider: WorkspaceCloudRouteProviderSchema,
-  endpoint: z.string().min(1),
-  apiKeyId: z.number().int().positive().nullable().optional(),
-  maskedKey: z.string().min(1),
-  groupId: z.number().int().positive(),
-  groupName: z.string().min(1),
-  platform: z.string().min(1),
-  updatedAt: z.string().min(1),
-});
-
-export const WorkspaceCloudRouteSetInputSchema = WorkspaceCloudRoutePayloadSchema.omit({
-  maskedKey: true,
-  updatedAt: true,
-}).extend({
-  apiKey: z.string().min(1),
-  updatedAt: z.string().min(1).optional(),
-});
-
-export const GetWorkspaceCloudRoutesRequestMessageSchema = z.object({
-  type: z.literal("get_workspace_cloud_routes_request"),
-  cwd: z.string().min(1),
-  provider: WorkspaceCloudRouteProviderSchema.optional(),
-  requestId: z.string(),
-});
-
-export const SetWorkspaceCloudRouteRequestMessageSchema = z.object({
-  type: z.literal("set_workspace_cloud_route_request"),
-  route: WorkspaceCloudRouteSetInputSchema,
-  requestId: z.string(),
-});
-
-export const ClearWorkspaceCloudRouteRequestMessageSchema = z.object({
-  type: z.literal("clear_workspace_cloud_route_request"),
-  cwd: z.string().min(1),
-  provider: WorkspaceCloudRouteProviderSchema,
-  requestId: z.string(),
-});
-
 export const ProviderDiagnosticRequestMessageSchema = z.object({
   type: z.literal("provider_diagnostic_request"),
   provider: AgentProviderSchema,
@@ -1605,9 +1563,6 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ListAvailableProvidersRequestMessageSchema,
   GetProvidersSnapshotRequestMessageSchema,
   RefreshProvidersSnapshotRequestMessageSchema,
-  GetWorkspaceCloudRoutesRequestMessageSchema,
-  SetWorkspaceCloudRouteRequestMessageSchema,
-  ClearWorkspaceCloudRouteRequestMessageSchema,
   ProviderDiagnosticRequestMessageSchema,
   ResumeAgentRequestMessageSchema,
   RefreshAgentRequestMessageSchema,
@@ -1849,7 +1804,6 @@ export const ServerInfoStatusPayloadSchema = z
     features: z
       .object({
         providersSnapshot: z.boolean().optional(),
-        workspaceCloudRoutes: z.boolean().optional(),
       })
       .optional(),
   })
@@ -2984,30 +2938,6 @@ export const RefreshProvidersSnapshotResponseMessageSchema = z.object({
   }),
 });
 
-export const GetWorkspaceCloudRoutesResponseMessageSchema = z.object({
-  type: z.literal("get_workspace_cloud_routes_response"),
-  payload: z.object({
-    requestId: z.string(),
-    routes: z.array(WorkspaceCloudRoutePayloadSchema),
-  }),
-});
-
-export const SetWorkspaceCloudRouteResponseMessageSchema = z.object({
-  type: z.literal("set_workspace_cloud_route_response"),
-  payload: z.object({
-    requestId: z.string(),
-    route: WorkspaceCloudRoutePayloadSchema,
-  }),
-});
-
-export const ClearWorkspaceCloudRouteResponseMessageSchema = z.object({
-  type: z.literal("clear_workspace_cloud_route_response"),
-  payload: z.object({
-    requestId: z.string(),
-    route: WorkspaceCloudRoutePayloadSchema.nullable(),
-  }),
-});
-
 // COMPAT(providersSnapshot): added in v0.1.48, remove gating when all clients use snapshot
 export const ProviderDiagnosticResponseMessageSchema = z.object({
   type: z.literal("provider_diagnostic_response"),
@@ -3234,9 +3164,6 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   GetProvidersSnapshotResponseMessageSchema,
   ProvidersSnapshotUpdateMessageSchema,
   RefreshProvidersSnapshotResponseMessageSchema,
-  GetWorkspaceCloudRoutesResponseMessageSchema,
-  SetWorkspaceCloudRouteResponseMessageSchema,
-  ClearWorkspaceCloudRouteResponseMessageSchema,
   ProviderDiagnosticResponseMessageSchema,
   ListCommandsResponseSchema,
   ListTerminalsResponseSchema,
@@ -3345,15 +3272,6 @@ export type ProvidersSnapshotUpdateMessage = z.infer<typeof ProvidersSnapshotUpd
 export type RefreshProvidersSnapshotResponseMessage = z.infer<
   typeof RefreshProvidersSnapshotResponseMessageSchema
 >;
-export type GetWorkspaceCloudRoutesResponseMessage = z.infer<
-  typeof GetWorkspaceCloudRoutesResponseMessageSchema
->;
-export type SetWorkspaceCloudRouteResponseMessage = z.infer<
-  typeof SetWorkspaceCloudRouteResponseMessageSchema
->;
-export type ClearWorkspaceCloudRouteResponseMessage = z.infer<
-  typeof ClearWorkspaceCloudRouteResponseMessageSchema
->;
 export type ProviderDiagnosticResponseMessage = z.infer<
   typeof ProviderDiagnosticResponseMessageSchema
 >;
@@ -3408,18 +3326,6 @@ export type GetProvidersSnapshotRequestMessage = z.infer<
 >;
 export type RefreshProvidersSnapshotRequestMessage = z.infer<
   typeof RefreshProvidersSnapshotRequestMessageSchema
->;
-export type WorkspaceCloudRouteProvider = z.infer<typeof WorkspaceCloudRouteProviderSchema>;
-export type WorkspaceCloudRoutePayload = z.infer<typeof WorkspaceCloudRoutePayloadSchema>;
-export type WorkspaceCloudRouteSetInput = z.infer<typeof WorkspaceCloudRouteSetInputSchema>;
-export type GetWorkspaceCloudRoutesRequestMessage = z.infer<
-  typeof GetWorkspaceCloudRoutesRequestMessageSchema
->;
-export type SetWorkspaceCloudRouteRequestMessage = z.infer<
-  typeof SetWorkspaceCloudRouteRequestMessageSchema
->;
-export type ClearWorkspaceCloudRouteRequestMessage = z.infer<
-  typeof ClearWorkspaceCloudRouteRequestMessageSchema
 >;
 export type ProviderDiagnosticRequestMessage = z.infer<
   typeof ProviderDiagnosticRequestMessageSchema

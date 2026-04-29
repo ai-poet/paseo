@@ -1,35 +1,100 @@
-import type { AgentProvider } from "@server/server/agent/agent-sdk-types";
 import type { AgentProviderDefinition } from "@server/server/agent/provider-manifest";
 import type {
-  WorkspaceCloudRoutePayload,
-  WorkspaceCloudRouteProvider,
-  WorkspaceCloudRouteSetInput,
-} from "@server/shared/messages";
-import type {
-  Sub2APICreateKeyRequest,
+  Sub2APIGroup,
   Sub2APIGroupStatusItem,
   Sub2APIKey,
   Sub2APIModelCatalog,
 } from "@/lib/sub2api-client";
+import type {
+  DesktopProviderPayload,
+  ProviderStore,
+} from "@/screens/settings/sub2api-provider-types";
 import type { SelectorCloudGroup } from "@/components/combined-model-selector.utils";
 import { buildGroupFirstModelCatalog } from "@/screens/settings/paseo-cloud-catalog-utils";
-import { resolveManagedCloudRouteFromPlatform } from "@/screens/settings/managed-cloud-scope";
-import { findReusableKey } from "@/screens/settings/managed-provider-settings-shared";
-import { toErrorMessage } from "@/utils/error-messages";
+import {
+  resolveManagedCloudRouteForKey,
+  resolveManagedCloudRouteFromPlatform,
+  type ManagedCloudDesktopScope,
+} from "@/screens/settings/managed-cloud-scope";
 
-function isWorkspaceCloudRouteProvider(value: string): value is WorkspaceCloudRouteProvider {
-  return value === "claude" || value === "codex";
+export type ActiveGlobalCloudProvider = {
+  provider: ManagedCloudDesktopScope;
+  apiKey: string;
+  endpoint: string;
+  providerName?: string;
+};
+
+function normalizeApiKey(value: string | null | undefined): string {
+  return value?.trim() ?? "";
+}
+
+function normalizeProviderEndpoint(value: string | null | undefined): string {
+  const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
+  return trimmed.toLowerCase().endsWith("/v1") ? trimmed.slice(0, -3) : trimmed;
+}
+
+function providerSupportsScope(
+  provider: DesktopProviderPayload | undefined,
+  scope: ManagedCloudDesktopScope,
+): provider is DesktopProviderPayload {
+  return Boolean(provider && (!provider.target || provider.target === scope));
+}
+
+function resolveScopedActiveProviderIds(
+  store: ProviderStore,
+): Record<ManagedCloudDesktopScope, string | null> {
+  const hasScopedIds =
+    store.activeClaudeProviderId !== null || store.activeCodexProviderId !== null;
+  const legacyFallback = hasScopedIds ? null : (store.activeProviderId ?? null);
+  return {
+    claude: store.activeClaudeProviderId ?? legacyFallback,
+    codex: store.activeCodexProviderId ?? legacyFallback,
+  };
+}
+
+export function resolveActiveGlobalCloudProviders(
+  store: ProviderStore | null | undefined,
+): ActiveGlobalCloudProvider[] {
+  if (!store) {
+    return [];
+  }
+
+  const activeIds = resolveScopedActiveProviderIds(store);
+  const providersById = new Map(store.providers.map((provider) => [provider.id, provider]));
+  const result: ActiveGlobalCloudProvider[] = [];
+
+  for (const scope of ["claude", "codex"] as const) {
+    const id = activeIds[scope];
+    const provider = id ? providersById.get(id) : undefined;
+    if (!providerSupportsScope(provider, scope)) {
+      continue;
+    }
+
+    const apiKey = normalizeApiKey(provider.apiKey);
+    const endpoint = normalizeProviderEndpoint(provider.endpoint);
+    if (!apiKey || !endpoint) {
+      continue;
+    }
+
+    result.push({
+      provider: scope,
+      apiKey,
+      endpoint,
+      providerName: provider.name,
+    });
+  }
+
+  return result;
 }
 
 export function buildCloudModelRoutingGroups(input: {
   catalog: Sub2APIModelCatalog | null | undefined;
   statuses?: Sub2APIGroupStatusItem[] | null;
   providerDefinitions: AgentProviderDefinition[];
-  workspaceRoutes?: WorkspaceCloudRoutePayload[] | null;
+  activeGroupIdsByProvider?: Partial<Record<ManagedCloudDesktopScope, number | null | undefined>>;
 }): SelectorCloudGroup[] {
-  const supportedProviderIds = new Set(input.providerDefinitions.map((definition) => definition.id));
-  const activeGroupByProvider = new Map(
-    (input.workspaceRoutes ?? []).map((route) => [route.provider, route.groupId] as const),
+  const supportedProviderIds = new Set(
+    input.providerDefinitions.map((definition) => definition.id),
   );
   const groups: SelectorCloudGroup[] = [];
 
@@ -64,14 +129,14 @@ export function buildCloudModelRoutingGroups(input: {
       }
 
       const status = group.status?.stable_status || group.status?.latest_status;
-      const isActiveForWorkspace = activeGroupByProvider.get(route.scope) === group.group.id;
+      const isActiveForGlobalKey = input.activeGroupIdsByProvider?.[route.scope] === group.group.id;
       groups.push({
         provider: route.scope,
         groupId: group.group.id,
         groupLabel: group.group.name,
         platform,
-        isActiveForWorkspace,
-        description: `${isActiveForWorkspace ? "Current workspace · " : ""}${route.cliLabel} · ${
+        isActiveForGlobalKey,
+        description: `${isActiveForGlobalKey ? "Current global key · " : ""}${route.cliLabel} · ${
           group.group.rate_multiplier
         }x${status ? ` · ${status}` : ""}`,
         models,
@@ -79,86 +144,65 @@ export function buildCloudModelRoutingGroups(input: {
     }
   }
 
-  const getActiveGroupId = (provider: string) =>
-    isWorkspaceCloudRouteProvider(provider) ? activeGroupByProvider.get(provider) : undefined;
-
   return groups.sort((a, b) => {
-    const aActive = getActiveGroupId(a.provider) === a.groupId;
-    const bActive = getActiveGroupId(b.provider) === b.groupId;
-    return Number(bActive) - Number(aActive);
+    const aActive = a.isActiveForGlobalKey ? 1 : 0;
+    const bActive = b.isActiveForGlobalKey ? 1 : 0;
+    return bActive - aActive;
   });
 }
 
-export async function selectCloudModelForNextSession(input: {
-  serverId: string | null | undefined;
-  cwd: string | null | undefined;
-  endpoint: string | null | undefined;
-  isLoggedIn: boolean;
-  keys: Sub2APIKey[];
-  group: SelectorCloudGroup;
-  provider: AgentProvider;
-  createKey: (input: Sub2APICreateKeyRequest) => Promise<Sub2APIKey>;
-  setWorkspaceCloudRoute: (route: WorkspaceCloudRouteSetInput) => Promise<WorkspaceCloudRoutePayload>;
-}): Promise<WorkspaceCloudRoutePayload | null> {
-  const normalizedCwd = input.cwd?.trim() ?? "";
-  const endpoint = input.endpoint?.trim() ?? "";
-  if (
-    !input.serverId ||
-    !normalizedCwd ||
-    !endpoint ||
-    !input.isLoggedIn ||
-    !isWorkspaceCloudRouteProvider(input.provider)
-  ) {
-    return null;
+export function buildGlobalCloudRouteGroups(input: {
+  activeProviders: ActiveGlobalCloudProvider[];
+  cloudEndpoint?: string | null;
+  keys?: Sub2APIKey[] | null;
+  groups?: Sub2APIGroup[] | null;
+  providerDefinitions: AgentProviderDefinition[];
+}): SelectorCloudGroup[] {
+  const keys = input.keys ?? [];
+  const groups = input.groups ?? [];
+  const groupsById = new Map(groups.map((group) => [group.id, group]));
+  const supportedProviderIds = new Set(
+    input.providerDefinitions.map((definition) => definition.id),
+  );
+  const cloudEndpoint = normalizeProviderEndpoint(input.cloudEndpoint);
+  const result: SelectorCloudGroup[] = [];
+
+  for (const activeProvider of input.activeProviders) {
+    if (!supportedProviderIds.has(activeProvider.provider)) {
+      continue;
+    }
+    if (cloudEndpoint && activeProvider.endpoint && activeProvider.endpoint !== cloudEndpoint) {
+      continue;
+    }
+
+    const activeKey = normalizeApiKey(activeProvider.apiKey);
+    const key = keys.find((candidate) => normalizeApiKey(candidate.key) === activeKey);
+    if (!key) {
+      continue;
+    }
+
+    const route = resolveManagedCloudRouteForKey(key, groups);
+    if (!route.ok || route.scope !== activeProvider.provider) {
+      continue;
+    }
+
+    const groupId = key.group_id ?? key.group?.id ?? null;
+    if (typeof groupId !== "number") {
+      continue;
+    }
+
+    const group = key.group ?? groupsById.get(groupId) ?? null;
+    const groupLabel = group?.name ?? `Group #${groupId}`;
+    result.push({
+      provider: activeProvider.provider,
+      groupId,
+      groupLabel,
+      platform: group?.platform ?? "",
+      description: `${route.cliLabel} · global CLI key`,
+      isActiveForGlobalKey: true,
+      models: [],
+    });
   }
 
-  const reusable = findReusableKey(input.keys, input.group.groupId);
-  const keyToUse =
-    reusable ??
-    (await input.createKey({
-      name: `${input.group.groupLabel} Key`,
-      group_id: input.group.groupId,
-    }));
-
-  return await input.setWorkspaceCloudRoute({
-    cwd: normalizedCwd,
-    provider: input.provider,
-    endpoint,
-    apiKey: keyToUse.key,
-    apiKeyId: keyToUse.id,
-    groupId: input.group.groupId,
-    groupName: input.group.groupLabel,
-    platform: input.group.platform,
-  });
-}
-
-export async function clearCloudRouteForProvider(input: {
-  serverId: string | null | undefined;
-  cwd: string | null | undefined;
-  provider: AgentProvider;
-  clearWorkspaceCloudRoute: (input: {
-    cwd: string;
-    provider: WorkspaceCloudRouteProvider;
-  }) => Promise<WorkspaceCloudRoutePayload | null>;
-}): Promise<WorkspaceCloudRoutePayload | null> {
-  const normalizedCwd = input.cwd?.trim() ?? "";
-  if (!input.serverId || !normalizedCwd || !isWorkspaceCloudRouteProvider(input.provider)) {
-    return null;
-  }
-  return await input.clearWorkspaceCloudRoute({
-    cwd: normalizedCwd,
-    provider: input.provider,
-  });
-}
-
-export function formatWorkspaceCloudRouteSwitchError(error: unknown): string {
-  const rpcError = error as { code?: unknown; requestType?: unknown };
-  if (
-    rpcError.code === "unknown_schema" &&
-    typeof rpcError.requestType === "string" &&
-    rpcError.requestType.includes("workspace_cloud_route")
-  ) {
-    return "Restart the local daemon from Settings -> Host to load the new Cloud group routing protocol. Restarting Desktop alone may keep the old daemon running.";
-  }
-  return toErrorMessage(error);
+  return result;
 }

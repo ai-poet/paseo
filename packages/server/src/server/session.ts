@@ -80,7 +80,6 @@ import { deriveProjectSlug } from "./workspace-git-metadata.js";
 import type { ScriptHealthState } from "./script-health-monitor.js";
 import { spawnWorkspaceScript } from "./worktree-bootstrap.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
-import type { WorkspaceCloudRouteStore } from "./workspace-cloud-route-store.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
 import type { WorkspaceGitRuntimeSnapshot, WorkspaceGitService } from "./workspace-git-service.js";
 
@@ -507,7 +506,6 @@ export type SessionOptions = {
   tts: Resolvable<TextToSpeechProvider | null>;
   terminalManager: TerminalManager | null;
   providerSnapshotManager?: ProviderSnapshotManager;
-  workspaceCloudRouteStore?: WorkspaceCloudRouteStore;
   scriptRouteStore?: ScriptRouteStore;
   scriptRuntimeStore?: WorkspaceScriptRuntimeStore;
   workspaceSetupSnapshots?: Map<string, WorkspaceSetupSnapshot>;
@@ -693,7 +691,6 @@ export class Session {
   private readonly MOBILE_BACKGROUND_STREAM_GRACE_MS = 60_000;
   private readonly terminalManager: TerminalManager | null;
   private readonly providerSnapshotManager: ProviderSnapshotManager | null;
-  private readonly workspaceCloudRouteStore: WorkspaceCloudRouteStore | null;
   private unsubscribeProviderSnapshotEvents: (() => void) | null = null;
   private readonly scriptRouteStore: ScriptRouteStore | null;
   private readonly scriptRuntimeStore: WorkspaceScriptRuntimeStore | null;
@@ -777,7 +774,6 @@ export class Session {
       tts,
       terminalManager,
       providerSnapshotManager,
-      workspaceCloudRouteStore,
       scriptRouteStore,
       scriptRuntimeStore,
       workspaceSetupSnapshots,
@@ -820,7 +816,6 @@ export class Session {
     this.mcpBaseUrl = mcpBaseUrl ?? null;
     this.terminalManager = terminalManager;
     this.providerSnapshotManager = providerSnapshotManager ?? null;
-    this.workspaceCloudRouteStore = workspaceCloudRouteStore ?? null;
     this.scriptRouteStore = scriptRouteStore ?? null;
     this.scriptRuntimeStore = scriptRuntimeStore ?? null;
     this.workspaceSetupSnapshots = workspaceSetupSnapshots ?? new Map();
@@ -1785,18 +1780,6 @@ export class Session {
 
           case "refresh_providers_snapshot_request":
             await this.handleRefreshProvidersSnapshotRequest(msg);
-            break;
-
-          case "get_workspace_cloud_routes_request":
-            await this.handleGetWorkspaceCloudRoutesRequest(msg);
-            break;
-
-          case "set_workspace_cloud_route_request":
-            await this.handleSetWorkspaceCloudRouteRequest(msg);
-            break;
-
-          case "clear_workspace_cloud_route_request":
-            await this.handleClearWorkspaceCloudRouteRequest(msg);
             break;
 
           case "provider_diagnostic_request":
@@ -3424,66 +3407,6 @@ export class Session {
       payload: {
         acknowledged: true,
         requestId: msg.requestId,
-      },
-    });
-  }
-
-  private async handleGetWorkspaceCloudRoutesRequest(
-    msg: Extract<SessionInboundMessage, { type: "get_workspace_cloud_routes_request" }>,
-  ): Promise<void> {
-    const routes = (() => {
-      if (!this.workspaceCloudRouteStore) {
-        return [];
-      }
-      if (!msg.provider) {
-        return this.workspaceCloudRouteStore.listRoutePayloads(expandTilde(msg.cwd));
-      }
-      const route = this.workspaceCloudRouteStore.getRoutePayload(expandTilde(msg.cwd), msg.provider);
-      return route ? [route] : [];
-    })();
-
-    this.emit({
-      type: "get_workspace_cloud_routes_response",
-      payload: {
-        requestId: msg.requestId,
-        routes,
-      },
-    });
-  }
-
-  private async handleSetWorkspaceCloudRouteRequest(
-    msg: Extract<SessionInboundMessage, { type: "set_workspace_cloud_route_request" }>,
-  ): Promise<void> {
-    if (!this.workspaceCloudRouteStore) {
-      throw new Error("Workspace cloud routes are unavailable.");
-    }
-    const route = this.workspaceCloudRouteStore.setRoute({
-      ...msg.route,
-      cwd: expandTilde(msg.route.cwd),
-    });
-    const payload = this.workspaceCloudRouteStore.getRoutePayload(route.cwd, route.provider);
-    if (!payload) {
-      throw new Error("Workspace cloud route was not persisted.");
-    }
-    this.emit({
-      type: "set_workspace_cloud_route_response",
-      payload: {
-        requestId: msg.requestId,
-        route: payload,
-      },
-    });
-  }
-
-  private async handleClearWorkspaceCloudRouteRequest(
-    msg: Extract<SessionInboundMessage, { type: "clear_workspace_cloud_route_request" }>,
-  ): Promise<void> {
-    const route =
-      this.workspaceCloudRouteStore?.clearRoute(expandTilde(msg.cwd), msg.provider) ?? null;
-    this.emit({
-      type: "clear_workspace_cloud_route_response",
-      payload: {
-        requestId: msg.requestId,
-        route,
       },
     });
   }
