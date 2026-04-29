@@ -78,6 +78,7 @@ import { useOpenProjectPicker } from "@/hooks/use-open-project-picker";
 import { isWeb } from "@/constants/platform";
 import { resolveActiveHost } from "@/utils/active-host";
 import { SidebarUserMenu } from "@/components/sidebar-user-menu";
+import { CLOUD_NAME } from "@/config/branding";
 
 const MIN_CHAT_WIDTH = 400;
 
@@ -719,7 +720,7 @@ function MobileSidebar({
                   nativeID="sidebar-paseo-cloud"
                   collapsable={false}
                   accessible
-                  accessibilityLabel="Paseo Cloud"
+                  accessibilityLabel={CLOUD_NAME}
                   accessibilityRole="button"
                   onPress={handlePaseoCloud}
                 >
@@ -964,7 +965,7 @@ function DesktopSidebar({
               nativeID="sidebar-paseo-cloud"
               collapsable={false}
               accessible
-              accessibilityLabel="Paseo Cloud"
+              accessibilityLabel={CLOUD_NAME}
               accessibilityRole="button"
               onPress={handlePaseoCloud}
             >

@@ -13,6 +13,7 @@ import {
 import { useAppSettings } from "@/hooks/use-settings";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { useSub2APIMe, useSub2APIUsageStats } from "@/hooks/use-sub2api-api";
+import { CLOUD_NAME } from "@/config/branding";
 import { Sub2APIPayModal } from "@/screens/settings/sub2api-pay-modal";
 import { buildPaseoCloudRoute } from "@/utils/host-routes";
 import { formatUsd, getErrorMessage } from "@/screens/settings/managed-provider-settings-shared";
@@ -159,7 +160,7 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
             leading={<Cloud size={16} color={theme.colors.foregroundMuted} />}
             onSelect={handleOpenPaseoCloud}
           >
-            Paseo Cloud
+            {CLOUD_NAME}
           </DropdownMenuItem>
           <DropdownMenuItem
             leading={<KeyRound size={16} color={theme.colors.foregroundMuted} />}

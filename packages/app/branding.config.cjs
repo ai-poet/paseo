@@ -12,6 +12,7 @@ function resolveBrandingFromEnv(env = process.env) {
     appName,
     developmentAppName: trimToNull(env.PASEO_APP_NAME_DEVELOPMENT) ?? `${appName} Debug`,
     cloudName: trimToNull(env.PASEO_CLOUD_NAME) ?? `${appName} Cloud`,
+    logoVariant: trimToNull(env.PASEO_LOGO_VARIANT) ?? "paseo",
     expoIcon: trimToNull(env.PASEO_EXPO_ICON) ?? "./assets/images/icon.png",
     expoAndroidForegroundIcon:
       trimToNull(env.PASEO_EXPO_ANDROID_FOREGROUND_ICON) ??

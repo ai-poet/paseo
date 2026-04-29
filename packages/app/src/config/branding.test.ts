@@ -7,6 +7,7 @@ describe("resolveBrandingFromEnv", () => {
       appName: "Paseo",
       developmentAppName: "Paseo Debug",
       cloudName: "Paseo Cloud",
+      logoVariant: "paseo",
       expoIcon: "./assets/images/icon.png",
       expoAndroidForegroundIcon: "./assets/images/android-icon-foreground.png",
       expoSplashIcon: "./assets/images/splash-icon.png",
@@ -21,12 +22,14 @@ describe("resolveBrandingFromEnv", () => {
         PASEO_APP_NAME: "  cheapRouter  ",
         PASEO_APP_NAME_DEVELOPMENT: " cheapRouter Dev ",
         PASEO_CLOUD_NAME: " cheapRouter Cloud ",
+        PASEO_LOGO_VARIANT: " cybercode ",
         PASEO_EXPO_ICON: " ./brand/icon.png ",
       }),
     ).toMatchObject({
       appName: "cheapRouter",
       developmentAppName: "cheapRouter Dev",
       cloudName: "cheapRouter Cloud",
+      logoVariant: "cybercode",
       expoIcon: "./brand/icon.png",
     });
   });

@@ -151,6 +151,7 @@ export default {
       brand: {
         appName: brand.appName,
         cloudName: brand.cloudName,
+        logoVariant: brand.logoVariant,
       },
       router: {},
       eas: {
