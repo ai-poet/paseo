@@ -7,7 +7,11 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { settingsStyles } from "@/styles/settings";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
-import { useSub2APIGroupStatuses, useSub2APIModelCatalog } from "@/hooks/use-sub2api-api";
+import {
+  useSub2APIGroupStatuses,
+  useSub2APIModelCatalog,
+  useSub2APIPaymentConfig,
+} from "@/hooks/use-sub2api-api";
 import { CLOUD_NAME } from "@/config/branding";
 import {
   buildCatalogModelCardItem,
@@ -69,6 +73,14 @@ function isGroupCatalogModel(value: GroupFirstCatalogModel | unknown): value is 
   );
 }
 
+function resolvePreferredLocale(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().locale;
+  } catch {
+    return "";
+  }
+}
+
 function GroupStatusLine({ group }: { group: GroupFirstCatalogGroup }) {
   const status = group.status;
   if (!status) {
@@ -90,6 +102,7 @@ export function Sub2APIModelsSection() {
   const { isLoggedIn } = useSub2APIAuth();
   const statusesQuery = useSub2APIGroupStatuses();
   const catalogQuery = useSub2APIModelCatalog();
+  const paymentConfigQuery = useSub2APIPaymentConfig();
   const [platform, setPlatform] = useState<PlatformFilter>("anthropic");
   const [selectedGroup, setSelectedGroup] = useState<SelectedGroup>(null);
   const [search, setSearch] = useState("");
@@ -109,6 +122,17 @@ export function Sub2APIModelsSection() {
   const statusByGroupId = useMemo(
     () => new Map((statusesQuery.data ?? []).map((status) => [status.group_id, status] as const)),
     [statusesQuery.data],
+  );
+  const actualPaidPricing = useMemo(
+    () => ({
+      balanceCreditCnyPerUsd: paymentConfigQuery.data?.balanceCreditCnyPerUsd ?? null,
+      usdExchangeRate: paymentConfigQuery.data?.usdExchangeRate ?? null,
+      locale: resolvePreferredLocale(),
+    }),
+    [
+      paymentConfigQuery.data?.balanceCreditCnyPerUsd,
+      paymentConfigQuery.data?.usdExchangeRate,
+    ],
   );
 
   useEffect(() => {
@@ -263,6 +287,7 @@ export function Sub2APIModelsSection() {
                         key={`${cardItem.model}-${statusGroupId}`}
                         item={cardItem}
                         status={statusByGroupId.get(statusGroupId) ?? null}
+                        actualPaidPricing={actualPaidPricing}
                       />
                     );
                   })

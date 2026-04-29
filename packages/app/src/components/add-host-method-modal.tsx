@@ -16,6 +16,9 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
+  optionDisabled: {
+    opacity: 0.55,
+  },
   optionText: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
@@ -83,15 +86,17 @@ export function AddHostMethodModal({
 
       {isNative ? (
         <Pressable
-          style={styles.option}
+          style={[styles.option, styles.optionDisabled]}
+          disabled
           onPress={handleScan}
           accessibilityRole="button"
-          accessibilityLabel="Scan QR code"
+          accessibilityLabel="Scan QR code coming soon"
+          testID="add-host-method-scan-qr-coming-soon"
         >
           <QrCode size={18} color={theme.colors.foreground} />
           <View style={styles.optionBody}>
             <Text style={styles.optionText}>Scan QR code</Text>
-            <Text style={styles.optionSubtext}>Encrypted relay connection.</Text>
+            <Text style={styles.optionSubtext}>Coming soon.</Text>
           </View>
         </Pressable>
       ) : null}

@@ -13,6 +13,10 @@ import {
   type NodeEntrypointInvocation,
   type NodeEntrypointSpec,
 } from "./node-entrypoint-launcher.js";
+import {
+  DESKTOP_DEV_ENTRYPOINT_ENV,
+  resolveDevelopmentEntrypoint,
+} from "./development-entrypoint.js";
 
 const CLI_PACKAGE_NAME = "@getpaseo/cli";
 const SERVER_PACKAGE_NAME = "@getpaseo/server";
@@ -123,18 +127,21 @@ export function resolveDaemonRunnerEntrypoint(): NodeEntrypointSpec {
   }
 
   const serverPackage = resolveServerPackageInfo();
+  const sourceRunner = path.join(serverPackage.root, "scripts", "supervisor-entrypoint.ts");
   const distRunner = path.join(serverPackage.root, "dist", "scripts", "supervisor-entrypoint.js");
-  if (existsSync(distRunner)) {
-    return {
-      entryPath: distRunner,
-      execArgv: [],
-    };
+  const entrypoint = resolveDevelopmentEntrypoint({
+    sourcePath: sourceRunner,
+    distPath: distRunner,
+    envPreference: process.env[DESKTOP_DEV_ENTRYPOINT_ENV],
+  });
+  if (entrypoint) {
+    return entrypoint;
   }
 
   return {
     entryPath: assertPathExists({
       label: "Daemon runner source",
-      filePath: path.join(serverPackage.root, "scripts", "supervisor-entrypoint.ts"),
+      filePath: sourceRunner,
     }),
     execArgv: ["--import", "tsx"],
   };
@@ -159,18 +166,21 @@ export function resolveCliEntrypoint(): NodeEntrypointSpec {
   }
 
   const cliPackage = resolveCliPackageInfo();
+  const sourceEntry = path.join(cliPackage.root, "src", "index.ts");
   const distEntry = path.join(cliPackage.root, "dist", "index.js");
-  if (existsSync(distEntry)) {
-    return {
-      entryPath: distEntry,
-      execArgv: [],
-    };
+  const entrypoint = resolveDevelopmentEntrypoint({
+    sourcePath: sourceEntry,
+    distPath: distEntry,
+    envPreference: process.env[DESKTOP_DEV_ENTRYPOINT_ENV],
+  });
+  if (entrypoint) {
+    return entrypoint;
   }
 
   return {
     entryPath: assertPathExists({
       label: "CLI source entrypoint",
-      filePath: path.join(cliPackage.root, "src", "index.ts"),
+      filePath: sourceEntry,
     }),
     execArgv: ["--import", "tsx"],
   };

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import {
   createSub2APIClient,
+  normalizeSub2APIEndpoint,
   type Sub2APICreateKeyRequest,
   type Sub2APIModelCatalog,
   type Sub2APIPaginatedData,
@@ -25,6 +26,11 @@ import {
   type Sub2APIUserReferral,
   type Sub2APIRedeemResult,
 } from "@/lib/sub2api-client";
+
+export interface Sub2APIPaymentConfig {
+  balanceCreditCnyPerUsd: number | null;
+  usdExchangeRate: number | null;
+}
 
 function normalizeEndpointKey(endpoint: string | null | undefined): string {
   const trimmed = endpoint?.trim();
@@ -134,6 +140,18 @@ export const cloudServiceQueryKeys = {
       normalizeSessionKey(sessionKey),
       normalizeEndpointKey(endpoint),
       "models",
+    ] as const,
+  paymentConfig: (
+    endpoint: string | null | undefined,
+    sessionKey: string | null | undefined,
+    userId: number | null | undefined,
+  ) =>
+    [
+      CLOUD_SERVICE_QUERY_ROOT,
+      normalizeSessionKey(sessionKey),
+      normalizeEndpointKey(endpoint),
+      "paymentConfig",
+      userId ?? "none",
     ] as const,
   groupStatuses: (endpoint: string | null | undefined, sessionKey: string | null | undefined) =>
     [
@@ -321,6 +339,75 @@ export function useSub2APIModelCatalog() {
         throw new Error("Service client is unavailable.");
       }
       return await client.getModelCatalog();
+    },
+  });
+}
+
+function parsePositiveNumber(value: unknown): number | null {
+  const numericValue =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
+}
+
+function buildPayCenterUserConfigUrl(input: {
+  endpoint: string;
+  userId: number;
+  accessToken: string;
+}): string {
+  const base = normalizeSub2APIEndpoint(input.endpoint);
+  const url = new URL(`${base}/pay/api/user`);
+  url.searchParams.set("user_id", String(input.userId));
+  url.searchParams.set("token", input.accessToken);
+  url.searchParams.set("lang", "zh");
+  return url.toString();
+}
+
+export function useSub2APIPaymentConfig() {
+  const { auth, getAccessToken, isLoggedIn } = useSub2APIAuth();
+  const meQuery = useSub2APIMe();
+  const endpoint = auth?.endpoint ?? null;
+  const sessionKey = auth?.sessionKey ?? null;
+  const userId = meQuery.data?.id ?? null;
+
+  return useQuery({
+    queryKey: cloudServiceQueryKeys.paymentConfig(endpoint, sessionKey, userId),
+    enabled: isLoggedIn && Boolean(endpoint) && typeof userId === "number",
+    staleTime: 5 * 60_000,
+    queryFn: async (): Promise<Sub2APIPaymentConfig> => {
+      if (!endpoint || typeof userId !== "number") {
+        return { balanceCreditCnyPerUsd: null, usdExchangeRate: null };
+      }
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        return { balanceCreditCnyPerUsd: null, usdExchangeRate: null };
+      }
+
+      try {
+        const response = await fetch(
+          buildPayCenterUserConfigUrl({ endpoint, userId, accessToken }),
+          {
+            method: "GET",
+            headers: { "Accept-Language": "zh" },
+          },
+        );
+        if (!response.ok) {
+          return { balanceCreditCnyPerUsd: null, usdExchangeRate: null };
+        }
+        const payload = (await response.json()) as {
+          config?: {
+            balanceCreditCnyPerUsd?: unknown;
+            usdExchangeRate?: unknown;
+          };
+        };
+        return {
+          balanceCreditCnyPerUsd: parsePositiveNumber(
+            payload.config?.balanceCreditCnyPerUsd,
+          ),
+          usdExchangeRate: parsePositiveNumber(payload.config?.usdExchangeRate),
+        };
+      } catch {
+        return { balanceCreditCnyPerUsd: null, usdExchangeRate: null };
+      }
     },
   });
 }

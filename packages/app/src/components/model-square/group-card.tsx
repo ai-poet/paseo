@@ -3,11 +3,12 @@ import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { getPlatformColors, getStatusColor, getStatusLabel } from "@/utils/platform-colors";
 import type { Sub2APIModelCatalogItem, Sub2APIGroupStatusItem } from "@/lib/sub2api-client";
-
-function fmt(value: number | null): string {
-  if (value == null || !Number.isFinite(value)) return "--";
-  return `$${value.toFixed(4)}`;
-}
+import {
+  formatActualPaidPrice,
+  formatUsdPrice,
+  getActualPaidSectionLabel,
+  type ActualPaidPricingContext,
+} from "@/components/model-square/model-card-pricing";
 
 function fmtPct(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "--";
@@ -17,9 +18,14 @@ function fmtPct(value: number | null): string {
 export interface ModelCardProps {
   item: Sub2APIModelCatalogItem;
   status?: Sub2APIGroupStatusItem | null;
+  actualPaidPricing?: ActualPaidPricingContext | null;
 }
 
-export const ModelCard = memo(function ModelCard({ item, status }: ModelCardProps) {
+export const ModelCard = memo(function ModelCard({
+  item,
+  status,
+  actualPaidPricing,
+}: ModelCardProps) {
   const platform = getPlatformColors(item.platform);
   const stableStatus = status?.stable_status ?? "unknown";
   const statusColor = getStatusColor(stableStatus);
@@ -86,7 +92,7 @@ export const ModelCard = memo(function ModelCard({ item, status }: ModelCardProp
 
       {/* Pricing — actual paid (effective) is primary */}
       <View style={styles.pricingSection}>
-        <Text style={styles.sectionLabel}>Actual Paid</Text>
+        <Text style={styles.sectionLabel}>{getActualPaidSectionLabel(actualPaidPricing)}</Text>
         {isToken ? (
           <>
             <PriceRow
@@ -94,18 +100,32 @@ export const ModelCard = memo(function ModelCard({ item, status }: ModelCardProp
               official={offInput}
               effective={effInput}
               cheaper={isCheaper}
+              actualPaidPricing={actualPaidPricing}
             />
             <PriceRow
               label="Output /MTok"
               official={offOutput}
               effective={effOutput}
               cheaper={isCheaper}
+              actualPaidPricing={actualPaidPricing}
             />
           </>
         ) : isPerRequest ? (
-          <PriceRow label="Per Request" official={offReq} effective={effReq} cheaper={isCheaper} />
+          <PriceRow
+            label="Per Request"
+            official={offReq}
+            effective={effReq}
+            cheaper={isCheaper}
+            actualPaidPricing={actualPaidPricing}
+          />
         ) : isImage ? (
-          <PriceRow label="Per Image" official={offImg} effective={effImg} cheaper={isCheaper} />
+          <PriceRow
+            label="Per Image"
+            official={offImg}
+            effective={effImg}
+            cheaper={isCheaper}
+            actualPaidPricing={actualPaidPricing}
+          />
         ) : null}
         {savings != null ? (
           <View style={styles.priceRow}>
@@ -127,6 +147,7 @@ export const ModelCard = memo(function ModelCard({ item, status }: ModelCardProp
               official={item.official_pricing.cache_write_per_mtok_usd}
               effective={item.effective_pricing_usd.cache_write_per_mtok_usd}
               cheaper={isCheaper}
+              actualPaidPricing={actualPaidPricing}
             />
           ) : null}
           {item.effective_pricing_usd.cache_read_per_mtok_usd != null ? (
@@ -135,6 +156,7 @@ export const ModelCard = memo(function ModelCard({ item, status }: ModelCardProp
               official={item.official_pricing.cache_read_per_mtok_usd}
               effective={item.effective_pricing_usd.cache_read_per_mtok_usd}
               cheaper={isCheaper}
+              actualPaidPricing={actualPaidPricing}
             />
           ) : null}
         </View>
@@ -177,19 +199,23 @@ function PriceRow({
   official,
   effective,
   cheaper,
+  actualPaidPricing,
 }: {
   label: string;
   official: number | null;
   effective: number | null;
   cheaper: boolean;
+  actualPaidPricing?: ActualPaidPricingContext | null;
 }) {
   return (
     <View style={styles.priceRow}>
       <Text style={styles.mutedText}>{label}</Text>
       <View style={styles.priceValues}>
-        <Text style={styles.officialPrice}>{fmt(official)}</Text>
+        <Text style={styles.officialPrice}>{formatUsdPrice(official)}</Text>
         <Text style={styles.arrow}>→</Text>
-        <Text style={[styles.effectivePrice, cheaper && styles.green]}>{fmt(effective)}</Text>
+        <Text style={[styles.effectivePrice, cheaper && styles.green]}>
+          {formatActualPaidPrice(effective, actualPaidPricing)}
+        </Text>
       </View>
     </View>
   );

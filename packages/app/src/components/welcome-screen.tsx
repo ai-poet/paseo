@@ -25,8 +25,10 @@ import { APP_NAME } from "@/config/branding";
 type WelcomeAction = {
   key: "scan-qr" | "direct-connection" | "paste-pairing-link";
   label: string;
+  subLabel?: string;
   testID: string;
   primary: boolean;
+  disabled?: boolean;
   icon: typeof QrCode;
   onPress: () => void;
 };
@@ -87,6 +89,13 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.accent,
     borderColor: theme.colors.accent,
   },
+  actionButtonDisabled: {
+    opacity: 0.55,
+  },
+  actionCopy: {
+    alignItems: "center",
+    gap: 2,
+  },
   actionText: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
@@ -94,6 +103,10 @@ const styles = StyleSheet.create((theme) => ({
   },
   actionTextPrimary: {
     color: theme.colors.accentForeground,
+  },
+  actionSubtext: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
   },
   hostList: {
     width: "100%",
@@ -282,18 +295,10 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
       ]
     : [
         {
-          key: "scan-qr",
-          label: "Scan QR code",
-          testID: "welcome-scan-qr",
-          primary: true,
-          icon: QrCode,
-          onPress: () => router.push("/pair-scan?source=onboarding"),
-        },
-        {
           key: "direct-connection",
           label: "Direct connection",
           testID: "welcome-direct-connection",
-          primary: false,
+          primary: true,
           icon: Link2,
           onPress: () => setIsDirectOpen(true),
         },
@@ -304,6 +309,16 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
           primary: false,
           icon: ClipboardPaste,
           onPress: () => setIsPasteLinkOpen(true),
+        },
+        {
+          key: "scan-qr",
+          label: "Scan QR code",
+          subLabel: "Coming soon",
+          testID: "welcome-scan-qr-coming-soon",
+          primary: false,
+          disabled: true,
+          icon: QrCode,
+          onPress: () => undefined,
         },
       ];
 
@@ -348,7 +363,12 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
               return (
                 <Pressable
                   key={action.key}
-                  style={[styles.actionButton, action.primary ? styles.actionButtonPrimary : null]}
+                  style={[
+                    styles.actionButton,
+                    action.primary ? styles.actionButtonPrimary : null,
+                    action.disabled ? styles.actionButtonDisabled : null,
+                  ]}
+                  disabled={action.disabled}
                   onPress={action.onPress}
                   testID={action.testID}
                 >
@@ -356,11 +376,16 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
                     size={18}
                     color={action.primary ? theme.colors.accentForeground : theme.colors.foreground}
                   />
-                  <Text
-                    style={[styles.actionText, action.primary ? styles.actionTextPrimary : null]}
-                  >
-                    {action.label}
-                  </Text>
+                  <View style={styles.actionCopy}>
+                    <Text
+                      style={[styles.actionText, action.primary ? styles.actionTextPrimary : null]}
+                    >
+                      {action.label}
+                    </Text>
+                    {action.subLabel ? (
+                      <Text style={styles.actionSubtext}>{action.subLabel}</Text>
+                    ) : null}
+                  </View>
                 </Pressable>
               );
             })}

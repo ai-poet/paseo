@@ -186,6 +186,7 @@ describe("formatWorkspaceCloudRouteSwitchError", () => {
     error.code = "unknown_schema";
     error.requestType = "set_workspace_cloud_route_request";
 
-    expect(formatWorkspaceCloudRouteSwitchError(error)).toContain("Restart Desktop");
+    expect(formatWorkspaceCloudRouteSwitchError(error)).toContain("Restart the local daemon");
+    expect(formatWorkspaceCloudRouteSwitchError(error)).toContain("Restarting Desktop alone");
   });
 });

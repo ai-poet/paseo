@@ -138,7 +138,7 @@ export function formatWorkspaceCloudRouteSwitchError(error: unknown): string {
     typeof rpcError.requestType === "string" &&
     rpcError.requestType.includes("workspace_cloud_route")
   ) {
-    return "Restart Desktop or the local daemon to load the new Cloud group routing protocol.";
+    return "Restart the local daemon from Settings -> Host to load the new Cloud group routing protocol. Restarting Desktop alone may keep the old daemon running.";
   }
   return toErrorMessage(error);
 }
