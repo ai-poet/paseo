@@ -131,6 +131,25 @@ export async function selectCloudModelForNextSession(input: {
   });
 }
 
+export async function clearCloudRouteForProvider(input: {
+  serverId: string | null | undefined;
+  cwd: string | null | undefined;
+  provider: AgentProvider;
+  clearWorkspaceCloudRoute: (input: {
+    cwd: string;
+    provider: WorkspaceCloudRouteProvider;
+  }) => Promise<WorkspaceCloudRoutePayload | null>;
+}): Promise<WorkspaceCloudRoutePayload | null> {
+  const normalizedCwd = input.cwd?.trim() ?? "";
+  if (!input.serverId || !normalizedCwd || !isWorkspaceCloudRouteProvider(input.provider)) {
+    return null;
+  }
+  return await input.clearWorkspaceCloudRoute({
+    cwd: normalizedCwd,
+    provider: input.provider,
+  });
+}
+
 export function formatWorkspaceCloudRouteSwitchError(error: unknown): string {
   const rpcError = error as { code?: unknown; requestType?: unknown };
   if (

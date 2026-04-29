@@ -89,13 +89,8 @@ export function buildOtherAvailableModelRows(
   providerRows: SelectorModelRow[],
   cloudGroups: SelectorCloudGroup[] | undefined,
 ): SelectorModelRow[] {
-  const cloudModelIds = new Set<string>();
-  for (const group of cloudGroups ?? []) {
-    for (const model of group.models) {
-      cloudModelIds.add(model.id);
-    }
-  }
-  return providerRows.filter((row) => !cloudModelIds.has(row.modelId));
+  void cloudGroups;
+  return providerRows;
 }
 
 export function matchesSearch(row: SelectorModelRow, normalizedQuery: string): boolean {

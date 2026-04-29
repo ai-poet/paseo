@@ -4,6 +4,7 @@ import type { WorkspaceCloudRoutePayload } from "@server/shared/messages";
 import type { Sub2APIGroupStatusItem, Sub2APIModelCatalog, Sub2APIKey } from "@/lib/sub2api-client";
 import {
   buildCloudModelRoutingGroups,
+  clearCloudRouteForProvider,
   formatWorkspaceCloudRouteSwitchError,
   selectCloudModelForNextSession,
 } from "./cloud-model-routing-utils";
@@ -175,6 +176,24 @@ describe("selectCloudModelForNextSession", () => {
         platform: "anthropic",
       }),
     );
+  });
+});
+
+describe("clearCloudRouteForProvider", () => {
+  it("clears the workspace route so provider models use the global CLI config", async () => {
+    const clearWorkspaceCloudRoute = vi.fn(async () => null);
+
+    await clearCloudRouteForProvider({
+      serverId: "local",
+      cwd: "/repo",
+      provider: "claude",
+      clearWorkspaceCloudRoute,
+    });
+
+    expect(clearWorkspaceCloudRoute).toHaveBeenCalledWith({
+      cwd: "/repo",
+      provider: "claude",
+    });
   });
 });
 

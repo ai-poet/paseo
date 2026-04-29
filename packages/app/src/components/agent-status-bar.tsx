@@ -919,7 +919,8 @@ export const AgentStatusBar = memo(function AgentStatusBar({
       : undefined;
     return definition ? [definition] : [];
   }, [agent?.provider, snapshotEntries]);
-  const { cloudGroups, selectCloudModelForNextSession } = useCloudModelRouting({
+  const { cloudGroups, clearCloudRouteForProvider, selectCloudModelForNextSession } =
+    useCloudModelRouting({
     serverId,
     cwd: agent?.cwd,
     providerDefinitions: agentProviderDefinitions,
@@ -1000,6 +1001,38 @@ export const AgentStatusBar = memo(function AgentStatusBar({
     [selectCloudModelForNextSession, toast, updatePreferences],
   );
 
+  const handleSelectGlobalModel = useCallback(
+    (modelId: string) => {
+      if (!client || !agent?.provider) {
+        return;
+      }
+
+      void (async () => {
+        const clearedRoute = await clearCloudRouteForProvider(agent.provider);
+        await updatePreferences((current) =>
+          mergeProviderPreferences({
+            preferences: current,
+            provider: agent.provider,
+            updates: {
+              model: modelId,
+            },
+          }),
+        );
+        await client.setAgentModel(agentId, modelId);
+        if (clearedRoute) {
+          toast.show(
+            "Global CLI config will apply to new sessions in this workspace. Current session keeps its current route.",
+            { variant: "success" },
+          );
+        }
+      })().catch((error) => {
+        console.warn("[AgentStatusBar] switch to global model failed", error);
+        toast.error(`Could not switch to global config: ${formatWorkspaceCloudRouteSwitchError(error)}`);
+      });
+    },
+    [agent?.provider, agentId, clearCloudRouteForProvider, client, toast, updatePreferences],
+  );
+
   if (!agent) {
     return null;
   }
@@ -1026,26 +1059,7 @@ export const AgentStatusBar = memo(function AgentStatusBar({
       }}
       modelOptions={modelOptions}
       selectedModelId={modelSelection.activeModelId ?? undefined}
-      onSelectModel={(modelId) => {
-        if (!client) {
-          return;
-        }
-        void updatePreferences((current) =>
-          mergeProviderPreferences({
-            preferences: current,
-            provider: agent.provider,
-            updates: {
-              model: modelId,
-            },
-          }),
-        ).catch((error) => {
-          console.warn("[AgentStatusBar] persist model preference failed", error);
-        });
-        void client.setAgentModel(agentId, modelId).catch((error) => {
-          console.warn("[AgentStatusBar] setAgentModel failed", error);
-          toast.error(toErrorMessage(error));
-        });
-      }}
+      onSelectModel={handleSelectGlobalModel}
       favoriteKeys={favoriteKeys}
       onToggleFavoriteModel={(provider, modelId) => {
         void updatePreferences((current) =>
@@ -1142,7 +1156,8 @@ export function DraftAgentStatusBar({
 }: DraftAgentStatusBarProps) {
   const { preferences, updatePreferences } = useFormPreferences();
   const toast = useToast();
-  const { cloudGroups, selectCloudModelForNextSession } = useCloudModelRouting({
+  const { cloudGroups, clearCloudRouteForProvider, selectCloudModelForNextSession } =
+    useCloudModelRouting({
     serverId,
     cwd,
     providerDefinitions,
@@ -1189,6 +1204,23 @@ export function DraftAgentStatusBar({
     [onSelectProviderAndModel, selectCloudModelForNextSession, toast],
   );
 
+  const handleSelectGlobalModel = useCallback(
+    (provider: AgentProvider, modelId: string) => {
+      void (async () => {
+        const clearedRoute = await clearCloudRouteForProvider(provider);
+        onSelectProviderAndModel(provider, modelId);
+        if (clearedRoute) {
+          toast.show("Global CLI config will apply to new sessions in this workspace.", {
+            variant: "success",
+          });
+        }
+      })().catch((error) => {
+        toast.error(`Could not switch to global config: ${formatWorkspaceCloudRouteSwitchError(error)}`);
+      });
+    },
+    [clearCloudRouteForProvider, onSelectProviderAndModel, toast],
+  );
+
   const effectiveSelectedMode = selectedMode || mappedModeOptions[0]?.id || "";
   const effectiveSelectedThinkingOption =
     selectedThinkingOptionId || mappedThinkingOptions[0]?.id || undefined;
@@ -1202,7 +1234,7 @@ export function DraftAgentStatusBar({
           allProviderModels={allProviderModels}
           selectedProvider={selectedProvider ?? ""}
           selectedModel={selectedModel}
-          onSelect={onSelectProviderAndModel}
+          onSelect={handleSelectGlobalModel}
           cloudGroups={cloudGroups}
           onSelectCloudModel={handleSelectCloudModel}
           favoriteKeys={favoriteKeys}
@@ -1254,8 +1286,14 @@ export function DraftAgentStatusBar({
         onSelectMode={onSelectMode}
         modelOptions={modelOptions}
         selectedModelId={selectedModel}
-        onSelectModel={(modelId) => onSelectModel(modelId)}
-        onSelectProviderAndModel={onSelectProviderAndModel}
+        onSelectModel={(modelId) => {
+          if (selectedProvider) {
+            handleSelectGlobalModel(selectedProvider, modelId);
+          } else {
+            onSelectModel(modelId);
+          }
+        }}
+        onSelectProviderAndModel={handleSelectGlobalModel}
         cloudGroups={cloudGroups}
         onSelectCloudModel={handleSelectCloudModel}
         isModelLoading={isAllModelsLoading}

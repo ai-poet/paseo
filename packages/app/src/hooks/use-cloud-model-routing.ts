@@ -10,15 +10,18 @@ import {
   useSub2APIModelCatalog,
 } from "@/hooks/use-sub2api-api";
 import {
+  useClearWorkspaceCloudRouteMutation,
   useSetWorkspaceCloudRouteMutation,
   useWorkspaceCloudRoutes,
 } from "@/hooks/use-workspace-cloud-routes";
 import {
   buildCloudModelRoutingGroups,
+  clearCloudRouteForProvider,
   selectCloudModelForNextSession,
 } from "@/hooks/cloud-model-routing-utils";
 export {
   buildCloudModelRoutingGroups,
+  clearCloudRouteForProvider,
   formatWorkspaceCloudRouteSwitchError,
   selectCloudModelForNextSession,
 } from "@/hooks/cloud-model-routing-utils";
@@ -35,6 +38,7 @@ export function useCloudModelRouting(input: {
   const workspaceCloudRoutesQuery = useWorkspaceCloudRoutes(input.serverId, input.cwd);
   const createCloudKeyMutation = useCreateSub2APIKeyMutation();
   const setWorkspaceCloudRouteMutation = useSetWorkspaceCloudRouteMutation(input.serverId);
+  const clearWorkspaceCloudRouteMutation = useClearWorkspaceCloudRouteMutation(input.serverId);
 
   const cloudGroups = useMemo(
     () =>
@@ -80,8 +84,21 @@ export function useCloudModelRouting(input: {
     ],
   );
 
+  const clearForProvider = useCallback(
+    async (provider: AgentProvider) =>
+      await clearCloudRouteForProvider({
+        serverId: input.serverId,
+        cwd: input.cwd,
+        provider,
+        clearWorkspaceCloudRoute: (request) =>
+          clearWorkspaceCloudRouteMutation.mutateAsync(request),
+      }),
+    [clearWorkspaceCloudRouteMutation, input.cwd, input.serverId],
+  );
+
   return {
     cloudGroups,
+    clearCloudRouteForProvider: clearForProvider,
     selectCloudModelForNextSession: selectForNextSession,
   };
 }
