@@ -68,7 +68,7 @@ import { PaseoCloudSettingsPage } from "@/screens/settings/paseo-cloud-settings-
 import { DesktopProvidersStoreProvider } from "@/screens/settings/desktop-providers-context";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
-import { APP_NAME } from "@/config/branding";
+import { APP_NAME, CLOUD_NAME } from "@/config/branding";
 import { getSub2APIMessages, resolveSub2APILocaleFromPreference } from "@/i18n/sub2api";
 import {
   buildHostOpenProjectRoute,
@@ -110,7 +110,7 @@ function getSettingsSectionLabel(section: SettingsSectionSlug, text: SettingsTex
     case "general":
       return text.sections.general;
     case "paseo-cloud":
-      return text.sections.paseoCloud;
+      return CLOUD_NAME;
     case "managed-provider":
       return text.sections.managedProvider;
     case "shortcuts":

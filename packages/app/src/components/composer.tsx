@@ -138,6 +138,18 @@ const MOBILE_MESSAGE_PLACEHOLDER = "Message, @files, /commands";
 const StableMessageInput = memo(MessageInput);
 const EMPTY_AGENT_MODES: AgentMode[] = [];
 
+export function resolveNextAgentModeId(
+  modes: readonly Pick<AgentMode, "id">[],
+  currentModeId: string | null | undefined,
+): string | null {
+  if (modes.length < 2) {
+    return null;
+  }
+  const currentIndex = modes.findIndex((mode) => mode.id === currentModeId);
+  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % modes.length : 0;
+  return modes[nextIndex]?.id ?? null;
+}
+
 export function Composer({
   agentId,
   serverId,
@@ -523,23 +535,34 @@ export function Composer({
   }, [client, isAgentRunning, isCancellingAgent, isConnected]);
 
   const handleCycleAgentMode = useCallback((): boolean => {
-    if (!client || agentState.availableModes.length < 2) {
-      return false;
+    if (resolveStatusControlMode(statusControls) === "draft" && statusControls) {
+      if (statusControls.disabled) {
+        return true;
+      }
+      const nextModeId = resolveNextAgentModeId(
+        statusControls.modeOptions,
+        statusControls.selectedMode,
+      );
+      if (!nextModeId) {
+        return true;
+      }
+      statusControls.onSelectMode(nextModeId);
+      return true;
     }
-    const currentIndex = agentState.availableModes.findIndex(
-      (mode) => mode.id === agentState.currentModeId,
-    );
-    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % agentState.availableModes.length : 0;
-    const nextMode = agentState.availableModes[nextIndex];
-    if (!nextMode) {
-      return false;
+
+    if (!client) {
+      return true;
     }
-    void client.setAgentMode(agentId, nextMode.id).catch((error) => {
+    const nextModeId = resolveNextAgentModeId(agentState.availableModes, agentState.currentModeId);
+    if (!nextModeId) {
+      return true;
+    }
+    void client.setAgentMode(agentId, nextModeId).catch((error) => {
       console.warn("[Composer] cycle agent mode failed", error);
       toast.error(error instanceof Error ? error.message : String(error));
     });
     return true;
-  }, [agentId, agentState.availableModes, agentState.currentModeId, client, toast]);
+  }, [agentId, agentState.availableModes, agentState.currentModeId, client, statusControls, toast]);
 
   const handleKeyboardAction = useCallback(
     (action: KeyboardActionDefinition): boolean => {

@@ -5,6 +5,7 @@ import React from "react";
 import { act } from "@testing-library/react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LeftSidebar } from "./left-sidebar";
 
 const { panelState, useSidebarWorkspacesListMock, theme } = vi.hoisted(() => {
   const panelState = {
@@ -89,8 +90,13 @@ vi.mock("react-native-gesture-handler", () => {
 });
 
 vi.mock("lucide-react-native", () => {
-  const createIcon = (name: string) => (props: Record<string, unknown>) =>
-    React.createElement("span", { ...props, "data-icon": name });
+  const createIcon = (name: string) => {
+    function MockIcon(props: Record<string, unknown>) {
+      return React.createElement("span", { ...props, "data-icon": name });
+    }
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
   return {
     ArrowDownNarrowWide: createIcon("ArrowDownNarrowWide"),
     Check: createIcon("Check"),
@@ -189,7 +195,7 @@ vi.mock("@/components/sidebar/sidebar-header-row", () => ({
 }));
 
 vi.mock("./sidebar-workspace-list", () => ({
-  SidebarWorkspaceList: ({ projects }: { projects: Array<{ projectName: string }> }) =>
+  SidebarWorkspaceList: ({ projects }: { projects: { projectName: string }[] }) =>
     React.createElement(
       "div",
       { "data-testid": "sidebar-workspace-list" },
@@ -213,7 +219,11 @@ vi.mock("@/components/ui/tooltip", () => ({
 vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) =>
     React.createElement("div", null, children),
-  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) =>
+  DropdownMenuTrigger: ({
+    children,
+  }: {
+    children: React.ReactNode | ((state: unknown) => React.ReactNode);
+  }) =>
     React.createElement("button", null, typeof children === "function" ? children({}) : children),
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) =>
     React.createElement("div", null, children),
@@ -235,8 +245,6 @@ vi.mock("@/components/sidebar-user-menu", () => ({
 }));
 
 vi.stubGlobal("React", React);
-
-import { LeftSidebar } from "./left-sidebar";
 
 describe("LeftSidebar", () => {
   let root: Root | null = null;

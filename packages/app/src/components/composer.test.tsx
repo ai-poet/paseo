@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AttachmentMetadata, ComposerAttachment } from "@/attachments/types";
 import type { GitHubSearchItem } from "@server/shared/messages";
-import { Composer } from "./composer";
+import { Composer, resolveNextAgentModeId } from "./composer";
 import { splitComposerAttachmentsForSubmit } from "./composer-attachments";
 
 const {
@@ -26,6 +26,7 @@ const {
   setAgentStreamHeadMock,
   setQueuedMessagesMock,
   agentDirectoryStatusMock,
+  useKeyboardActionHandlerMock,
 } = vi.hoisted(() => {
   const theme = {
     spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
@@ -161,6 +162,7 @@ const {
   mockSessionState.setAgentStreamHead = setAgentStreamHeadMock;
   const markScrollInvestigationRenderMock = vi.fn();
   const agentDirectoryStatusMock = vi.fn(() => "ready");
+  const useKeyboardActionHandlerMock = vi.fn();
 
   return {
     theme,
@@ -179,6 +181,7 @@ const {
     setAgentStreamHeadMock,
     setQueuedMessagesMock,
     agentDirectoryStatusMock,
+    useKeyboardActionHandlerMock,
   };
 });
 
@@ -325,7 +328,7 @@ vi.mock("@/hooks/use-shortcut-keys", () => ({
 }));
 
 vi.mock("@/hooks/use-keyboard-action-handler", () => ({
-  useKeyboardActionHandler: () => {},
+  useKeyboardActionHandler: useKeyboardActionHandlerMock,
 }));
 
 vi.mock("@/hooks/use-keyboard-shift-style", () => ({
@@ -355,7 +358,7 @@ vi.mock("@/components/context-window-meter", () => ({
 }));
 
 vi.mock("@/components/composer.status-controls", () => ({
-  resolveStatusControlMode: () => "agent",
+  resolveStatusControlMode: (statusControls?: unknown) => (statusControls ? "draft" : "ready"),
 }));
 
 vi.mock("@/components/ui/autocomplete", () => ({
@@ -590,6 +593,7 @@ beforeEach(() => {
   encodeImagesMock.mockClear();
   openExternalUrlMock.mockClear();
   markScrollInvestigationRenderMock.mockClear();
+  useKeyboardActionHandlerMock.mockClear();
   setAgentStreamTailMock.mockClear();
   setAgentStreamHeadMock.mockClear();
   setQueuedMessagesMock.mockClear();
@@ -638,11 +642,13 @@ function ComposerHarness({
   initialAttachments = [],
   isSubmitLoading = false,
   submitBehavior,
+  statusControls,
 }: {
   initialText?: string;
   initialAttachments?: ComposerAttachment[];
   isSubmitLoading?: boolean;
   submitBehavior?: "clear" | "preserve-and-lock";
+  statusControls?: React.ComponentProps<typeof Composer>["statusControls"];
 }) {
   const [text, setText] = useState(initialText);
   const [attachments, setAttachments] = useState(initialAttachments);
@@ -666,6 +672,7 @@ function ComposerHarness({
         }}
         isSubmitLoading={isSubmitLoading}
         submitBehavior={submitBehavior}
+        statusControls={statusControls}
         cwd="/repo"
         clearDraft={vi.fn()}
       />
@@ -679,6 +686,7 @@ function renderComposer(
     initialAttachments?: ComposerAttachment[];
     isSubmitLoading?: boolean;
     submitBehavior?: "clear" | "preserve-and-lock";
+    statusControls?: React.ComponentProps<typeof Composer>["statusControls"];
   } = {},
 ) {
   act(() => {
@@ -724,6 +732,105 @@ function countMessageInputRenders(): number {
     ([componentId]) => componentId === "MessageInput:server:agent",
   ).length;
 }
+
+function makeDraftStatusControls(
+  overrides: Partial<NonNullable<React.ComponentProps<typeof Composer>["statusControls"]>> = {},
+): NonNullable<React.ComponentProps<typeof Composer>["statusControls"]> {
+  return {
+    providerDefinitions: [],
+    selectedProvider: null,
+    onSelectProvider: vi.fn(),
+    modeOptions: [
+      { id: "ask", label: "Ask" },
+      { id: "code", label: "Code" },
+    ] as NonNullable<React.ComponentProps<typeof Composer>["statusControls"]>["modeOptions"],
+    selectedMode: "ask",
+    onSelectMode: vi.fn(),
+    models: [],
+    selectedModel: "",
+    onSelectModel: vi.fn(),
+    isModelLoading: false,
+    allProviderModels: new Map(),
+    isAllModelsLoading: false,
+    onSelectProviderAndModel: vi.fn(),
+    thinkingOptions: [],
+    selectedThinkingOptionId: "",
+    onSelectThinkingOption: vi.fn(),
+    ...overrides,
+  };
+}
+
+function getComposerKeyboardActionHandler(): {
+  actions: readonly string[];
+  handle: (action: { id: "agent.mode.cycle"; scope: "message-input" }) => boolean;
+} {
+  for (const [input] of useKeyboardActionHandlerMock.mock.calls) {
+    const registration = input as {
+      actions: readonly string[];
+      handle: (action: { id: "agent.mode.cycle"; scope: "message-input" }) => boolean;
+    };
+    if (registration.actions.includes("agent.mode.cycle")) {
+      return registration;
+    }
+  }
+  throw new Error("Composer keyboard handler was not registered");
+}
+
+describe("Composer keyboard shortcuts", () => {
+  it("resolves the next mode id for agent mode cycling", () => {
+    expect(
+      resolveNextAgentModeId(
+        [
+          { id: "ask" },
+          { id: "code" },
+        ],
+        "ask",
+      ),
+    ).toBe("code");
+    expect(
+      resolveNextAgentModeId(
+        [
+          { id: "ask" },
+          { id: "code" },
+        ],
+        "code",
+      ),
+    ).toBe("ask");
+    expect(resolveNextAgentModeId([{ id: "ask" }], "ask")).toBeNull();
+  });
+
+  it("cycles draft agent mode from the Composer keyboard handler", () => {
+    const onSelectMode = vi.fn();
+
+    renderComposer({
+      statusControls: makeDraftStatusControls({ selectedMode: "ask", onSelectMode }),
+    });
+
+    const handled = getComposerKeyboardActionHandler().handle({
+      id: "agent.mode.cycle",
+      scope: "message-input",
+    });
+
+    expect(handled).toBe(true);
+    expect(onSelectMode).toHaveBeenCalledWith("code");
+  });
+
+  it("captures draft mode cycling while draft controls are disabled", () => {
+    const onSelectMode = vi.fn();
+
+    renderComposer({
+      statusControls: makeDraftStatusControls({ disabled: true, onSelectMode }),
+    });
+
+    const handled = getComposerKeyboardActionHandler().handle({
+      id: "agent.mode.cycle",
+      scope: "message-input",
+    });
+
+    expect(handled).toBe(true);
+    expect(onSelectMode).not.toHaveBeenCalled();
+  });
+});
 
 describe("Composer attachments", () => {
   it("opens a Plus menu with image and GitHub attachment actions", () => {

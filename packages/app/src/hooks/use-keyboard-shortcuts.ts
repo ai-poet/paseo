@@ -360,6 +360,10 @@ export function useKeyboardShortcuts({
         return;
       }
 
+      if (result.match.preventDefault) {
+        event.preventDefault();
+      }
+
       const handled = handleAction({
         action: result.match.action,
         payload: result.match.payload,
@@ -369,9 +373,6 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      if (result.match.preventDefault) {
-        event.preventDefault();
-      }
       if (result.match.stopPropagation) {
         event.stopPropagation();
       }
