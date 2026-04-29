@@ -1,10 +1,13 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, Share, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import * as Clipboard from "expo-clipboard";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { settingsStyles } from "@/styles/settings";
 import { useSub2APIReferralInfo, useSub2APIReferralHistory } from "@/hooks/use-sub2api-api";
+import { useSub2APILocale } from "@/hooks/use-sub2api-locale";
+import { getSub2APIMessages } from "@/i18n/sub2api";
+import { formatUsd } from "@/screens/settings/managed-provider-settings-shared";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -16,6 +19,8 @@ function maskUsername(name: string): string {
 }
 
 export function PaseoCloudReferralSection() {
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).paseoCloudReferral, [locale]);
   const referralQuery = useSub2APIReferralInfo();
   const historyQuery = useSub2APIReferralHistory(1, 20);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -40,11 +45,10 @@ export function PaseoCloudReferralSection() {
 
   return (
     <>
-      {/* Referral Code & Link */}
-      <SettingsSection title="Referral">
+      <SettingsSection title={text.title}>
         {referralQuery.isLoading ? (
           <View style={[settingsStyles.card, styles.cardBody]}>
-            <Text style={styles.hintText}>Loading referral info...</Text>
+            <Text style={styles.hintText}>{text.loading}</Text>
           </View>
         ) : referralQuery.error ? (
           <View style={[settingsStyles.card, styles.cardBody]}>
@@ -52,9 +56,8 @@ export function PaseoCloudReferralSection() {
           </View>
         ) : info ? (
           <View style={[settingsStyles.card, styles.cardBody]}>
-            {/* Referral code */}
             <View style={styles.fieldRow}>
-              <Text style={styles.fieldLabel}>Referral Code</Text>
+              <Text style={styles.fieldLabel}>{text.referralCode}</Text>
               <View style={styles.fieldValueRow}>
                 <Text style={styles.fieldValue} selectable>
                   {info.referral_code}
@@ -64,15 +67,14 @@ export function PaseoCloudReferralSection() {
                   style={({ pressed }) => [styles.copyButton, pressed && styles.buttonPressed]}
                 >
                   <Text style={styles.copyButtonText}>
-                    {copiedField === "code" ? "Copied" : "Copy"}
+                    {copiedField === "code" ? text.copied : text.copy}
                   </Text>
                 </Pressable>
               </View>
             </View>
 
-            {/* Referral link */}
             <View style={styles.fieldRow}>
-              <Text style={styles.fieldLabel}>Referral Link</Text>
+              <Text style={styles.fieldLabel}>{text.referralLink}</Text>
               <View style={styles.fieldValueRow}>
                 <Text style={styles.fieldValue} numberOfLines={1} selectable>
                   {info.referral_link}
@@ -81,45 +83,47 @@ export function PaseoCloudReferralSection() {
                   onPress={() => void handleShare()}
                   style={({ pressed }) => [styles.copyButton, pressed && styles.buttonPressed]}
                 >
-                  <Text style={styles.copyButtonText}>Share</Text>
+                  <Text style={styles.copyButtonText}>{text.share}</Text>
                 </Pressable>
               </View>
             </View>
 
-            {/* Stats */}
             <View style={styles.statsGrid}>
               <View style={styles.statCard}>
                 <Text style={styles.statValue}>{info.stats.total_count}</Text>
-                <Text style={styles.statLabel}>Total</Text>
+                <Text style={styles.statLabel}>{text.total}</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statValue}>{info.stats.rewarded_count}</Text>
-                <Text style={styles.statLabel}>Rewarded</Text>
+                <Text style={styles.statLabel}>{text.rewarded}</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statValue}>{info.stats.pending_count}</Text>
-                <Text style={styles.statLabel}>Pending</Text>
+                <Text style={styles.statLabel}>{text.pending}</Text>
               </View>
               <View style={styles.statCard}>
-                <Text style={styles.statValue}>${info.stats.total_balance_earn.toFixed(2)}</Text>
-                <Text style={styles.statLabel}>Earned</Text>
+                <Text style={styles.statValue}>{formatUsd(info.stats.total_balance_earn)}</Text>
+                <Text style={styles.statLabel}>{text.earned}</Text>
               </View>
             </View>
 
-            {/* Rewards info */}
             {info.rewards?.enabled ? (
               <View style={styles.rewardsInfo}>
                 <Text style={styles.hintText}>
-                  Referrer: ${info.rewards.referrer_balance_reward.toFixed(2)} balance
-                  {info.rewards.referrer_subscription_days > 0
-                    ? ` + ${info.rewards.referrer_subscription_days}d subscription`
-                    : ""}
+                  {text.referrerReward(
+                    formatUsd(info.rewards.referrer_balance_reward),
+                    info.rewards.referrer_subscription_days > 0
+                      ? text.subscriptionDays(info.rewards.referrer_subscription_days)
+                      : null,
+                  )}
                 </Text>
                 <Text style={styles.hintText}>
-                  Referee: ${info.rewards.referee_balance_reward.toFixed(2)} balance
-                  {info.rewards.referee_subscription_days > 0
-                    ? ` + ${info.rewards.referee_subscription_days}d subscription`
-                    : ""}
+                  {text.refereeReward(
+                    formatUsd(info.rewards.referee_balance_reward),
+                    info.rewards.referee_subscription_days > 0
+                      ? text.subscriptionDays(info.rewards.referee_subscription_days)
+                      : null,
+                  )}
                 </Text>
               </View>
             ) : null}
@@ -127,9 +131,8 @@ export function PaseoCloudReferralSection() {
         ) : null}
       </SettingsSection>
 
-      {/* Referral History */}
       {history.length > 0 ? (
-        <SettingsSection title="Referral history">
+        <SettingsSection title={text.historyTitle}>
           <View style={settingsStyles.card}>
             {history.map((item, index) => (
               <View
@@ -139,7 +142,7 @@ export function PaseoCloudReferralSection() {
                 <View style={settingsStyles.rowContent}>
                   <Text style={settingsStyles.rowTitle}>{maskUsername(item.referee_username)}</Text>
                   <Text style={settingsStyles.rowHint}>
-                    {item.status} · ${item.referrer_balance_reward.toFixed(2)} ·{" "}
+                    {text.statusLabel(item.status)} · {formatUsd(item.referrer_balance_reward)} ·{" "}
                     {new Date(item.created_at).toLocaleDateString()}
                   </Text>
                 </View>

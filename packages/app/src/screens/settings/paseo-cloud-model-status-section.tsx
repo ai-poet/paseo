@@ -13,6 +13,8 @@ import {
   useSub2APIGroupStatusRecords,
   useSub2APIGroupStatuses,
 } from "@/hooks/use-sub2api-api";
+import { useSub2APILocale } from "@/hooks/use-sub2api-locale";
+import { getSub2APIMessages } from "@/i18n/sub2api";
 import type {
   Sub2APIGroupStatusEvent,
   Sub2APIGroupStatusHistoryBucket,
@@ -27,6 +29,7 @@ import { resolveGroupStatusDisplayName } from "@/screens/settings/paseo-cloud-mo
 import { settingsStyles } from "@/styles/settings";
 
 type NormalizedStatus = "up" | "degraded" | "down" | "unknown";
+type ModelStatusText = ReturnType<typeof getSub2APIMessages>["paseoCloudModelStatus"];
 
 const POLL_INTERVAL_MS = 30_000;
 const DETAIL_RECORD_LIMIT = 24;
@@ -51,17 +54,8 @@ function getItemStatus(item: Sub2APIGroupStatusItem): NormalizedStatus {
   return normalizeStatus(item.stable_status || item.latest_status);
 }
 
-function getStatusLabel(status: NormalizedStatus): string {
-  switch (status) {
-    case "up":
-      return "Healthy";
-    case "degraded":
-      return "Degraded";
-    case "down":
-      return "Unavailable";
-    default:
-      return "Unknown";
-  }
+function getStatusLabel(status: NormalizedStatus, text: ModelStatusText): string {
+  return text.statusLabels[status];
 }
 
 function getStatusColor(status: NormalizedStatus): string {
@@ -157,11 +151,13 @@ function StatusRow({
   selected,
   groupNameById,
   onPress,
+  text,
 }: {
   item: Sub2APIGroupStatusItem;
   selected: boolean;
   groupNameById: ReadonlyMap<number, string>;
   onPress: () => void;
+  text: ModelStatusText;
 }) {
   const status = getItemStatus(item);
   const displayName = resolveGroupStatusDisplayName(item, groupNameById);
@@ -183,7 +179,7 @@ function StatusRow({
             </Text>
           </View>
           <Text style={styles.statusMeta}>
-            {getStatusLabel(status)} - observed {formatDateTime(item.observed_at)}
+            {getStatusLabel(status, text)} - {text.observed} {formatDateTime(item.observed_at)}
           </Text>
         </View>
         <Text
@@ -198,12 +194,12 @@ function StatusRow({
                   : sharedStyles.infoBadgeNeutral,
           ]}
         >
-          {getStatusLabel(status)}
+          {getStatusLabel(status, text)}
         </Text>
       </View>
 
       <View style={styles.metricsGrid}>
-        <StatusMetric label="Latency" value={formatLatency(item.latency_ms)} />
+        <StatusMetric label={text.latency} value={formatLatency(item.latency_ms)} />
         <StatusMetric label="24h" value={formatAvailability(item.availability_24h)} />
         <StatusMetric label="7d" value={formatAvailability(item.availability_7d)} />
       </View>
@@ -223,19 +219,25 @@ function StatusRow({
   );
 }
 
-function HistoryRow({ bucket }: { bucket: Sub2APIGroupStatusHistoryBucket }) {
+function HistoryRow({
+  bucket,
+  text,
+}: {
+  bucket: Sub2APIGroupStatusHistoryBucket;
+  text: ModelStatusText;
+}) {
   const status = normalizeStatus(bucket.latest_status);
   return (
     <View style={styles.detailRow}>
       <View style={styles.detailRowMain}>
         <Text style={styles.detailRowTitle}>{formatDateTime(bucket.bucket_start)}</Text>
         <Text style={styles.detailRowMeta}>
-          Availability {formatAvailability(bucket.availability)} - avg{" "}
+          {text.availability} {formatAvailability(bucket.availability)} - {text.average}{" "}
           {formatLatency(bucket.avg_latency_ms)}
         </Text>
       </View>
       <Text style={[sharedStyles.infoBadge, sharedStyles.infoBadgeNeutral]}>
-        {bucket.total_count ?? 0} probes
+        {bucket.total_count ?? 0} {text.probes}
       </Text>
       <View style={styles.historyBar}>
         <View
@@ -252,7 +254,13 @@ function HistoryRow({ bucket }: { bucket: Sub2APIGroupStatusHistoryBucket }) {
   );
 }
 
-function RecordRow({ record }: { record: Sub2APIGroupStatusRecord }) {
+function RecordRow({
+  record,
+  text,
+}: {
+  record: Sub2APIGroupStatusRecord;
+  text: ModelStatusText;
+}) {
   const status = normalizeStatus(record.status);
   const excerpt = shorten(record.error_detail || record.response_excerpt, 140);
   return (
@@ -260,10 +268,10 @@ function RecordRow({ record }: { record: Sub2APIGroupStatusRecord }) {
       <View style={styles.detailRowMain}>
         <View style={styles.statusTitleRow}>
           <View style={[styles.statusDotSmall, { backgroundColor: getStatusColor(status) }]} />
-          <Text style={styles.detailRowTitle}>{getStatusLabel(status)}</Text>
+          <Text style={styles.detailRowTitle}>{getStatusLabel(status, text)}</Text>
         </View>
         <Text style={styles.detailRowMeta}>
-          {formatDateTime(record.observed_at)} - {formatLatency(record.latency_ms)} - HTTP{" "}
+          {formatDateTime(record.observed_at)} - {formatLatency(record.latency_ms)} - {text.http}{" "}
           {record.http_code ?? "--"}
         </Text>
         {excerpt ? <Text style={styles.detailRowMeta}>{excerpt}</Text> : null}
@@ -272,7 +280,13 @@ function RecordRow({ record }: { record: Sub2APIGroupStatusRecord }) {
   );
 }
 
-function EventRow({ event }: { event: Sub2APIGroupStatusEvent }) {
+function EventRow({
+  event,
+  text,
+}: {
+  event: Sub2APIGroupStatusEvent;
+  text: ModelStatusText;
+}) {
   const status = normalizeStatus(event.to_status);
   const excerpt = shorten(event.error_detail, 140);
   return (
@@ -281,12 +295,13 @@ function EventRow({ event }: { event: Sub2APIGroupStatusEvent }) {
         <View style={styles.statusTitleRow}>
           <View style={[styles.statusDotSmall, { backgroundColor: getStatusColor(status) }]} />
           <Text style={styles.detailRowTitle}>
-            {event.event_type || "status"}: {event.from_status || "unknown"} {"->"}{" "}
-            {event.to_status || "unknown"}
+            {event.event_type || text.statusFallback}:{" "}
+            {event.from_status || text.unknownStatus} {"->"}{" "}
+            {event.to_status || text.unknownStatus}
           </Text>
         </View>
         <Text style={styles.detailRowMeta}>
-          {formatDateTime(event.observed_at)} - {formatLatency(event.latency_ms)} - HTTP{" "}
+          {formatDateTime(event.observed_at)} - {formatLatency(event.latency_ms)} - {text.http}{" "}
           {event.http_code ?? "--"}
         </Text>
         {excerpt ? <Text style={styles.detailRowMeta}>{excerpt}</Text> : null}
@@ -305,6 +320,7 @@ function DetailPanel({
   events,
   isLoading,
   error,
+  text,
 }: {
   selected: Sub2APIGroupStatusItem;
   groupNameById: ReadonlyMap<number, string>;
@@ -315,6 +331,7 @@ function DetailPanel({
   events: Sub2APIGroupStatusEvent[];
   isLoading: boolean;
   error: unknown;
+  text: ModelStatusText;
 }) {
   const displayName = resolveGroupStatusDisplayName(selected, groupNameById);
   return (
@@ -322,7 +339,7 @@ function DetailPanel({
       <View style={styles.detailHeader}>
         <View>
           <Text style={styles.cardTitle}>{displayName}</Text>
-          <Text style={styles.hintText}>History, recent probe records, and status events.</Text>
+          <Text style={styles.hintText}>{text.detailHint}</Text>
         </View>
         <SegmentedControl
           options={HISTORY_PERIOD_OPTIONS}
@@ -333,44 +350,44 @@ function DetailPanel({
       </View>
 
       {error ? <Text style={styles.errorText}>{getErrorMessage(error)}</Text> : null}
-      {isLoading ? <Text style={styles.hintText}>Loading status details...</Text> : null}
+      {isLoading ? <Text style={styles.hintText}>{text.loadingDetails}</Text> : null}
 
       {!isLoading && !error ? (
         <View style={styles.detailGrid}>
           <View style={styles.detailColumn}>
-            <Text style={styles.detailSectionTitle}>Availability history</Text>
+            <Text style={styles.detailSectionTitle}>{text.availabilityHistory}</Text>
             {history.length === 0 ? (
-              <Text style={styles.hintText}>No history buckets yet.</Text>
+              <Text style={styles.hintText}>{text.noHistory}</Text>
             ) : (
               <View style={styles.detailList}>
                 {history.slice(-8).map((bucket) => (
-                  <HistoryRow key={bucket.bucket_start} bucket={bucket} />
+                  <HistoryRow key={bucket.bucket_start} bucket={bucket} text={text} />
                 ))}
               </View>
             )}
           </View>
 
           <View style={styles.detailColumn}>
-            <Text style={styles.detailSectionTitle}>Recent probes</Text>
+            <Text style={styles.detailSectionTitle}>{text.recentProbes}</Text>
             {records.length === 0 ? (
-              <Text style={styles.hintText}>No probe records yet.</Text>
+              <Text style={styles.hintText}>{text.noRecords}</Text>
             ) : (
               <View style={styles.detailList}>
                 {records.slice(0, 8).map((record) => (
-                  <RecordRow key={record.id} record={record} />
+                  <RecordRow key={record.id} record={record} text={text} />
                 ))}
               </View>
             )}
           </View>
 
           <View style={styles.detailColumn}>
-            <Text style={styles.detailSectionTitle}>Status events</Text>
+            <Text style={styles.detailSectionTitle}>{text.statusEvents}</Text>
             {events.length === 0 ? (
-              <Text style={styles.hintText}>No status events yet.</Text>
+              <Text style={styles.hintText}>{text.noEvents}</Text>
             ) : (
               <View style={styles.detailList}>
                 {events.slice(0, 8).map((event) => (
-                  <EventRow key={event.id} event={event} />
+                  <EventRow key={event.id} event={event} text={text} />
                 ))}
               </View>
             )}
@@ -382,6 +399,8 @@ function DetailPanel({
 }
 
 export function PaseoCloudModelStatusSection() {
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).paseoCloudModelStatus, [locale]);
   const { isLoggedIn } = useSub2APIAuth();
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [detailPeriod, setDetailPeriod] = useState<Sub2APIGroupStatusHistoryPeriod>("24h");
@@ -446,10 +465,10 @@ export function PaseoCloudModelStatusSection() {
   const detailLoading = historyQuery.isLoading || recordsQuery.isLoading || eventsQuery.isLoading;
 
   return (
-    <SettingsSection title="Model Status">
+    <SettingsSection title={text.title}>
       {!isLoggedIn ? (
         <View style={[settingsStyles.card, styles.cardBody]}>
-          <Text style={styles.hintText}>Sign in to {CLOUD_NAME} to view model runtime status.</Text>
+          <Text style={styles.hintText}>{text.signInHint(CLOUD_NAME)}</Text>
         </View>
       ) : null}
 
@@ -458,10 +477,8 @@ export function PaseoCloudModelStatusSection() {
           <View style={[settingsStyles.card, styles.cardBody]}>
             <View style={styles.toolbarHeader}>
               <View>
-                <Text style={styles.cardTitle}>Runtime health</Text>
-                <Text style={styles.hintText}>
-                  Refreshes every 30 seconds while this section is open.
-                </Text>
+                <Text style={styles.cardTitle}>{text.runtimeHealth}</Text>
+                <Text style={styles.hintText}>{text.refreshInterval}</Text>
               </View>
               <Pressable
                 onPress={handleRefresh}
@@ -470,15 +487,23 @@ export function PaseoCloudModelStatusSection() {
                   pressed && sharedStyles.buttonPressed,
                 ]}
               >
-                <Text style={sharedStyles.secondaryButtonText}>Refresh</Text>
+                <Text style={sharedStyles.secondaryButtonText}>{text.refresh}</Text>
               </Pressable>
             </View>
 
             <View style={styles.summaryGrid}>
-              <SummaryCard label="Healthy" value={counts.up} status="up" />
-              <SummaryCard label="Degraded" value={counts.degraded} status="degraded" />
-              <SummaryCard label="Unavailable" value={counts.down} status="down" />
-              <SummaryCard label="Unknown" value={counts.unknown} status="unknown" />
+              <SummaryCard label={text.statusLabels.up} value={counts.up} status="up" />
+              <SummaryCard
+                label={text.statusLabels.degraded}
+                value={counts.degraded}
+                status="degraded"
+              />
+              <SummaryCard label={text.statusLabels.down} value={counts.down} status="down" />
+              <SummaryCard
+                label={text.statusLabels.unknown}
+                value={counts.unknown}
+                status="unknown"
+              />
             </View>
           </View>
 
@@ -489,11 +514,11 @@ export function PaseoCloudModelStatusSection() {
           ) : null}
 
           <View style={[settingsStyles.card, styles.cardBody]}>
-            <Text style={styles.cardTitle}>Groups</Text>
+            <Text style={styles.cardTitle}>{text.groups}</Text>
             {statusesQuery.isLoading ? (
-              <Text style={styles.hintText}>Loading group statuses...</Text>
+              <Text style={styles.hintText}>{text.loadingGroups}</Text>
             ) : statuses.length === 0 ? (
-              <Text style={styles.hintText}>No monitored groups returned by {CLOUD_NAME}.</Text>
+              <Text style={styles.hintText}>{text.noGroups(CLOUD_NAME)}</Text>
             ) : (
               <View style={styles.statusList}>
                 {statuses.map((item) => (
@@ -503,6 +528,7 @@ export function PaseoCloudModelStatusSection() {
                     selected={item.group_id === activeGroupId}
                     groupNameById={groupNameById}
                     onPress={() => setSelectedGroupId(item.group_id)}
+                    text={text}
                   />
                 ))}
               </View>
@@ -520,6 +546,7 @@ export function PaseoCloudModelStatusSection() {
               events={eventsQuery.data ?? []}
               isLoading={detailLoading}
               error={detailError}
+              text={text}
             />
           ) : null}
         </View>

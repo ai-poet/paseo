@@ -6,6 +6,8 @@ import { CLOUD_NAME } from "@/config/branding";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { useSub2APIKeys, useSub2APIUsageLogs, useSub2APIUsageStats } from "@/hooks/use-sub2api-api";
+import { useSub2APILocale } from "@/hooks/use-sub2api-locale";
+import { getSub2APIMessages } from "@/i18n/sub2api";
 import type { Sub2APIKey, Sub2APIUsageLog, Sub2APIUsageLogsQuery } from "@/lib/sub2api-client";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { formatUsd, getErrorMessage } from "@/screens/settings/managed-provider-settings-shared";
@@ -13,14 +15,10 @@ import { managedProviderSettingsStyles as sharedStyles } from "@/screens/setting
 import { settingsStyles } from "@/styles/settings";
 
 type UsageDatePreset = "today" | "7d" | "30d";
+type UsageText = ReturnType<typeof getSub2APIMessages>["paseoCloudUsage"];
 
 const PAGE_SIZE = 20;
-
-const DATE_PRESET_OPTIONS: Array<{ value: UsageDatePreset; label: string }> = [
-  { value: "today", label: "Today" },
-  { value: "7d", label: "7 days" },
-  { value: "30d", label: "30 days" },
-];
+const DATE_PRESET_VALUES: UsageDatePreset[] = ["today", "7d", "30d"];
 
 function formatLocalDate(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -79,42 +77,46 @@ function formatDuration(value: number | null | undefined): string {
   return `${(value / 1000).toFixed(value >= 10_000 ? 1 : 2)}s`;
 }
 
-function getRequestTypeLabel(log: Sub2APIUsageLog): string {
+function getRequestTypeLabel(log: Sub2APIUsageLog, text: UsageText): string {
   if (log.request_type === "ws_v2" || log.openai_ws_mode) {
-    return "WS";
+    return text.requestTypes.ws;
   }
   if (log.request_type === "stream" || log.stream) {
-    return "Stream";
+    return text.requestTypes.stream;
   }
   if (log.request_type === "sync") {
-    return "Sync";
+    return text.requestTypes.sync;
   }
-  return "Unknown";
+  return text.requestTypes.unknown;
 }
 
-function getBillingModeLabel(mode: string | null | undefined): string {
+function getBillingModeLabel(mode: string | null | undefined, text: UsageText): string {
   if (mode === "per_request") {
-    return "Per request";
+    return text.billingModes.perRequest;
   }
   if (mode === "image") {
-    return "Image";
+    return text.billingModes.image;
   }
-  return "Token";
+  return text.billingModes.token;
 }
 
-function getKeyLabel(keys: Sub2APIKey[], keyId: number | null | undefined): string {
+function getKeyLabel(
+  keys: Sub2APIKey[],
+  keyId: number | null | undefined,
+  text: UsageText,
+): string {
   if (typeof keyId !== "number") {
-    return "Unknown key";
+    return text.unknownKey;
   }
-  return keys.find((key) => key.id === keyId)?.name ?? `Key #${keyId}`;
+  return keys.find((key) => key.id === keyId)?.name ?? text.keyNumber(keyId);
 }
 
-function getUsageLogKeyName(log: Sub2APIUsageLog, keys: Sub2APIKey[]): string {
+function getUsageLogKeyName(log: Sub2APIUsageLog, keys: Sub2APIKey[], text: UsageText): string {
   const name = log.api_key?.name?.trim();
   if (name) {
     return name;
   }
-  return getKeyLabel(keys, log.api_key_id);
+  return getKeyLabel(keys, log.api_key_id, text);
 }
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -131,13 +133,15 @@ function ApiKeyFilter({
   keys,
   selectedKeyId,
   onSelect,
+  text,
 }: {
   keys: Sub2APIKey[];
   selectedKeyId: number | null;
   onSelect: (keyId: number | null) => void;
+  text: UsageText;
 }) {
   const options = [
-    { id: null, label: "All API keys" },
+    { id: null, label: text.allApiKeys },
     ...keys.map((key) => ({ id: key.id, label: key.name })),
   ];
   return (
@@ -164,7 +168,15 @@ function ApiKeyFilter({
   );
 }
 
-function UsageLogCard({ log, keys }: { log: Sub2APIUsageLog; keys: Sub2APIKey[] }) {
+function UsageLogCard({
+  log,
+  keys,
+  text,
+}: {
+  log: Sub2APIUsageLog;
+  keys: Sub2APIKey[];
+  text: UsageText;
+}) {
   const cacheTokens =
     log.cache_creation_tokens +
     log.cache_read_tokens +
@@ -178,57 +190,65 @@ function UsageLogCard({ log, keys }: { log: Sub2APIUsageLog; keys: Sub2APIKey[] 
       <View style={styles.logHeader}>
         <View style={styles.logTitleBlock}>
           <Text style={styles.logModel} numberOfLines={1}>
-            {log.model || "Unknown model"}
+            {log.model || text.unknownModel}
           </Text>
           <Text style={styles.logMeta} numberOfLines={1}>
-            {getUsageLogKeyName(log, keys)} - {formatDateTime(log.created_at)}
+            {getUsageLogKeyName(log, keys, text)} - {formatDateTime(log.created_at)}
           </Text>
         </View>
         <View style={styles.badgeRow}>
           <Text style={[sharedStyles.infoBadge, sharedStyles.infoBadgeAccent]}>
-            {getRequestTypeLabel(log)}
+            {getRequestTypeLabel(log, text)}
           </Text>
           <Text style={[sharedStyles.infoBadge, sharedStyles.infoBadgeNeutral]}>
-            {getBillingModeLabel(log.billing_mode)}
+            {getBillingModeLabel(log.billing_mode, text)}
           </Text>
         </View>
       </View>
 
       <View style={styles.metricsGrid}>
         <View style={styles.metricCell}>
-          <Text style={styles.metricLabel}>Tokens</Text>
+          <Text style={styles.metricLabel}>{text.tokens}</Text>
           <Text style={styles.metricValue}>{formatTokens(totalTokens)}</Text>
           <Text style={styles.metricHint}>
-            In {formatTokens(log.input_tokens)} - Out {formatTokens(log.output_tokens)}
+            {text.input} {formatTokens(log.input_tokens)} - {text.output}{" "}
+            {formatTokens(log.output_tokens)}
           </Text>
         </View>
         <View style={styles.metricCell}>
-          <Text style={styles.metricLabel}>Cache</Text>
+          <Text style={styles.metricLabel}>{text.cache}</Text>
           <Text style={styles.metricValue}>{formatTokens(cacheTokens)}</Text>
           <Text style={styles.metricHint}>
-            W {formatTokens(log.cache_creation_tokens)} - R {formatTokens(log.cache_read_tokens)}
+            {text.write} {formatTokens(log.cache_creation_tokens)} - {text.read}{" "}
+            {formatTokens(log.cache_read_tokens)}
           </Text>
         </View>
         <View style={styles.metricCell}>
-          <Text style={styles.metricLabel}>Cost</Text>
+          <Text style={styles.metricLabel}>{text.cost}</Text>
           <Text style={styles.metricValue}>{formatUsd(log.actual_cost)}</Text>
-          <Text style={styles.metricHint}>Standard {formatUsd(log.total_cost)}</Text>
+          <Text style={styles.metricHint}>
+            {text.standard} {formatUsd(log.total_cost)}
+          </Text>
         </View>
         <View style={styles.metricCell}>
-          <Text style={styles.metricLabel}>Latency</Text>
+          <Text style={styles.metricLabel}>{text.latency}</Text>
           <Text style={styles.metricValue}>{formatDuration(log.duration_ms)}</Text>
-          <Text style={styles.metricHint}>First {formatDuration(log.first_token_ms)}</Text>
+          <Text style={styles.metricHint}>
+            {text.first} {formatDuration(log.first_token_ms)}
+          </Text>
         </View>
       </View>
 
       <Text style={styles.endpointText} numberOfLines={1}>
-        {log.inbound_endpoint?.trim() || "No inbound endpoint recorded"}
+        {log.inbound_endpoint?.trim() || text.noInboundEndpoint}
       </Text>
     </View>
   );
 }
 
 export function PaseoCloudUsageSection() {
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).paseoCloudUsage, [locale]);
   const { isLoggedIn } = useSub2APIAuth();
   const [preset, setPreset] = useState<UsageDatePreset>("7d");
   const [selectedKeyId, setSelectedKeyId] = useState<number | null>(null);
@@ -264,6 +284,14 @@ export function PaseoCloudUsageSection() {
   const total = logsQuery.data?.total ?? 0;
   const isLoading = keysQuery.isLoading || statsQuery.isLoading || logsQuery.isLoading;
   const error = keysQuery.error || statsQuery.error || logsQuery.error;
+  const datePresetOptions = useMemo(
+    () =>
+      DATE_PRESET_VALUES.map((value) => ({
+        value,
+        label: text.datePresets[value],
+      })),
+    [text],
+  );
 
   const handlePresetChange = (nextPreset: UsageDatePreset) => {
     setPreset(nextPreset);
@@ -280,10 +308,10 @@ export function PaseoCloudUsageSection() {
   };
 
   return (
-    <SettingsSection title="Usage">
+    <SettingsSection title={text.title}>
       {!isLoggedIn ? (
         <View style={[settingsStyles.card, styles.cardBody]}>
-          <Text style={styles.hintText}>Sign in to {CLOUD_NAME} to view usage.</Text>
+          <Text style={styles.hintText}>{text.signInHint(CLOUD_NAME)}</Text>
         </View>
       ) : null}
 
@@ -292,9 +320,9 @@ export function PaseoCloudUsageSection() {
           <View style={[settingsStyles.card, styles.cardBody]}>
             <View style={styles.toolbarHeader}>
               <View>
-                <Text style={styles.cardTitle}>Usage range</Text>
+                <Text style={styles.cardTitle}>{text.rangeTitle}</Text>
                 <Text style={styles.hintText}>
-                  {dateRange.startDate} to {dateRange.endDate}
+                  {text.rangeText(dateRange.startDate, dateRange.endDate)}
                 </Text>
               </View>
               <Pressable
@@ -304,17 +332,22 @@ export function PaseoCloudUsageSection() {
                   pressed && sharedStyles.buttonPressed,
                 ]}
               >
-                <Text style={sharedStyles.secondaryButtonText}>Refresh</Text>
+                <Text style={sharedStyles.secondaryButtonText}>{text.refresh}</Text>
               </Pressable>
             </View>
             <SegmentedControl
-              options={DATE_PRESET_OPTIONS}
+              options={datePresetOptions}
               value={preset}
               onValueChange={handlePresetChange}
               size="sm"
               style={styles.segmentedControl}
             />
-            <ApiKeyFilter keys={keys} selectedKeyId={selectedKeyId} onSelect={handleKeySelect} />
+            <ApiKeyFilter
+              keys={keys}
+              selectedKeyId={selectedKeyId}
+              onSelect={handleKeySelect}
+              text={text}
+            />
           </View>
 
           {error ? (
@@ -325,33 +358,33 @@ export function PaseoCloudUsageSection() {
 
           <View style={styles.statsGrid}>
             <StatCard
-              label="Requests"
+              label={text.requests}
               value={isLoading ? "..." : String(statsQuery.data?.total_requests ?? 0)}
-              hint={`${total} records in range`}
+              hint={text.recordsInRange(total)}
             />
             <StatCard
-              label="Tokens"
+              label={text.tokens}
               value={isLoading ? "..." : formatTokens(statsQuery.data?.total_tokens)}
-              hint={`Cache ${formatTokens(statsQuery.data?.total_cache_tokens)}`}
+              hint={`${text.cache} ${formatTokens(statsQuery.data?.total_cache_tokens)}`}
             />
             <StatCard
-              label="Actual cost"
+              label={text.actualCost}
               value={isLoading ? "..." : formatUsd(statsQuery.data?.total_actual_cost)}
-              hint={`Standard ${formatUsd(statsQuery.data?.total_cost)}`}
+              hint={`${text.standard} ${formatUsd(statsQuery.data?.total_cost)}`}
             />
             <StatCard
-              label="Avg duration"
+              label={text.avgDuration}
               value={isLoading ? "..." : formatDuration(statsQuery.data?.average_duration_ms)}
-              hint="Across matched requests"
+              hint={text.acrossMatchedRequests}
             />
           </View>
 
           <View style={[settingsStyles.card, styles.cardBody]}>
             <View style={styles.toolbarHeader}>
               <View>
-                <Text style={styles.cardTitle}>Usage records</Text>
+                <Text style={styles.cardTitle}>{text.recordsTitle}</Text>
                 <Text style={styles.hintText}>
-                  Page {logsQuery.data?.page ?? page} of {Math.max(pages, 1)}
+                  {text.pageOf(logsQuery.data?.page ?? page, Math.max(pages, 1))}
                 </Text>
               </View>
               <View style={styles.paginationButtons}>
@@ -364,7 +397,7 @@ export function PaseoCloudUsageSection() {
                     pressed && sharedStyles.buttonPressed,
                   ]}
                 >
-                  <Text style={sharedStyles.secondaryButtonText}>Prev</Text>
+                  <Text style={sharedStyles.secondaryButtonText}>{text.prev}</Text>
                 </Pressable>
                 <Pressable
                   disabled={pages > 0 && page >= pages}
@@ -375,19 +408,19 @@ export function PaseoCloudUsageSection() {
                     pressed && sharedStyles.buttonPressed,
                   ]}
                 >
-                  <Text style={sharedStyles.secondaryButtonText}>Next</Text>
+                  <Text style={sharedStyles.secondaryButtonText}>{text.next}</Text>
                 </Pressable>
               </View>
             </View>
 
             {isLoading ? (
-              <Text style={styles.hintText}>Loading usage...</Text>
+              <Text style={styles.hintText}>{text.loading}</Text>
             ) : logs.length === 0 ? (
-              <Text style={styles.hintText}>No usage records found for this range.</Text>
+              <Text style={styles.hintText}>{text.noRecords}</Text>
             ) : (
               <View style={styles.logList}>
                 {logs.map((log) => (
-                  <UsageLogCard key={log.id} log={log} keys={keys} />
+                  <UsageLogCard key={log.id} log={log} keys={keys} text={text} />
                 ))}
               </View>
             )}

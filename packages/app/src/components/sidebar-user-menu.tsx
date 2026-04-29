@@ -13,6 +13,8 @@ import {
 import { useAppSettings } from "@/hooks/use-settings";
 import { useSub2APIAuth } from "@/hooks/use-sub2api-auth";
 import { useSub2APIMe, useSub2APIUsageStats } from "@/hooks/use-sub2api-api";
+import { useSub2APILocale } from "@/hooks/use-sub2api-locale";
+import { getSub2APIMessages } from "@/i18n/sub2api";
 import { CLOUD_NAME } from "@/config/branding";
 import { Sub2APIPayModal } from "@/screens/settings/sub2api-pay-modal";
 import { buildPaseoCloudRoute } from "@/utils/host-routes";
@@ -45,6 +47,8 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
   const { theme } = useUnistyles();
   const router = useRouter();
   const { settings } = useAppSettings();
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).sidebarUser, [locale]);
   const { isLoggedIn, auth, logout, getAccessToken } = useSub2APIAuth();
   const meQuery = useSub2APIMe();
   const usageTodayQuery = useSub2APIUsageStats("today");
@@ -58,15 +62,15 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
     try {
       const token = await getAccessToken();
       if (!token) {
-        Alert.alert("Session expired", "Please log in again.");
+        Alert.alert(text.sessionExpired, text.loginAgain);
         return;
       }
       setPayToken(token);
       setIsPayModalOpen(true);
     } catch (error) {
-      Alert.alert("Unable to open payment", getErrorMessage(error));
+      Alert.alert(text.unableOpenPayment, getErrorMessage(error));
     }
-  }, [getAccessToken]);
+  }, [getAccessToken, text.loginAgain, text.sessionExpired, text.unableOpenPayment]);
 
   const handlePayCompleted = useCallback(() => {
     void meQuery.refetch();
@@ -92,7 +96,7 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
 
   const user = meQuery.data;
   const initial = getInitial(user?.username, user?.email);
-  const displayName = user?.username?.trim() || user?.email?.trim() || "Account";
+  const displayName = user?.username?.trim() || user?.email?.trim() || text.account;
   const displayEmail = user?.email?.trim() || "";
   const balance = user?.balance;
   const balanceColor = getBalanceColor(balance, theme.colors.palette, theme.colors.foregroundMuted);
@@ -110,7 +114,7 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
             hovered && styles.avatarButtonHovered,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="User menu"
+          accessibilityLabel={text.userMenu}
           testID="sidebar-user-menu"
         >
           <View style={styles.avatarCircle}>
@@ -136,14 +140,16 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
           {/* Balance & usage */}
           <View style={styles.balanceSection}>
             <View style={styles.balanceRow}>
-              <Text style={styles.balanceLabel}>Balance</Text>
+              <Text style={styles.balanceLabel}>{text.balance}</Text>
               <Text style={[styles.balanceValue, { color: balanceColor }]}>
                 {meQuery.isLoading ? "..." : formatUsd(balance)}
               </Text>
             </View>
             <Text style={styles.usageHint}>
-              Today: {formatUsd(usageTodayQuery.data?.total_cost)} (
-              {usageTodayQuery.data?.total_requests ?? 0} req)
+              {text.todayUsage(
+                formatUsd(usageTodayQuery.data?.total_cost),
+                usageTodayQuery.data?.total_requests ?? 0,
+              )}
             </Text>
           </View>
 
@@ -154,7 +160,7 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
             leading={<Wallet size={16} color={theme.colors.foregroundMuted} />}
             onSelect={() => void handleOpenPayModal()}
           >
-            Recharge
+            {text.recharge}
           </DropdownMenuItem>
           <DropdownMenuItem
             leading={<Cloud size={16} color={theme.colors.foregroundMuted} />}
@@ -166,26 +172,26 @@ export const SidebarUserMenu = memo(function SidebarUserMenu({
             leading={<KeyRound size={16} color={theme.colors.foregroundMuted} />}
             onSelect={handleOpenApiKeys}
           >
-            API keys
+            {text.apiKeys}
           </DropdownMenuItem>
           <DropdownMenuItem
             leading={<Route size={16} color={theme.colors.foregroundMuted} />}
             onSelect={handleOpenRoutingGroups}
           >
-            Routing groups
+            {text.routingGroups}
           </DropdownMenuItem>
           <DropdownMenuItem
             leading={<Settings size={16} color={theme.colors.foregroundMuted} />}
             onSelect={onNavigateSettings}
           >
-            Settings
+            {text.settings}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             leading={<LogOut size={16} color={theme.colors.destructive} />}
             onSelect={() => void handleLogout()}
           >
-            Logout
+            {text.logout}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -59,5 +59,13 @@ describe("sub2api i18n helpers", () => {
     expect(getSub2APIMessages("en").modelCatalog.title).toBe("Model catalog");
     expect(getSub2APIMessages("zh").settings.sections.general).toBe("通用");
     expect(getSub2APIMessages("en").settings.sections.general).toBe("General");
+    expect(getSub2APIMessages("zh").sidebar.projects).toBe("项目");
+    expect(getSub2APIMessages("en").sidebar.projects).toBe("Projects");
+    expect(getSub2APIMessages("zh").sidebar.chat).toBe("聊天");
+    expect(getSub2APIMessages("en").sidebar.chat).toBe("Chat");
+    expect(getSub2APIMessages("zh").paseoCloudApiKeys.title).toBe("API 密钥（高级）");
+    expect(getSub2APIMessages("en").paseoCloudApiKeys.title).toBe("API Keys (advanced)");
+    expect(getSub2APIMessages("zh").paseoCloudUsage.title).toBe("用量");
+    expect(getSub2APIMessages("en").paseoCloudUsage.title).toBe("Usage");
   });
 });

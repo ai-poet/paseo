@@ -123,6 +123,8 @@ import {
   createWorktreeQuickly,
   isCreatingWorktreePlaceholderId,
 } from "@/utils/quick-create-worktree";
+import { useSub2APILocale } from "@/hooks/use-sub2api-locale";
+import { getSub2APIMessages } from "@/i18n/sub2api";
 
 function toProjectIconDataUri(icon: { mimeType: string; data: string } | null): string | null {
   if (!icon) {
@@ -628,6 +630,8 @@ function NewWorktreeButton({
   showShortcutHint?: boolean;
 }) {
   const { theme } = useUnistyles();
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).sidebarWorkspace, [locale]);
   const newWorktreeKeys = useShortcutKeys("new-worktree");
 
   return (
@@ -646,7 +650,7 @@ function NewWorktreeButton({
             }}
             disabled={loading}
             accessibilityRole="button"
-            accessibilityLabel={`Create a new worktree for ${displayName}`}
+            accessibilityLabel={text.createNewWorktree(displayName)}
             testID={testID}
           >
             {({ hovered, pressed }) =>
@@ -665,7 +669,7 @@ function NewWorktreeButton({
         </TooltipTrigger>
         <TooltipContent side="bottom" align="center" offset={8}>
           <View style={styles.projectActionTooltipRow}>
-            <Text style={styles.projectActionTooltipText}>New worktree</Text>
+            <Text style={styles.projectActionTooltipText}>{text.newWorktree}</Text>
             {showShortcutHint && newWorktreeKeys ? (
               <Shortcut chord={newWorktreeKeys} style={styles.projectActionTooltipShortcut} />
             ) : null}
@@ -917,6 +921,8 @@ function ProjectHeaderRow({
   dragHandleProps,
 }: ProjectHeaderRowProps) {
   const { theme } = useUnistyles();
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).sidebarWorkspace, [locale]);
   const [isHovered, setIsHovered] = useState(false);
   const isMobileBreakpoint = useIsCompactFormFactor();
   const runtimeServerId = serverId ?? "";
@@ -1033,7 +1039,7 @@ function ProjectHeaderRow({
                   hovered && styles.projectKebabButtonHovered,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Project actions"
+                accessibilityLabel={text.projectActions}
                 testID={`sidebar-project-kebab-${project.projectKey}`}
               >
                 {({ hovered }) => (
@@ -1050,17 +1056,17 @@ function ProjectHeaderRow({
                     leading={<Pencil size={14} color={theme.colors.foregroundMuted} />}
                     onSelect={onRenameProject}
                   >
-                    Rename project
+                    {text.renameProject}
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuItem
                   testID={`sidebar-project-menu-remove-${project.projectKey}`}
                   leading={<Trash2 size={14} color={theme.colors.foregroundMuted} />}
                   status={removeProjectStatus}
-                  pendingLabel="Deleting..."
+                  pendingLabel={text.deleting}
                   onSelect={onRemoveProject}
                 >
-                  Delete project
+                  {text.deleteProject}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1154,6 +1160,8 @@ function WorkspaceRowInner({
   archiveShortcutKeys,
 }: WorkspaceRowInnerProps) {
   const { theme } = useUnistyles();
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).sidebarWorkspace, [locale]);
   const isCompact = useIsCompactFormFactor();
   const [isHovered, setIsHovered] = useState(false);
   const isTouchPlatform = platformIsNative;
@@ -1232,7 +1240,7 @@ function WorkspaceRowInner({
             </View>
             <View style={styles.workspaceRowRight}>
               {showScriptsIcon ? (
-                <View testID="workspace-globe-icon" accessibilityLabel="Scripts available">
+                <View testID="workspace-globe-icon" accessibilityLabel={text.scriptsAvailable}>
                   {hasRunningService ? (
                     <Globe size={12} color={theme.colors.palette.blue[500]} />
                   ) : (
@@ -1240,7 +1248,9 @@ function WorkspaceRowInner({
                   )}
                 </View>
               ) : null}
-              {isCreating ? <Text style={styles.workspaceCreatingText}>Creating...</Text> : null}
+              {isCreating ? (
+                <Text style={styles.workspaceCreatingText}>{text.creating}</Text>
+              ) : null}
               {onArchive && (isHovered || isTouchPlatform) ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
@@ -1250,7 +1260,7 @@ function WorkspaceRowInner({
                       hovered && styles.kebabButtonHovered,
                     ]}
                     accessibilityRole="button"
-                    accessibilityLabel="Workspace actions"
+                    accessibilityLabel={text.workspaceActions}
                     testID={`sidebar-workspace-kebab-${workspace.workspaceKey}`}
                   >
                     {({ hovered }) => (
@@ -1267,7 +1277,7 @@ function WorkspaceRowInner({
                         leading={<Copy size={14} color={theme.colors.foregroundMuted} />}
                         onSelect={onCopyPath}
                       >
-                        Copy path
+                        {text.copyPath}
                       </DropdownMenuItem>
                     ) : null}
                     {onCopyBranchName ? (
@@ -1276,7 +1286,7 @@ function WorkspaceRowInner({
                         leading={<Copy size={14} color={theme.colors.foregroundMuted} />}
                         onSelect={onCopyBranchName}
                       >
-                        Copy branch name
+                        {text.copyBranchName}
                       </DropdownMenuItem>
                     ) : null}
                     <DropdownMenuItem
@@ -1289,7 +1299,7 @@ function WorkspaceRowInner({
                       pendingLabel={archivePendingLabel}
                       onSelect={onArchive}
                     >
-                      {archiveLabel ?? "Archive"}
+                      {archiveLabel ?? text.archive}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -1342,6 +1352,8 @@ function WorkspaceRowWithMenu({
   isCreating?: boolean;
 }) {
   const toast = useToast();
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).sidebarWorkspace, [locale]);
   const archiveWorktree = useCheckoutGitActionsStore((state) => state.archiveWorktree);
   const [isArchivingWorkspace, setIsArchivingWorkspace] = useState(false);
   const isCreatingPlaceholder = isCreatingWorktreePlaceholderId(workspace.workspaceId);
@@ -1373,10 +1385,10 @@ function WorkspaceRowWithMenu({
 
     void (async () => {
       const confirmed = await confirmDialog({
-        title: "Archive worktree?",
-        message: `Archive "${workspace.name}"?\n\nThe worktree will be removed from disk, terminals will be stopped, and agents inside will be archived.\n\nYour branch is still accessible if you committed.`,
-        confirmLabel: "Archive",
-        cancelLabel: "Cancel",
+        title: text.archiveWorktreeTitle,
+        message: text.archiveWorktreeMessage(workspace.name),
+        confirmLabel: text.archive,
+        cancelLabel: text.cancel,
         destructive: true,
       });
 
@@ -1390,12 +1402,12 @@ function WorkspaceRowWithMenu({
           workspaceDirectory: workspace.workspaceDirectory,
         });
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Workspace path not available");
+        toast.error(error instanceof Error ? error.message : text.workspacePathUnavailable);
         return;
       }
 
       if (!workspaceDirectory) {
-        toast.error("Workspace path not available");
+        toast.error(text.workspacePathUnavailable);
         return;
       }
 
@@ -1406,7 +1418,7 @@ function WorkspaceRowWithMenu({
         cwd: workspaceDirectory,
         worktreePath: workspaceDirectory,
       }).catch((error) => {
-        const message = error instanceof Error ? error.message : "Failed to archive worktree";
+        const message = error instanceof Error ? error.message : text.failedArchiveWorktree;
         toast.error(message);
       });
     })();
@@ -1419,6 +1431,7 @@ function WorkspaceRowWithMenu({
     workspace.workspaceDirectory,
     workspace.serverId,
     workspace.workspaceId,
+    text,
   ]);
 
   const handleArchiveWorkspace = useCallback(() => {
@@ -1428,10 +1441,10 @@ function WorkspaceRowWithMenu({
 
     void (async () => {
       const confirmed = await confirmDialog({
-        title: "Hide workspace?",
-        message: `Hide "${workspace.name}" from the sidebar?\n\nFiles on disk will not be changed.`,
-        confirmLabel: "Hide",
-        cancelLabel: "Cancel",
+        title: text.hideWorkspaceTitle,
+        message: text.hideWorkspaceMessage(workspace.name),
+        confirmLabel: text.hide,
+        cancelLabel: text.cancel,
         destructive: true,
       });
       if (!confirmed) {
@@ -1440,7 +1453,7 @@ function WorkspaceRowWithMenu({
 
       const client = getHostRuntimeStore().getClient(workspace.serverId);
       if (!client) {
-        toast.error("Host is not connected");
+        toast.error(text.hostNotConnected);
         return;
       }
 
@@ -1454,7 +1467,7 @@ function WorkspaceRowWithMenu({
             throw new Error(payload.error);
           }
         } catch (error) {
-          toast.error(error instanceof Error ? error.message : "Failed to hide workspace");
+          toast.error(error instanceof Error ? error.message : text.failedHideWorkspace);
         } finally {
           setIsArchivingWorkspace(false);
         }
@@ -1467,6 +1480,7 @@ function WorkspaceRowWithMenu({
     workspace.name,
     workspace.serverId,
     workspace.workspaceId,
+    text,
   ]);
 
   const handleCopyPath = useCallback(() => {
@@ -1477,17 +1491,17 @@ function WorkspaceRowWithMenu({
         workspaceDirectory: workspace.workspaceDirectory,
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Workspace path not available");
+      toast.error(error instanceof Error ? error.message : text.workspacePathUnavailable);
       return;
     }
     void Clipboard.setStringAsync(workspaceDirectory);
-    toast.copied("Path copied");
-  }, [toast, workspace.workspaceDirectory, workspace.workspaceId]);
+    toast.copied(text.pathCopied);
+  }, [text, toast, workspace.workspaceDirectory, workspace.workspaceId]);
 
   const handleCopyBranchName = useCallback(() => {
     void Clipboard.setStringAsync(workspace.name);
-    toast.copied("Branch name copied");
-  }, [toast, workspace.name]);
+    toast.copied(text.branchNameCopied);
+  }, [text.branchNameCopied, toast, workspace.name]);
 
   const archiveShortcutKeys = useShortcutKeys("archive-worktree");
 
@@ -1519,9 +1533,9 @@ function WorkspaceRowWithMenu({
       isCreating={isCreating || isCreatingPlaceholder}
       dragHandleProps={dragHandleProps}
       menuController={null}
-      archiveLabel={isWorktree ? "Archive worktree" : "Hide from sidebar"}
+      archiveLabel={isWorktree ? text.archiveWorktree : text.hideFromSidebar}
       archiveStatus={isWorktree ? archiveStatus : isArchivingWorkspace ? "pending" : "idle"}
-      archivePendingLabel={isWorktree ? "Archiving..." : "Hiding..."}
+      archivePendingLabel={isWorktree ? text.archiving : text.hiding}
       onArchive={
         isCreatingPlaceholder
           ? undefined
@@ -1564,6 +1578,8 @@ function NonGitProjectRowWithMenuContent({
   dragHandleProps?: DraggableListDragHandleProps;
 }) {
   const toast = useToast();
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).sidebarWorkspace, [locale]);
   const contextMenu = useContextMenu();
   const [isArchivingWorkspace, setIsArchivingWorkspace] = useState(false);
   const redirectAfterArchive = useCallback(() => {
@@ -1580,10 +1596,10 @@ function NonGitProjectRowWithMenuContent({
 
     void (async () => {
       const confirmed = await confirmDialog({
-        title: "Hide workspace?",
-        message: `Hide "${workspace.name}" from the sidebar?\n\nFiles on disk will not be changed.`,
-        confirmLabel: "Hide",
-        cancelLabel: "Cancel",
+        title: text.hideWorkspaceTitle,
+        message: text.hideWorkspaceMessage(workspace.name),
+        confirmLabel: text.hide,
+        cancelLabel: text.cancel,
         destructive: true,
       });
       if (!confirmed) {
@@ -1592,7 +1608,7 @@ function NonGitProjectRowWithMenuContent({
 
       const client = getHostRuntimeStore().getClient(workspace.serverId);
       if (!client) {
-        toast.error("Host is not connected");
+        toast.error(text.hostNotConnected);
         return;
       }
 
@@ -1606,7 +1622,7 @@ function NonGitProjectRowWithMenuContent({
             throw new Error(payload.error);
           }
         } catch (error) {
-          toast.error(error instanceof Error ? error.message : "Failed to hide workspace");
+          toast.error(error instanceof Error ? error.message : text.failedHideWorkspace);
         } finally {
           setIsArchivingWorkspace(false);
         }
@@ -1619,6 +1635,7 @@ function NonGitProjectRowWithMenuContent({
     workspace.name,
     workspace.serverId,
     workspace.workspaceId,
+    text,
   ]);
 
   return (
@@ -1650,11 +1667,11 @@ function NonGitProjectRowWithMenuContent({
         <ContextMenuItem
           testID={`sidebar-workspace-context-${workspace.workspaceKey}-archive`}
           status={isArchivingWorkspace ? "pending" : "idle"}
-          pendingLabel="Hiding..."
+          pendingLabel={text.hiding}
           destructive
           onSelect={handleArchiveWorkspace}
         >
-          Hide from sidebar
+          {text.hideFromSidebar}
         </ContextMenuItem>
       </ContextMenuContent>
     </>
@@ -1859,6 +1876,8 @@ function ProjectBlock({
   dragHandleProps?: DraggableListDragHandleProps;
   useNestable: boolean;
 }) {
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).sidebarWorkspace, [locale]);
   const rowModel = useMemo(
     () =>
       buildSidebarProjectRowModel({
@@ -1947,12 +1966,12 @@ function ProjectBlock({
 
   const handleRenameProject = useCallback(() => {
     if (platformIsWeb) {
-      const newName = window.prompt("Rename project", displayName);
+      const newName = window.prompt(text.renamePrompt, displayName);
       if (newName && newName.trim() !== "" && newName.trim() !== displayName) {
         setProjectName(project.projectKey, newName.trim());
       }
     }
-  }, [displayName, project.projectKey, setProjectName]);
+  }, [displayName, project.projectKey, setProjectName, text.renamePrompt]);
 
   const handleRemoveProject = useCallback(() => {
     if (isRemovingProject || !serverId) {
@@ -1961,10 +1980,10 @@ function ProjectBlock({
 
     void (async () => {
       const confirmed = await confirmDialog({
-        title: "Remove project?",
-        message: `Remove "${displayName}" from the sidebar?\n\nFiles on disk will not be changed.`,
-        confirmLabel: "Remove",
-        cancelLabel: "Cancel",
+        title: text.removeProjectTitle,
+        message: text.removeProjectMessage(displayName),
+        confirmLabel: text.remove,
+        cancelLabel: text.cancel,
         destructive: true,
       });
       if (!confirmed) {
@@ -1973,7 +1992,7 @@ function ProjectBlock({
 
       const client = getHostRuntimeStore().getClient(serverId);
       if (!client) {
-        toast.error("Host is not connected");
+        toast.error(text.hostNotConnected);
         return;
       }
 
@@ -1989,12 +2008,12 @@ function ProjectBlock({
       ).then((results) => {
         const failed = results.filter((r) => r.status === "rejected");
         if (failed.length > 0) {
-          toast.error("Failed to remove some workspaces");
+          toast.error(text.failedRemoveSomeWorkspaces);
         }
         setIsRemovingProject(false);
       });
     })();
-  }, [isRemovingProject, serverId, displayName, toast, project.workspaces]);
+  }, [isRemovingProject, serverId, displayName, toast, project.workspaces, text]);
 
   return (
     <View style={styles.projectBlock}>
@@ -2084,6 +2103,8 @@ export function SidebarWorkspaceList({
   parentGestureRef,
 }: SidebarWorkspaceListProps) {
   const pathname = usePathname();
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).sidebarWorkspace, [locale]);
   const projectNameOverrides = useSidebarProjectNamesStore((state) => state.namesByProjectKey);
   const showShortcutBadges = useShowShortcutBadges();
   const projectsForRender = useMemo(() => getSidebarRenderableProjects(projects), [projects]);
@@ -2304,10 +2325,10 @@ export function SidebarWorkspaceList({
     <>
       {projectsForRender.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyTitle}>No projects yet</Text>
-          <Text style={styles.emptyText}>Add a project to get started</Text>
+          <Text style={styles.emptyTitle}>{text.noProjectsYet}</Text>
+          <Text style={styles.emptyText}>{text.addProjectToStart}</Text>
           <Button variant="ghost" size="sm" leftIcon={Plus} onPress={onAddProject}>
-            Add project
+            {text.addProject}
           </Button>
         </View>
       ) : (

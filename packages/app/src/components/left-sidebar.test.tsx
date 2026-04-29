@@ -22,6 +22,7 @@ const { panelState, useSidebarWorkspacesListMock, theme } = vi.hoisted(() => {
       borderRadius: { sm: 4, md: 6, lg: 8, full: 999 },
       fontSize: { xs: 11, sm: 13, base: 15 },
       fontWeight: { normal: "400", medium: "500", semibold: "600" },
+      shadow: { md: {} },
       colors: {
         surfaceSidebar: "#111",
         surface1: "#111",
@@ -57,6 +58,11 @@ vi.mock("react-native-reanimated", () => ({
     View: "div",
   },
   Extrapolation: { CLAMP: "clamp" },
+  Keyframe: class {
+    duration() {
+      return this;
+    }
+  },
   interpolate: () => 0,
   runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
   useAnimatedStyle: (factory: () => unknown) => factory(),
@@ -86,6 +92,13 @@ vi.mock("lucide-react-native", () => {
   const createIcon = (name: string) => (props: Record<string, unknown>) =>
     React.createElement("span", { ...props, "data-icon": name });
   return {
+    ArrowDownNarrowWide: createIcon("ArrowDownNarrowWide"),
+    Check: createIcon("Check"),
+    CheckCircle: createIcon("CheckCircle"),
+    ChevronsDownUp: createIcon("ChevronsDownUp"),
+    Cloud: createIcon("Cloud"),
+    FolderPlus: createIcon("FolderPlus"),
+    MessageSquarePlus: createIcon("MessageSquarePlus"),
     MessagesSquare: createIcon("MessagesSquare"),
     Plus: createIcon("Plus"),
     Settings: createIcon("Settings"),
@@ -157,9 +170,14 @@ vi.mock("@/utils/desktop-window", () => ({
 
 vi.mock("@/utils/host-routes", () => ({
   buildHostSessionsRoute: (serverId: string) => `/hosts/${serverId}/sessions`,
+  buildPaseoCloudRoute: () => "/settings/paseo-cloud",
   buildSettingsRoute: () => "/settings",
   mapPathnameToServer: (_pathname: string, serverId: string) => `/hosts/${serverId}`,
   parseServerIdFromPathname: () => "srv",
+}));
+
+vi.mock("@/hooks/use-sub2api-locale", () => ({
+  useSub2APILocale: () => "en",
 }));
 
 vi.mock("@/hooks/use-open-project-picker", () => ({
@@ -192,6 +210,17 @@ vi.mock("@/components/ui/tooltip", () => ({
     React.createElement("div", null, children),
 }));
 
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) =>
+    React.createElement("div", null, children),
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) =>
+    React.createElement("button", null, typeof children === "function" ? children({}) : children),
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) =>
+    React.createElement("div", null, children),
+  DropdownMenuItem: ({ children }: { children: React.ReactNode }) =>
+    React.createElement("div", null, children),
+}));
+
 vi.mock("@/components/ui/shortcut", () => ({
   Shortcut: () => React.createElement("span", null),
 }));
@@ -199,6 +228,10 @@ vi.mock("@/components/ui/shortcut", () => ({
 vi.mock("@/components/ui/combobox", () => ({
   Combobox: () => null,
   ComboboxItem: ({ label }: { label: string }) => React.createElement("div", null, label),
+}));
+
+vi.mock("@/components/sidebar-user-menu", () => ({
+  SidebarUserMenu: () => React.createElement("div", null),
 }));
 
 vi.stubGlobal("React", React);

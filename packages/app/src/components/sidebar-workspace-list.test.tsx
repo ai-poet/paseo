@@ -44,6 +44,10 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
+vi.mock("@/hooks/use-sub2api-locale", () => ({
+  useSub2APILocale: () => "en",
+}));
+
 const SERVER_ID = "sidebar-render-count";
 
 type RenderCounts = {

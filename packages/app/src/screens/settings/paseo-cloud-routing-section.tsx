@@ -9,6 +9,8 @@ import {
   useSub2APIGroupStatuses,
   useSub2APIKeys,
 } from "@/hooks/use-sub2api-api";
+import { useSub2APILocale } from "@/hooks/use-sub2api-locale";
+import { getSub2APIMessages } from "@/i18n/sub2api";
 import { CLOUD_NAME } from "@/config/branding";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { useDesktopProvidersStore } from "@/screens/settings/desktop-providers-context";
@@ -92,6 +94,10 @@ export function PaseoCloudRoutingSection({
   authEndpoint,
   serviceEndpoint,
 }: PaseoCloudRoutingSectionProps) {
+  const locale = useSub2APILocale();
+  const messages = useMemo(() => getSub2APIMessages(locale), [locale]);
+  const text = messages.paseoCloudRouting;
+  const statusLabels = messages.paseoCloudModelStatus.statusLabels;
   const { loadProviders, activeClaudeProvider, activeCodexProvider } = useDesktopProvidersStore();
   const [activeScope, setActiveScope] = useState<ManagedCloudDesktopScope>("claude");
   const [switchingGroupId, setSwitchingGroupId] = useState<number | null>(null);
@@ -199,7 +205,7 @@ export function PaseoCloudRoutingSection({
     async (apiKey: string, scope: ManagedCloudDesktopScope, name?: string) => {
       const targetEndpoint = authEndpoint ?? serviceEndpoint;
       if (!isValidSub2APIEndpoint(targetEndpoint)) {
-        throw new Error("Service endpoint is invalid.");
+        throw new Error(text.serviceEndpointInvalid);
       }
 
       await invokeDesktopCommand("setup_default_provider", {
@@ -210,28 +216,28 @@ export function PaseoCloudRoutingSection({
       });
       await loadProviders();
     },
-    [authEndpoint, loadProviders, serviceEndpoint],
+    [authEndpoint, loadProviders, serviceEndpoint, text.serviceEndpointInvalid],
   );
 
   const handleUseGroup = useCallback(
     async (groupId: number) => {
       const group = groups.find((entry) => entry.id === groupId);
       if (!group) {
-        Alert.alert("Cannot use group", "The selected group is no longer available.");
+        Alert.alert(text.cannotUseGroup, text.groupUnavailable);
         return;
       }
 
       const resolved = resolveManagedCloudRouteForGroup(group);
       if (!resolved.ok) {
-        Alert.alert("Cannot use group", resolved.reason);
+        Alert.alert(text.cannotUseGroup, resolved.reason);
         return;
       }
       if (resolved.scope !== activeScope) {
         const targetMeta = getManagedCloudMetaForScope(resolved.scope);
         setActiveScope(resolved.scope);
         Alert.alert(
-          "Moved to the matching tab",
-          `Group "${group.name}" belongs to ${targetMeta.cliLabel}. ${CLOUD_NAME} switched tabs for you so you can apply it there.`,
+          text.movedTitle,
+          text.movedGroupMessage(group.name, targetMeta.cliLabel, CLOUD_NAME),
         );
         return;
       }
@@ -242,18 +248,22 @@ export function PaseoCloudRoutingSection({
         const keyToUse =
           reusable ??
           (await createKeyMutation.mutateAsync({
-            name: `${group.name} Key`,
+            name: text.defaultKeyName(group.name),
             group_id: group.id,
           }));
 
         await setupDefaultProviderWithKey(keyToUse.key, activeScope, group.name);
         await keysQuery.refetch();
         Alert.alert(
-          "Global CLI default updated",
-          `Group "${group.name}" now configures ${scopeMeta.cliLabel} only. Updated ${scopeMeta.configTarget}. New workspace sessions can also use group routing from the model selector without changing this global default.`,
+          text.globalUpdatedTitle,
+          text.globalGroupUpdatedMessage(
+            group.name,
+            scopeMeta.cliLabel,
+            scopeMeta.configTarget,
+          ),
         );
       } catch (error) {
-        Alert.alert("Switch failed", getErrorMessage(error));
+        Alert.alert(text.switchFailed, getErrorMessage(error));
       } finally {
         setSwitchingGroupId(null);
       }
@@ -267,17 +277,14 @@ export function PaseoCloudRoutingSection({
       scopeMeta.cliLabel,
       scopeMeta.configTarget,
       setupDefaultProviderWithKey,
+      text,
     ],
   );
 
   return (
-    <SettingsSection title="Routing groups">
+    <SettingsSection title={text.title}>
       <View style={[settingsStyles.card, styles.cardBody]}>
-        <Text style={styles.sectionHint}>
-          Choose a Cloud group to start using a route. This Settings page applies a group as a
-          global CLI default; the new-agent model selector can set a group only for the current
-          workspace.
-        </Text>
+        <Text style={styles.sectionHint}>{text.hint}</Text>
 
         <View style={styles.tabBar}>
           <SegmentedControl
@@ -290,8 +297,7 @@ export function PaseoCloudRoutingSection({
         </View>
 
         <Text style={styles.usageHint}>
-          Current tab: <Text style={styles.sectionHintEm}>{scopeMeta.cliLabel}</Text> using{" "}
-          <Text style={styles.sectionHintEm}>{scopeMeta.platform}</Text> groups only.
+          {text.currentTab(scopeMeta.cliLabel, scopeMeta.platform)}
         </Text>
 
         {groupsQuery.error ? (
@@ -301,18 +307,16 @@ export function PaseoCloudRoutingSection({
               onPress={() => void groupsQuery.refetch()}
               style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
             >
-              <Text style={styles.secondaryButtonText}>Retry</Text>
+              <Text style={styles.secondaryButtonText}>{text.retry}</Text>
             </Pressable>
           </View>
         ) : groupsQuery.isLoading ? (
-          <Text style={styles.usageHint}>Loading groups…</Text>
+          <Text style={styles.usageHint}>{text.loadingGroups}</Text>
         ) : groupCards.length === 0 ? (
           <View style={styles.dashedCard}>
-            <Text style={styles.emptyTitle}>No routing groups available</Text>
+            <Text style={styles.emptyTitle}>{text.noGroupsTitle}</Text>
             <Text style={styles.emptyBody}>
-              This account does not currently expose any {scopeMeta.platform} routing groups for{" "}
-              {scopeMeta.cliLabel}. Add a compatible group in {CLOUD_NAME}, or use BYOK for this
-              CLI.
+              {text.noGroupsBody(scopeMeta.platform, scopeMeta.cliLabel, CLOUD_NAME)}
             </Text>
             {alternateScopeGroups.length > 0 ? (
               <Pressable
@@ -320,7 +324,7 @@ export function PaseoCloudRoutingSection({
                 style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
               >
                 <Text style={styles.secondaryButtonText}>
-                  View {getManagedCloudMetaForScope(alternateScope).cliLabel} routes
+                  {text.viewScopeRoutes(getManagedCloudMetaForScope(alternateScope).cliLabel)}
                 </Text>
               </Pressable>
             ) : null}
@@ -338,7 +342,9 @@ export function PaseoCloudRoutingSection({
                     <View style={styles.scopeActionsRow}>
                       <Text style={settingsStyles.rowTitle}>{group.name}</Text>
                       {recommended ? (
-                        <Text style={[styles.infoBadge, styles.infoBadgeAccent]}>Recommended</Text>
+                        <Text style={[styles.infoBadge, styles.infoBadgeAccent]}>
+                          {text.recommended}
+                        </Text>
                       ) : null}
                       {status ? (
                         <Text
@@ -353,7 +359,7 @@ export function PaseoCloudRoutingSection({
                                   : styles.infoBadgeNeutral,
                           ]}
                         >
-                          {stableStatus.toUpperCase()}
+                          {statusLabels[stableStatus]}
                         </Text>
                       ) : null}
                     </View>
@@ -369,42 +375,31 @@ export function PaseoCloudRoutingSection({
                           7d {formatAvailability(status.availability_7d)}
                         </Text>
                         <Text style={styles.usageHint}>
-                          Latency {formatLatency(status.latency_ms)}
+                          {text.latency} {formatLatency(status.latency_ms)}
                         </Text>
                       </View>
                     ) : (
-                      <Text style={styles.usageHint}>
-                        Runtime status has not been observed yet for this group.
-                      </Text>
+                      <Text style={styles.usageHint}>{text.runtimeUnknown}</Text>
                     )}
                     {activeKey ? (
                       <Text style={styles.activeProviderText}>
-                        Active route via {maskApiKey(activeKey.key)}
+                        {text.activeRouteVia(maskApiKey(activeKey.key))}
                       </Text>
                     ) : groupKeys.length > 0 ? (
-                      <Text style={styles.usageHint}>
-                        {groupKeys.length} key
-                        {groupKeys.length === 1 ? "" : "s"} available for reuse
-                      </Text>
+                      <Text style={styles.usageHint}>{text.reusableKeyCount(groupKeys.length)}</Text>
                     ) : (
-                      <Text style={styles.usageHint}>
-                        No existing key yet. Applying this group will create one automatically.
-                      </Text>
+                      <Text style={styles.usageHint}>{text.noExistingKey}</Text>
                     )}
                     {recommended ? (
                       <Text style={styles.routeInsightText}>
-                        Best available option right now for {scopeMeta.cliLabel} based on health,
-                        latency, and price.
+                        {text.recommendedInsight(scopeMeta.cliLabel)}
                       </Text>
                     ) : null}
                     {stableStatus === "down" ? (
-                      <Text style={styles.errorHint}>
-                        Recent probes look unhealthy. Prefer another group unless you specifically
-                        need this route.
-                      </Text>
+                      <Text style={styles.errorHint}>{text.downWarning}</Text>
                     ) : null}
                     <Text style={styles.usageHint}>
-                      Advanced action: writes{" "}
+                      {text.advancedAction}{" "}
                       <Text style={styles.sectionHintEm}>{scopeMeta.configTarget}</Text>
                     </Text>
                   </View>
@@ -423,10 +418,10 @@ export function PaseoCloudRoutingSection({
                       style={activeKey ? styles.useKeyButtonUsedText : styles.primaryButtonText}
                     >
                       {isApplying
-                        ? "Applying…"
+                        ? text.applying
                         : activeKey
-                          ? `Active · ${scopeMeta.cliLabel}`
-                          : "Set as global CLI default"}
+                          ? text.activeCta(scopeMeta.cliLabel)
+                          : text.setGlobalDefault}
                     </Text>
                   </Pressable>
                 </View>

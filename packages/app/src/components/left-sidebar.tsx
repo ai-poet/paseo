@@ -79,11 +79,14 @@ import { isWeb } from "@/constants/platform";
 import { resolveActiveHost } from "@/utils/active-host";
 import { SidebarUserMenu } from "@/components/sidebar-user-menu";
 import { CLOUD_NAME } from "@/config/branding";
+import { useSub2APILocale } from "@/hooks/use-sub2api-locale";
+import { getSub2APIMessages } from "@/i18n/sub2api";
 
 const MIN_CHAT_WIDTH = 400;
 
 type SidebarShortcutModel = ReturnType<typeof useSidebarShortcutModel>;
 type SidebarTheme = ReturnType<typeof useUnistyles>["theme"];
+type SidebarText = ReturnType<typeof getSub2APIMessages>["sidebar"];
 
 interface LeftSidebarProps {
   selectedAgentId?: string;
@@ -119,6 +122,7 @@ interface SidebarSharedProps {
     active: boolean;
     onPress: () => void;
   }) => ReactElement;
+  text: SidebarText;
 }
 
 interface MobileSidebarProps extends SidebarSharedProps {
@@ -141,6 +145,8 @@ export const LeftSidebar = memo(function LeftSidebar({
   void _selectedAgentId;
 
   const { theme } = useUnistyles();
+  const locale = useSub2APILocale();
+  const sidebarText = useMemo(() => getSub2APIMessages(locale).sidebar, [locale]);
   const insets = useSafeAreaInsets();
   const isCompactLayout = useIsCompactFormFactor();
   const isOpen = usePanelStore((state) =>
@@ -155,10 +161,10 @@ export const LeftSidebar = memo(function LeftSidebar({
   );
   const activeServerId = activeDaemon?.serverId ?? null;
   const activeHostLabel = useMemo(() => {
-    if (!activeDaemon) return "No host";
+    if (!activeDaemon) return sidebarText.noHost;
     const trimmed = activeDaemon.label?.trim();
     return trimmed && trimmed.length > 0 ? trimmed : activeDaemon.serverId;
-  }, [activeDaemon]);
+  }, [activeDaemon, sidebarText.noHost]);
   const activeHostSnapshot = useHostRuntimeSnapshot(activeServerId ?? "");
   const activeHostStatus = activeServerId
     ? (activeHostSnapshot?.connectionStatus ?? "connecting")
@@ -310,6 +316,7 @@ export const LeftSidebar = memo(function LeftSidebar({
     handleRefresh,
     handleHostSelect,
     renderHostOption,
+    text: sidebarText,
   };
 
   if (isCompactLayout) {
@@ -345,10 +352,12 @@ function SortFilterDropdown({
   theme,
   sortMode,
   setSortMode,
+  text,
 }: {
   theme: SidebarTheme;
   sortMode: SidebarSortMode;
   setSortMode: (mode: SidebarSortMode) => void;
+  text: SidebarText;
 }) {
   return (
     <DropdownMenu>
@@ -358,7 +367,7 @@ function SortFilterDropdown({
           hovered && styles.headerIconButtonHovered,
         ]}
         accessibilityRole="button"
-        accessibilityLabel="Sort"
+        accessibilityLabel={text.sort}
       >
         {({ hovered }) => (
           <ArrowDownNarrowWide
@@ -378,7 +387,7 @@ function SortFilterDropdown({
           }
           onSelect={() => setSortMode("project")}
         >
-          By project
+          {text.sortByProject}
         </DropdownMenuItem>
         <DropdownMenuItem
           leading={
@@ -390,7 +399,7 @@ function SortFilterDropdown({
           }
           onSelect={() => setSortMode("time")}
         >
-          By time
+          {text.sortByTime}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -446,6 +455,7 @@ function MobileSidebar({
   handleRefresh,
   handleHostSelect,
   renderHostOption,
+  text,
   handleOpenProject,
   handlePaseoCloud,
   handleSettings,
@@ -612,13 +622,13 @@ function MobileSidebar({
           pointerEvents="auto"
         >
           <View style={styles.sidebarContent} pointerEvents="auto">
-            {/* Header: "项目" + 3 always-visible icons */}
+            {/* Project header + 3 always-visible icons */}
             <View style={styles.sidebarHeader}>
-              <Text style={styles.sidebarHeaderTitle}>项目</Text>
+              <Text style={styles.sidebarHeaderTitle}>{text.projects}</Text>
               <View style={styles.sidebarHeaderIcons}>
                 <Pressable
                   style={styles.headerIconButton}
-                  accessibilityLabel="Collapse all projects"
+                  accessibilityLabel={text.collapseAllProjects}
                   accessibilityRole="button"
                   onPress={handleToggleCollapseAll}
                 >
@@ -629,12 +639,17 @@ function MobileSidebar({
                     />
                   )}
                 </Pressable>
-                <SortFilterDropdown theme={theme} sortMode={sortMode} setSortMode={setSortMode} />
+                <SortFilterDropdown
+                  theme={theme}
+                  sortMode={sortMode}
+                  setSortMode={setSortMode}
+                  text={text}
+                />
                 <Tooltip delayDuration={300}>
                   <TooltipTrigger asChild>
                     <Pressable
                       style={styles.headerIconButton}
-                      accessibilityLabel="Add project"
+                      accessibilityLabel={text.addProject}
                       accessibilityRole="button"
                       onPress={handleOpenProject}
                       testID="sidebar-add-project"
@@ -649,7 +664,7 @@ function MobileSidebar({
                   </TooltipTrigger>
                   <TooltipContent side="bottom" align="center" offset={8}>
                     <View style={styles.tooltipRow}>
-                      <Text style={styles.tooltipText}>Add project</Text>
+                      <Text style={styles.tooltipText}>{text.addProject}</Text>
                       {newAgentKeys ? <Shortcut chord={newAgentKeys} /> : null}
                     </View>
                   </TooltipContent>
@@ -676,12 +691,17 @@ function MobileSidebar({
 
             {/* Chat section */}
             <View style={styles.chatSection}>
-              <Text style={styles.chatSectionTitle}>聊天</Text>
+              <Text style={styles.chatSectionTitle}>{text.chat}</Text>
               <View style={styles.chatSectionIcons}>
-                <SortFilterDropdown theme={theme} sortMode={sortMode} setSortMode={setSortMode} />
+                <SortFilterDropdown
+                  theme={theme}
+                  sortMode={sortMode}
+                  setSortMode={setSortMode}
+                  text={text}
+                />
                 <Pressable
                   style={styles.headerIconButton}
-                  accessibilityLabel="New chat"
+                  accessibilityLabel={text.newChat}
                   accessibilityRole="button"
                   onPress={handleViewMore}
                   testID="sidebar-new-chat"
@@ -737,7 +757,7 @@ function MobileSidebar({
                   nativeID="sidebar-settings"
                   collapsable={false}
                   accessible
-                  accessibilityLabel="Settings"
+                  accessibilityLabel={text.settings}
                   accessibilityRole="button"
                   onPress={handleSettings}
                 >
@@ -756,8 +776,8 @@ function MobileSidebar({
                 onSelect={handleHostSelect}
                 renderOption={renderHostOption}
                 searchable={false}
-                title="Switch host"
-                searchPlaceholder="Search hosts..."
+                title={text.switchHost}
+                searchPlaceholder={text.searchHosts}
                 open={isHostPickerOpen}
                 onOpenChange={setIsHostPickerOpen}
                 anchorRef={hostTriggerRef}
@@ -792,6 +812,7 @@ function DesktopSidebar({
   handleRefresh,
   handleHostSelect,
   renderHostOption,
+  text,
   handleOpenProject,
   handlePaseoCloud,
   handleSettings,
@@ -858,13 +879,13 @@ function DesktopSidebar({
         <View style={styles.sidebarDragArea}>
           <TitlebarDragRegion />
           {padding.top > 0 ? <View style={{ height: padding.top }} /> : null}
-          {/* Header: "项目" + 3 always-visible icons */}
+          {/* Project header + 3 always-visible icons */}
           <View style={styles.sidebarHeader}>
-            <Text style={styles.sidebarHeaderTitle}>项目</Text>
+            <Text style={styles.sidebarHeaderTitle}>{text.projects}</Text>
             <View style={styles.sidebarHeaderIcons}>
               <Pressable
                 style={styles.headerIconButton}
-                accessibilityLabel="Collapse all projects"
+                accessibilityLabel={text.collapseAllProjects}
                 accessibilityRole="button"
                 onPress={handleToggleCollapseAll}
               >
@@ -875,12 +896,17 @@ function DesktopSidebar({
                   />
                 )}
               </Pressable>
-              <SortFilterDropdown theme={theme} sortMode={sortMode} setSortMode={setSortMode} />
+              <SortFilterDropdown
+                theme={theme}
+                sortMode={sortMode}
+                setSortMode={setSortMode}
+                text={text}
+              />
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
                   <Pressable
                     style={styles.headerIconButton}
-                    accessibilityLabel="Add project"
+                    accessibilityLabel={text.addProject}
                     accessibilityRole="button"
                     onPress={handleOpenProject}
                     testID="sidebar-add-project"
@@ -895,7 +921,7 @@ function DesktopSidebar({
                 </TooltipTrigger>
                 <TooltipContent side="bottom" align="center" offset={8}>
                   <View style={styles.tooltipRow}>
-                    <Text style={styles.tooltipText}>Add project</Text>
+                    <Text style={styles.tooltipText}>{text.addProject}</Text>
                     {newAgentKeys ? <Shortcut chord={newAgentKeys} /> : null}
                   </View>
                 </TooltipContent>
@@ -921,12 +947,17 @@ function DesktopSidebar({
 
         {/* Chat section */}
         <View style={styles.chatSection}>
-          <Text style={styles.chatSectionTitle}>聊天</Text>
+          <Text style={styles.chatSectionTitle}>{text.chat}</Text>
           <View style={styles.chatSectionIcons}>
-            <SortFilterDropdown theme={theme} sortMode={sortMode} setSortMode={setSortMode} />
+            <SortFilterDropdown
+              theme={theme}
+              sortMode={sortMode}
+              setSortMode={setSortMode}
+              text={text}
+            />
             <Pressable
               style={styles.headerIconButton}
-              accessibilityLabel="New chat"
+              accessibilityLabel={text.newChat}
               accessibilityRole="button"
               onPress={handleViewMore}
               testID="sidebar-new-chat"
@@ -982,7 +1013,7 @@ function DesktopSidebar({
               nativeID="sidebar-settings"
               collapsable={false}
               accessible
-              accessibilityLabel="Settings"
+              accessibilityLabel={text.settings}
               accessibilityRole="button"
               onPress={handleSettings}
             >
@@ -1001,8 +1032,8 @@ function DesktopSidebar({
             onSelect={handleHostSelect}
             renderOption={renderHostOption}
             searchable={false}
-            title="Switch host"
-            searchPlaceholder="Search hosts..."
+            title={text.switchHost}
+            searchPlaceholder={text.searchHosts}
             open={isHostPickerOpen}
             onOpenChange={setIsHostPickerOpen}
             anchorRef={hostTriggerRef}

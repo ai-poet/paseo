@@ -13,12 +13,13 @@ import {
   useSub2APIKeys,
   useUpdateSub2APIKeyMutation,
 } from "@/hooks/use-sub2api-api";
+import { useSub2APILocale } from "@/hooks/use-sub2api-locale";
+import { getSub2APIMessages } from "@/i18n/sub2api";
 import { CLOUD_NAME, DESKTOP_DEFAULT_KEY_NAME } from "@/config/branding";
 import type { Sub2APIKey } from "@/lib/sub2api-client";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { useDesktopProvidersStore } from "@/screens/settings/desktop-providers-context";
 import {
-  findReusableKey,
   formatUsd,
   getErrorMessage,
   maskApiKey,
@@ -74,6 +75,8 @@ export function PaseoCloudApiKeysSection({
   serviceEndpoint,
 }: PaseoCloudApiKeysSectionProps) {
   const { theme } = useUnistyles();
+  const locale = useSub2APILocale();
+  const text = useMemo(() => getSub2APIMessages(locale).paseoCloudApiKeys, [locale]);
   const { loadProviders, activeClaudeProvider, activeCodexProvider } = useDesktopProvidersStore();
   const [activeScope, setActiveScope] = useState<ManagedCloudDesktopScope>("claude");
   const [keyFilter, setKeyFilter] = useState("");
@@ -119,8 +122,8 @@ export function PaseoCloudApiKeysSection({
     () => [
       {
         id: "all",
-        label: "All groups",
-        description: `Show all ${scopeMeta.cliLabel} keys`,
+        label: text.allGroups,
+        description: text.showAllKeys(scopeMeta.cliLabel),
       },
       ...scopedGroups.map((group) => ({
         id: String(group.id),
@@ -128,7 +131,7 @@ export function PaseoCloudApiKeysSection({
         description: `${group.platform} · ${group.rate_multiplier}x`,
       })),
     ],
-    [scopeMeta.cliLabel, scopedGroups],
+    [scopeMeta.cliLabel, scopedGroups, text],
   );
 
   const keyRoutes = useMemo(
@@ -182,7 +185,7 @@ export function PaseoCloudApiKeysSection({
     async (apiKey: string, scope: ManagedCloudDesktopScope, name?: string) => {
       const targetEndpoint = authEndpoint ?? serviceEndpoint;
       if (!isValidSub2APIEndpoint(targetEndpoint)) {
-        throw new Error("Service endpoint is invalid.");
+        throw new Error(text.serviceEndpointInvalid);
       }
 
       await invokeDesktopCommand("setup_default_provider", {
@@ -193,7 +196,7 @@ export function PaseoCloudApiKeysSection({
       });
       await loadProviders();
     },
-    [authEndpoint, loadProviders, serviceEndpoint],
+    [authEndpoint, loadProviders, serviceEndpoint, text.serviceEndpointInvalid],
   );
 
   const closeModal = useCallback(() => {
@@ -223,11 +226,11 @@ export function PaseoCloudApiKeysSection({
   const handleSaveKey = useCallback(async () => {
     const name = draftName.trim();
     if (!name) {
-      Alert.alert("Missing name", "Please enter a key name.");
+      Alert.alert(text.missingNameTitle, text.missingNameBody);
       return;
     }
     if (draftGroupId === null) {
-      Alert.alert("Missing group", "Select a group for this key.");
+      Alert.alert(text.missingGroupTitle, text.missingGroupBody);
       return;
     }
 
@@ -245,23 +248,36 @@ export function PaseoCloudApiKeysSection({
       }
       closeModal();
     } catch (error) {
-      Alert.alert(editingKey ? "Update failed" : "Create key failed", getErrorMessage(error));
+      Alert.alert(editingKey ? text.updateFailed : text.createFailed, getErrorMessage(error));
     }
-  }, [closeModal, createKeyMutation, draftGroupId, draftName, editingKey, updateKeyMutation]);
+  }, [
+    closeModal,
+    createKeyMutation,
+    draftGroupId,
+    draftName,
+    editingKey,
+    text.createFailed,
+    text.missingGroupBody,
+    text.missingGroupTitle,
+    text.missingNameBody,
+    text.missingNameTitle,
+    text.updateFailed,
+    updateKeyMutation,
+  ]);
 
   const handleUseKey = useCallback(
     async (key: Sub2APIKey) => {
       const resolved = keyRoutes.get(key.id) ?? resolveManagedCloudRouteForKey(key, groups);
       if (!resolved.ok) {
-        Alert.alert("Cannot apply key", resolved.reason);
+        Alert.alert(text.cannotApplyKey, resolved.reason);
         return;
       }
       if (resolved.scope !== activeScope) {
         const targetMeta = getManagedCloudMetaForScope(resolved.scope);
         setActiveScope(resolved.scope);
         Alert.alert(
-          "Moved to the matching tab",
-          `Key "${key.name}" belongs to ${targetMeta.cliLabel}. ${CLOUD_NAME} switched tabs for you so you can apply it there.`,
+          text.movedTitle,
+          text.movedKeyMessage(key.name, targetMeta.cliLabel, CLOUD_NAME),
         );
         return;
       }
@@ -270,11 +286,16 @@ export function PaseoCloudApiKeysSection({
       try {
         await setupDefaultProviderWithKey(key.key, activeScope, key.group?.name ?? key.name);
         Alert.alert(
-          "Global CLI default updated",
-          `${CLOUD_NAME} key "${key.name}" now configures ${scopeMeta.cliLabel} only. Updated ${scopeMeta.configTarget}.`,
+          text.globalUpdatedTitle,
+          text.globalKeyUpdatedMessage(
+            CLOUD_NAME,
+            key.name,
+            scopeMeta.cliLabel,
+            scopeMeta.configTarget,
+          ),
         );
       } catch (error) {
-        Alert.alert("Switch failed", getErrorMessage(error));
+        Alert.alert(text.switchFailed, getErrorMessage(error));
       } finally {
         setSwitchingKeyId(null);
       }
@@ -286,6 +307,7 @@ export function PaseoCloudApiKeysSection({
       scopeMeta.cliLabel,
       scopeMeta.configTarget,
       setupDefaultProviderWithKey,
+      text,
     ],
   );
 
@@ -294,25 +316,23 @@ export function PaseoCloudApiKeysSection({
       try {
         await deleteKeyMutation.mutateAsync(keyId);
       } catch (error) {
-        Alert.alert("Delete failed", getErrorMessage(error));
+        Alert.alert(text.deleteFailed, getErrorMessage(error));
       }
     },
-    [deleteKeyMutation],
+    [deleteKeyMutation, text.deleteFailed],
   );
 
   const modalVisible = createModalVisible || editingKey !== null;
 
   return (
     <>
-      <SettingsSection title="API Keys (advanced)">
+      <SettingsSection title={text.title}>
         <View style={[settingsStyles.card, styles.cardBody]}>
           <View style={styles.statusRow}>
             <View style={settingsStyles.rowContent}>
               <Text style={styles.formTitle}>{scopeMeta.cliLabel}</Text>
               <Text style={styles.sectionHint}>
-                Advanced key management for {scopeMeta.platform} routes. In the normal flow,
-                choosing a Cloud group automatically creates or reuses a key for{" "}
-                <Text style={styles.sectionHintEm}>{scopeMeta.cliLabel}</Text>.
+                {text.sectionHint(scopeMeta.platform, scopeMeta.cliLabel)}
               </Text>
             </View>
             <Pressable
@@ -325,7 +345,7 @@ export function PaseoCloudApiKeysSection({
               disabled={scopedGroups.length === 0}
               testID="sub2api-open-create-key-modal"
             >
-              <Text style={styles.primaryButtonText}>Create API key</Text>
+              <Text style={styles.primaryButtonText}>{text.createApiKey}</Text>
             </Pressable>
           </View>
 
@@ -340,16 +360,13 @@ export function PaseoCloudApiKeysSection({
           </View>
 
           <Text style={styles.usageHint}>
-            This page only filters and manages keys. It does not change CLI routing until you press{" "}
-            <Text style={styles.sectionHintEm}>Set as global CLI default</Text>.
+            {text.pageHint}
           </Text>
           {scopedGroups.length === 0 ? (
             <View style={styles.dashedCard}>
-              <Text style={styles.emptyTitle}>No compatible groups yet</Text>
+              <Text style={styles.emptyTitle}>{text.noCompatibleGroupsTitle}</Text>
               <Text style={styles.emptyBody}>
-                Your current account does not have any {scopeMeta.platform} groups available for{" "}
-                {scopeMeta.cliLabel}. Add a compatible group in {CLOUD_NAME}, or use BYOK for this
-                CLI.
+                {text.noCompatibleGroupsBody(scopeMeta.platform, scopeMeta.cliLabel, CLOUD_NAME)}
               </Text>
               {alternateGroups.length > 0 ? (
                 <Pressable
@@ -357,7 +374,7 @@ export function PaseoCloudApiKeysSection({
                   style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
                 >
                   <Text style={styles.secondaryButtonText}>
-                    View {getManagedCloudMetaForScope(alternateScope).cliLabel} instead
+                    {text.viewScopeInstead(getManagedCloudMetaForScope(alternateScope).cliLabel)}
                   </Text>
                 </Pressable>
               ) : null}
@@ -365,11 +382,11 @@ export function PaseoCloudApiKeysSection({
           ) : null}
 
           <View style={styles.groupPickerBlock}>
-            <Text style={styles.fieldLabel}>Search</Text>
+            <Text style={styles.fieldLabel}>{text.search}</Text>
             <TextInput
               value={keyFilter}
               onChangeText={setKeyFilter}
-              placeholder={`Search ${scopeMeta.platform} keys by name or group`}
+              placeholder={text.searchPlaceholder(scopeMeta.platform)}
               placeholderTextColor={theme.colors.foregroundMuted}
               autoCapitalize="none"
               autoCorrect={false}
@@ -377,11 +394,11 @@ export function PaseoCloudApiKeysSection({
             />
             <View style={styles.groupComboWrap}>
               <ComboSelect
-                label="Filter by group"
-                title={`Filter ${scopeMeta.cliLabel} keys by group`}
+                label={text.filterByGroup}
+                title={text.filterByGroupTitle(scopeMeta.cliLabel)}
                 value={groupFilterId != null ? String(groupFilterId) : "all"}
                 options={groupFilterOptions}
-                placeholder="All groups"
+                placeholder={text.allGroups}
                 isLoading={groupsQuery.isFetching}
                 onSelect={(id) => setGroupFilterId(id === "all" ? null : Number(id))}
                 showLabel
@@ -397,16 +414,13 @@ export function PaseoCloudApiKeysSection({
                 onPress={() => void keysQuery.refetch()}
                 style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
               >
-                <Text style={styles.secondaryButtonText}>Retry</Text>
+                <Text style={styles.secondaryButtonText}>{text.retry}</Text>
               </Pressable>
             </View>
           ) : keysQuery.isLoading ? (
-            <Text style={styles.usageHint}>Loading keys…</Text>
+            <Text style={styles.usageHint}>{text.loadingKeys}</Text>
           ) : filteredKeys.length === 0 ? (
-            <Text style={styles.usageHint}>
-              No {scopeMeta.cliLabel} keys match this filter. Create a key above, or clear the
-              current filters.
-            </Text>
+            <Text style={styles.usageHint}>{text.noKeysMatch(scopeMeta.cliLabel)}</Text>
           ) : (
             <View style={styles.keyRowList}>
               {filteredKeys.map((key) => {
@@ -420,13 +434,16 @@ export function PaseoCloudApiKeysSection({
                     <View style={settingsStyles.rowContent}>
                       <Text style={settingsStyles.rowTitle}>{key.name}</Text>
                       <Text style={settingsStyles.rowHint}>
-                        {maskApiKey(key.key)} · Group: {key.group?.name ?? key.group_id ?? "none"}
+                        {maskApiKey(key.key)} · {text.group}:{" "}
+                        {key.group?.name ?? key.group_id ?? text.none}
                       </Text>
-                      <Text style={settingsStyles.rowHint}>Used: {formatUsd(key.quota_used)}</Text>
+                      <Text style={settingsStyles.rowHint}>
+                        {text.used}: {formatUsd(key.quota_used)}
+                      </Text>
                       {key.quota > 0 ? (
                         <View style={styles.usageMeterBlock}>
                           <View style={styles.usageMeterHeader}>
-                            <Text style={styles.usageMeterLabel}>Quota</Text>
+                            <Text style={styles.usageMeterLabel}>{text.quota}</Text>
                             <Text style={styles.usageMeterValue}>
                               {formatUsd(key.quota_used)} / {formatUsd(key.quota)}
                             </Text>
@@ -447,7 +464,9 @@ export function PaseoCloudApiKeysSection({
                           </View>
                         </View>
                       ) : (
-                        <Text style={styles.usageHint}>Quota: Unlimited</Text>
+                        <Text style={styles.usageHint}>
+                          {text.quota}: {text.unlimited}
+                        </Text>
                       )}
                       <View style={styles.usageWindowWrap}>
                         <View style={styles.usageWindowPill}>
@@ -471,7 +490,7 @@ export function PaseoCloudApiKeysSection({
                       </View>
                       {keyRoute.ok ? (
                         <Text style={styles.usageHint}>
-                          Advanced action: writes{" "}
+                          {text.advancedAction}{" "}
                           <Text style={styles.sectionHintEm}>{scopeMeta.configTarget}</Text>
                         </Text>
                       ) : (
@@ -479,13 +498,10 @@ export function PaseoCloudApiKeysSection({
                       )}
                       {activeForScope ? (
                         <Text style={styles.activeProviderText}>
-                          Active for {scopeMeta.cliLabel} on this device
+                          {text.activeForCli(scopeMeta.cliLabel)}
                         </Text>
                       ) : key.group?.status === "inactive" ? (
-                        <Text style={styles.errorHint}>
-                          This key&apos;s group is currently inactive. Switch groups before using
-                          it.
-                        </Text>
+                        <Text style={styles.errorHint}>{text.groupInactive}</Text>
                       ) : null}
                     </View>
                     <View style={[styles.keyActions, { maxWidth: 220 }]}>
@@ -498,7 +514,7 @@ export function PaseoCloudApiKeysSection({
                         ]}
                         disabled={updateKeyMutation.isPending}
                       >
-                        <Text style={styles.secondaryButtonText}>Edit</Text>
+                        <Text style={styles.secondaryButtonText}>{text.edit}</Text>
                       </Pressable>
                       <Pressable
                         onPress={() => void handleUseKey(key)}
@@ -519,10 +535,10 @@ export function PaseoCloudApiKeysSection({
                           }
                         >
                           {applying
-                            ? "Applying…"
+                            ? text.applying
                             : activeForScope
-                              ? `Active · ${scopeMeta.cliLabel}`
-                              : "Set as global CLI default"}
+                              ? text.activeCta(scopeMeta.cliLabel)
+                              : text.setGlobalDefault}
                         </Text>
                       </Pressable>
                       <Pressable
@@ -532,7 +548,7 @@ export function PaseoCloudApiKeysSection({
                           pressed && styles.buttonPressed,
                         ]}
                       >
-                        <Text style={styles.removeButtonText}>Delete</Text>
+                        <Text style={styles.removeButtonText}>{text.delete}</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -544,7 +560,7 @@ export function PaseoCloudApiKeysSection({
       </SettingsSection>
 
       <AdaptiveModalSheet
-        title={editingKey ? "Edit API key" : "Create API key"}
+        title={text.modalTitle(Boolean(editingKey))}
         visible={modalVisible}
         onClose={closeModal}
         desktopMaxWidth={440}
@@ -552,14 +568,14 @@ export function PaseoCloudApiKeysSection({
       >
         <Text style={styles.usageHint}>
           {editingKey
-            ? `Update the ${scopeMeta.platform} key details used for ${scopeMeta.cliLabel}.`
-            : `Create a new ${scopeMeta.platform} key for ${scopeMeta.cliLabel}.`}
+            ? text.modalHintEdit(scopeMeta.platform, scopeMeta.cliLabel)
+            : text.modalHintCreate(scopeMeta.platform, scopeMeta.cliLabel)}
         </Text>
-        <Text style={styles.fieldLabel}>Name</Text>
+        <Text style={styles.fieldLabel}>{text.name}</Text>
         <AdaptiveTextInput
           value={draftName}
           onChangeText={setDraftName}
-          placeholder="Key name"
+          placeholder={text.keyName}
           placeholderTextColor={theme.colors.foregroundMuted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -567,15 +583,15 @@ export function PaseoCloudApiKeysSection({
         />
         <View style={styles.groupComboWrap}>
           <ComboSelect
-            label="Group"
-            title={`Select group for ${scopeMeta.cliLabel} key`}
+            label={text.groupLabel}
+            title={text.selectGroupTitle(scopeMeta.cliLabel)}
             value={draftGroupId != null ? String(draftGroupId) : ""}
             options={scopedGroups.map((group) => ({
               id: String(group.id),
               label: group.name,
               description: `${group.platform} · ${group.rate_multiplier}x`,
             }))}
-            placeholder={`Select a ${scopeMeta.platform} group…`}
+            placeholder={text.selectGroupPlaceholder(scopeMeta.platform)}
             isLoading={groupsQuery.isFetching}
             onSelect={(id) => setDraftGroupId(Number(id))}
             showLabel
@@ -587,7 +603,7 @@ export function PaseoCloudApiKeysSection({
             onPress={closeModal}
             style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
           >
-            <Text style={styles.secondaryButtonText}>Cancel</Text>
+            <Text style={styles.secondaryButtonText}>{text.cancel}</Text>
           </Pressable>
           <Pressable
             onPress={() => void handleSaveKey()}
@@ -605,10 +621,10 @@ export function PaseoCloudApiKeysSection({
           >
             <Text style={styles.primaryButtonText}>
               {createKeyMutation.isPending || updateKeyMutation.isPending
-                ? "Saving…"
+                ? text.saving
                 : editingKey
-                  ? "Save"
-                  : "Create"}
+                  ? text.save
+                  : text.create}
             </Text>
           </Pressable>
         </View>

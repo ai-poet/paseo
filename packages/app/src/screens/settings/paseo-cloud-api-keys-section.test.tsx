@@ -123,6 +123,10 @@ vi.mock("@/screens/settings/desktop-providers-context", () => ({
   }),
 }));
 
+vi.mock("@/hooks/use-sub2api-locale", () => ({
+  useSub2APILocale: () => "en",
+}));
+
 vi.mock("@/hooks/use-sub2api-api", () => ({
   useSub2APIKeys: () => ({
     data: {
