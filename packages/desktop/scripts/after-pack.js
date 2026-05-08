@@ -1,11 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 
-const EXECUTABLE_NAME = "Paseo";
+const DEFAULT_EXECUTABLE_NAME = "Paseo";
 const WRAPPER_MODE = 0o755;
-const WRAPPER_SCRIPT = `#!/bin/bash
-exec "$(dirname "$(readlink -f "$0")")/${EXECUTABLE_NAME}.bin" --no-sandbox "$@"
-`;
 
 // electron-builder arch enum → Node.js arch string
 const ARCH_MAP = { 0: "ia32", 1: "x64", 2: "armv7l", 3: "arm64", 4: "universal" };
@@ -86,11 +83,37 @@ function pruneSharpLibvips(nodeModules, platform, arch) {
   }
 }
 
-function pruneNativeModules(appOutDir, platform, arch) {
+function resolveExecutableNameForContext(context) {
+  const appInfo = context?.packager?.appInfo;
+  const configuredName = appInfo?.productFilename ?? appInfo?.productName;
+  return typeof configuredName === "string" && configuredName.trim().length > 0
+    ? configuredName.trim()
+    : DEFAULT_EXECUTABLE_NAME;
+}
+
+function resolveResourcesDir({ appOutDir, platform, executableName }) {
+  return platform === "darwin"
+    ? path.join(appOutDir, `${executableName}.app`, "Contents", "Resources")
+    : path.join(appOutDir, "resources");
+}
+
+function createLinuxWrapperScript(executableName) {
+  return `#!/bin/bash
+exec "$(dirname "$(readlink -f "$0")")/${executableName}.bin" --no-sandbox "$@"
+`;
+}
+
+function writeExecutableMetadata({ appOutDir, platform, executableName }) {
+  const resourcesDir = resolveResourcesDir({ appOutDir, platform, executableName });
+  const binDir = path.join(resourcesDir, "bin");
+  if (!fs.existsSync(binDir)) return;
+
+  fs.writeFileSync(path.join(binDir, "app-executable-name"), `${executableName}\n`);
+}
+
+function pruneNativeModules(appOutDir, platform, arch, executableName) {
   const resourcesDir =
-    platform === "darwin"
-      ? path.join(appOutDir, `${EXECUTABLE_NAME}.app`, "Contents", "Resources")
-      : path.join(appOutDir, "resources");
+    resolveResourcesDir({ appOutDir, platform, executableName });
 
   const nodeModules = path.join(resourcesDir, "app.asar.unpacked", "node_modules");
   if (!fs.existsSync(nodeModules)) return;
@@ -126,8 +149,10 @@ function fmtMB(bytes) {
 exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
   const arch = ARCH_MAP[context.arch] || process.arch;
+  const executableName = resolveExecutableNameForContext(context);
 
-  pruneNativeModules(context.appOutDir, platform, arch);
+  writeExecutableMetadata({ appOutDir: context.appOutDir, platform, executableName });
+  pruneNativeModules(context.appOutDir, platform, arch, executableName);
 
   if (platform !== "linux") return;
 
@@ -137,8 +162,8 @@ exports.default = async function afterPack(context) {
     console.log("Removed chrome-sandbox from Linux build");
   }
 
-  const executablePath = path.join(context.appOutDir, EXECUTABLE_NAME);
-  const wrappedBinaryPath = path.join(context.appOutDir, `${EXECUTABLE_NAME}.bin`);
+  const executablePath = path.join(context.appOutDir, executableName);
+  const wrappedBinaryPath = path.join(context.appOutDir, `${executableName}.bin`);
 
   if (!fs.existsSync(wrappedBinaryPath)) {
     if (!fs.existsSync(executablePath)) {
@@ -146,10 +171,14 @@ exports.default = async function afterPack(context) {
     }
 
     fs.renameSync(executablePath, wrappedBinaryPath);
-    console.log(`Renamed ${EXECUTABLE_NAME} to ${EXECUTABLE_NAME}.bin for Linux wrapper`);
+    console.log(`Renamed ${executableName} to ${executableName}.bin for Linux wrapper`);
   }
 
-  fs.writeFileSync(executablePath, WRAPPER_SCRIPT, { mode: WRAPPER_MODE });
+  fs.writeFileSync(executablePath, createLinuxWrapperScript(executableName), { mode: WRAPPER_MODE });
   fs.chmodSync(executablePath, WRAPPER_MODE);
-  console.log(`Created Linux wrapper for ${EXECUTABLE_NAME} with --no-sandbox`);
+  console.log(`Created Linux wrapper for ${executableName} with --no-sandbox`);
 };
+
+exports.resolveExecutableNameForContext = resolveExecutableNameForContext;
+exports.resolveResourcesDir = resolveResourcesDir;
+exports.writeExecutableMetadata = writeExecutableMetadata;

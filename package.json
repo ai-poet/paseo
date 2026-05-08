@@ -19,6 +19,7 @@
     "dev:app": "npm run start --workspace=@getpaseo/app",
     "dev:website": "npm run dev --workspace=@getpaseo/website",
     "with:cybercode": "node scripts/run-with-cybercode-brand.mjs",
+    "with:cyberaicoding": "node scripts/run-with-cyberaicoding-brand.mjs",
     "dev:cybercode": "node scripts/run-with-cybercode-brand.mjs npm run dev",
     "dev:desktop:cybercode": "node scripts/run-with-cybercode-brand.mjs npm run dev:desktop",
     "build:desktop:cybercode": "node scripts/run-with-cybercode-brand.mjs npm run build:desktop",

@@ -5,7 +5,7 @@ const artifactName = `${brand.appName}-\${version}-\${arch}.\${ext}`;
 
 module.exports = {
   npmRebuild: false,
-  appId: "sh.paseo.desktop",
+  appId: brand.desktopAppId,
   productName: brand.appName,
   executableName: brand.appName,
   afterPack: "./scripts/after-pack.js",
@@ -44,6 +44,7 @@ module.exports = {
     target: ["AppImage", "deb", "rpm", "tar.gz"],
   },
   win: {
+    artifactName,
     icon: brand.desktopIconWin,
     extraResources: [{ from: "bin/paseo.cmd", to: "bin/paseo.cmd" }],
     target: ["nsis", "zip"],

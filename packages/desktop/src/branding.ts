@@ -1,5 +1,6 @@
 export interface DesktopBranding {
   appName: string;
+  desktopAppId: string;
   desktopIconPng: string;
   desktopIconMac: string;
   desktopIconWin: string;
@@ -18,6 +19,7 @@ export function getDesktopBranding(): DesktopBranding {
   const appName = trimToNull(process.env.PASEO_APP_NAME) ?? "Paseo";
   return {
     appName,
+    desktopAppId: trimToNull(process.env.PASEO_DESKTOP_APP_ID) ?? "sh.paseo.desktop",
     desktopIconPng: trimToNull(process.env.PASEO_DESKTOP_ICON_PNG) ?? "assets/icon.png",
     desktopIconMac: trimToNull(process.env.PASEO_DESKTOP_ICON_MAC) ?? "assets/icon.icns",
     desktopIconWin: trimToNull(process.env.PASEO_DESKTOP_ICON_WIN) ?? "assets/icon.ico",

@@ -10,6 +10,7 @@ function resolveDesktopBrandingFromEnv(env = process.env) {
   const appName = trimToNull(env.PASEO_APP_NAME) ?? "Paseo";
   return {
     appName,
+    desktopAppId: trimToNull(env.PASEO_DESKTOP_APP_ID) ?? "sh.paseo.desktop",
     desktopIconPng: trimToNull(env.PASEO_DESKTOP_ICON_PNG) ?? "assets/icon.png",
     desktopIconMac: trimToNull(env.PASEO_DESKTOP_ICON_MAC) ?? "assets/icon.icns",
     desktopIconWin: trimToNull(env.PASEO_DESKTOP_ICON_WIN) ?? "assets/icon.ico",
