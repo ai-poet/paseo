@@ -33,4 +33,18 @@ describe("resolveBrandingFromEnv", () => {
       expoIcon: "./brand/icon.png",
     });
   });
+
+  it("accepts the CheapRouter logo variant", () => {
+    expect(
+      resolveBrandingFromEnv({
+        PASEO_APP_NAME: "CheapRouter",
+        PASEO_CLOUD_NAME: "CheapRouter",
+        PASEO_LOGO_VARIANT: "cheaprouter",
+      }),
+    ).toMatchObject({
+      appName: "CheapRouter",
+      cloudName: "CheapRouter",
+      logoVariant: "cheaprouter",
+    });
+  });
 });

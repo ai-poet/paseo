@@ -10,7 +10,7 @@
       "channel": "development",
       "env": {
         "APP_VARIANT": "development",
-        "EXPO_PUBLIC_MANAGED_SERVICE_URL": "https://ai-coding.cyberspirit.io"
+        "EXPO_PUBLIC_MANAGED_SERVICE_URL": "https://cheaprouter.org"
       },
       "android": {
         "gradleCommand": ":app:assembleDebug"
@@ -20,7 +20,7 @@
       "channel": "production",
       "env": {
         "APP_VARIANT": "production",
-        "EXPO_PUBLIC_MANAGED_SERVICE_URL": "https://ai-coding.cyberspirit.io"
+        "EXPO_PUBLIC_MANAGED_SERVICE_URL": "https://cheaprouter.org"
       },
       "android": {
         "autoIncrement": "versionCode"

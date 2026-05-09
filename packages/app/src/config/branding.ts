@@ -3,7 +3,7 @@ import Constants from "expo-constants";
 export interface AppBranding {
   appName: string;
   cloudName: string;
-  logoVariant: "paseo" | "cybercode";
+  logoVariant: "paseo" | "cybercode" | "cheaprouter";
 }
 
 const DEFAULT_BRANDING: AppBranding = {
@@ -37,6 +37,9 @@ function normalizeLogoVariant(value: unknown): AppBranding["logoVariant"] | null
   const normalized = trimToNull(value)?.toLowerCase();
   if (normalized === "cybercode") {
     return "cybercode";
+  }
+  if (normalized === "cheaprouter") {
+    return "cheaprouter";
   }
   if (normalized === "paseo") {
     return "paseo";

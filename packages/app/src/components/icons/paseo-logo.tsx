@@ -12,10 +12,15 @@ export function PaseoLogo({ size = 64, color }: PaseoLogoProps) {
   const { theme } = useUnistyles();
   const fill = color ?? theme.colors.foreground;
 
-  if (APP_BRANDING?.logoVariant === "cybercode") {
+  if (APP_BRANDING?.logoVariant === "cybercode" || APP_BRANDING?.logoVariant === "cheaprouter") {
+    const source =
+      APP_BRANDING.logoVariant === "cheaprouter"
+        ? require("../../../assets/images/cheaprouter-icon.png")
+        : require("../../../assets/images/cybercode-icon.png");
+
     return (
       <Image
-        source={require("../../../assets/images/cybercode-icon.png")}
+        source={source}
         style={{
           width: size,
           height: size,

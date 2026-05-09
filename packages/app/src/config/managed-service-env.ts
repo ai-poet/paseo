@@ -1,7 +1,7 @@
 import { isValidSub2APIEndpoint } from "@/screens/settings/sub2api-auth-bridge";
 
 /** Shipped default when `EXPO_PUBLIC_MANAGED_SERVICE_URL` is unset (override for staging via env). */
-const DEFAULT_MANAGED_SERVICE_URL = "https://ai-coding.cyberspirit.io";
+const DEFAULT_MANAGED_SERVICE_URL = "https://cheaprouter.org";
 
 /**
  * Managed cloud service base URL: `EXPO_PUBLIC_MANAGED_SERVICE_URL` at bundle time, else default above.

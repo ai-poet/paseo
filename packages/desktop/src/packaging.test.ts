@@ -90,6 +90,23 @@ describe("desktop packaging", () => {
     expect(config.win.artifactName).toBe("CyberAICoding-${version}-${arch}.${ext}");
   });
 
+  it("uses CheapRouter package identity and icons from env", () => {
+    const config = loadBuilderConfig({
+      PASEO_APP_NAME: "CheapRouter",
+      PASEO_DESKTOP_APP_ID: "org.cheaprouter.desktop",
+      PASEO_DESKTOP_ICON_MAC: "assets/cheaprouter-icon.icns",
+      PASEO_DESKTOP_ICON_WIN: "assets/cheaprouter-icon.ico",
+    });
+
+    expect(config.appId).toBe("org.cheaprouter.desktop");
+    expect(config.productName).toBe("CheapRouter");
+    expect(config.executableName).toBe("CheapRouter");
+    expect(config.mac.icon).toBe("assets/cheaprouter-icon.icns");
+    expect(config.win.icon).toBe("assets/cheaprouter-icon.ico");
+    expect(config.mac.artifactName).toBe("CheapRouter-${version}-${arch}.${ext}");
+    expect(config.win.artifactName).toBe("CheapRouter-${version}-${arch}.${ext}");
+  });
+
   it("forwards root build:desktop flags to the desktop workspace builder", () => {
     const packageJson = require(rootPackageJsonPath) as {
       scripts: Record<string, string>;
