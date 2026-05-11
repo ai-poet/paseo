@@ -649,7 +649,8 @@ export function buildWindowsGitBashMirrorInstallCommand(installerUrl: string): s
 }
 
 export function buildWindowsGitBashPortableExtractArgs(installDir: string): string[] {
-  return ["-y", "-gm2", `-InstallPath=${installDir}`];
+  const escapedInstallDir = installDir.replace(/\\/g, "\\\\");
+  return ["-y", "-gm2", `-InstallPath=${escapedInstallDir}`];
 }
 
 export function buildWindowsGitBashDirectInstallCommand(): string {

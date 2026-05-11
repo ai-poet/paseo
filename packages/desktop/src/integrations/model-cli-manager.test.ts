@@ -321,7 +321,7 @@ describe("model-cli-manager", () => {
     expect(args).toEqual([
       "-y",
       "-gm2",
-      "-InstallPath=C:\\Users\\alice\\.paseo\\toolchains\\PortableGit",
+      "-InstallPath=C:\\\\Users\\\\alice\\\\.paseo\\\\toolchains\\\\PortableGit",
     ]);
   });
 
