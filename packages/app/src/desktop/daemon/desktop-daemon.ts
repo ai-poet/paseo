@@ -218,7 +218,7 @@ export interface NodeRuntimeStatus {
   major: number | null;
   npmVersion: string | null;
   satisfies: boolean;
-  manager: "nvm" | "brew" | "shell";
+  manager: "nvm" | "brew" | "managed" | "shell";
   error: string | null;
 }
 
@@ -253,7 +253,7 @@ function parseNodeRuntimeStatus(raw: unknown): NodeRuntimeStatus {
     throw new Error("Unexpected node runtime status response.");
   }
   const manager = toStringOrNull(raw.manager);
-  if (manager !== "nvm" && manager !== "brew" && manager !== "shell") {
+  if (manager !== "nvm" && manager !== "brew" && manager !== "managed" && manager !== "shell") {
     throw new Error("Unexpected node runtime manager.");
   }
   return {

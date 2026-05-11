@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import { arch } from "node:process";
 import path from "node:path";
 import log from "electron-log/main";
 import { execCommand, resolvePaseoHome } from "@getpaseo/server";
@@ -15,7 +16,7 @@ const WINDOWS_GIT_WINGET_PACKAGE_ID = "Git.Git";
 const WINDOWS_GIT_DIRECT_DOWNLOAD_URL =
   "https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe";
 
-type RuntimeManagerId = "nvm" | "brew" | "shell";
+type RuntimeManagerId = "nvm" | "brew" | "managed" | "shell";
 
 export interface NodeRuntimeStatus {
   installed: boolean;
@@ -215,6 +216,9 @@ async function resolveRuntimeManager(): Promise<RuntimeManagerId> {
   }
   if (process.platform === "darwin" && (await commandExists("brew"))) {
     return "brew";
+  }
+  if (process.platform === "darwin" && existsSync(resolveManagedNodeBinPath("node"))) {
+    return "managed";
   }
   return "shell";
 }
@@ -442,6 +446,14 @@ function resolveWindowsPaseoHome(env: NodeJS.ProcessEnv = process.env): string {
   return resolvePaseoHome(env);
 }
 
+function resolveManagedNodeDir(): string {
+  return path.join(resolvePaseoHome(process.env), "toolchains", "node22");
+}
+
+function resolveManagedNodeBinPath(command: "node" | "npm"): string {
+  return path.join(resolveManagedNodeDir(), "bin", command);
+}
+
 export function buildWindowsCliSearchPath(env: NodeJS.ProcessEnv = process.env): string {
   const paths: string[] = [];
   appendUniquePath(paths, env.APPDATA ? path.win32.join(env.APPDATA, "npm") : null);
@@ -530,6 +542,15 @@ function buildWindowsCliSearchEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.
   };
 }
 
+function buildManagedNodeEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const managedNodeBin = path.join(resolveManagedNodeDir(), "bin");
+  const currentPath = env.PATH ?? "";
+  return {
+    ...env,
+    PATH: currentPath ? `${managedNodeBin}:${currentPath}` : managedNodeBin,
+  };
+}
+
 async function tryRunWindowsExecutable(
   command: string,
   args: string[],
@@ -547,6 +568,9 @@ async function tryRunWindowsExecutable(
 }
 
 export function wrapWithRuntimeManager(command: string, manager: RuntimeManagerId): string {
+  if (manager === "managed") {
+    return `export PATH="${path.join(resolveManagedNodeDir(), "bin")}:$PATH"; ${command}`;
+  }
   if (manager === "nvm") {
     const nvmScriptPath = getNvmScriptPath();
     return `export NVM_DIR="${path.dirname(nvmScriptPath)}"; . "${nvmScriptPath}"; nvm use default >/dev/null 2>&1 || true; if [ -n "$NVM_BIN" ]; then export PATH="$NVM_BIN:$PATH"; fi; ${command}`;
@@ -558,6 +582,9 @@ export function wrapWithRuntimeManager(command: string, manager: RuntimeManagerI
 }
 
 export function wrapWithNode22Runtime(command: string, manager: RuntimeManagerId): string {
+  if (manager === "managed") {
+    return `export PATH="${path.join(resolveManagedNodeDir(), "bin")}:$PATH"; ${command}`;
+  }
   if (manager === "nvm") {
     const nvmScriptPath = getNvmScriptPath();
     return `export NVM_DIR="${path.dirname(nvmScriptPath)}"; . "${nvmScriptPath}"; nvm install ${REQUIRED_NODE_MAJOR}; nvm alias default ${REQUIRED_NODE_MAJOR}; nvm use ${REQUIRED_NODE_MAJOR} >/dev/null; if [ -n "$NVM_BIN" ]; then export PATH="$NVM_BIN:$PATH"; fi; ${command}`;
@@ -584,9 +611,21 @@ function quotePowerShellString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+function quoteShellString(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 export function buildWindowsNodeDirectInstallCommand(installerUrl: string): string {
   const quotedUrl = quotePowerShellString(installerUrl);
-  return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $installerUrl=${quotedUrl}; $installerPath=Join-Path $env:TEMP ('paseo-node-installer-' + [Guid]::NewGuid().ToString('N') + '.msi'); try { Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -TimeoutSec 60; $process=Start-Process -FilePath 'msiexec.exe' -ArgumentList '/i',$installerPath,'/qn','/norestart' -Wait -PassThru; if ($process.ExitCode -ne 0) { throw ('Node.js installer failed with exit code ' + $process.ExitCode) } } catch { throw ('Node.js mirror installer failed: ' + $_.Exception.Message) } finally { Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue }"`;
+  return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $installerUrl=${quotedUrl}; $installerPath=Join-Path $env:TEMP ('paseo-node-installer-' + [Guid]::NewGuid().ToString('N') + '.msi'); $logPath=Join-Path $env:TEMP ('paseo-node-installer-' + [Guid]::NewGuid().ToString('N') + '.log'); try { Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -TimeoutSec 60; $process=Start-Process -FilePath 'msiexec.exe' -ArgumentList '/i',$installerPath,'/qn','/norestart','/L*v',$logPath -Wait -PassThru; if ($process.ExitCode -ne 0) { throw ('Node.js installer failed with exit code ' + $process.ExitCode + '. Log: ' + $logPath) }; $nodePath='C:\\\\Program Files\\\\nodejs\\\\node.exe'; $npmPath='C:\\\\Program Files\\\\nodejs\\\\npm.cmd'; if (Test-Path $nodePath) { & $nodePath --version } else { node --version }; if (Test-Path $npmPath) { & $npmPath --version } else { npm --version } } catch { throw ('Node.js mirror installer failed: ' + $_.Exception.Message) } finally { Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue }"`;
+}
+
+export function buildMacOSNodeDirectInstallCommand(tarballUrl: string, installDir: string): string {
+  const quotedUrl = quoteShellString(tarballUrl);
+  const quotedInstallDir = quoteShellString(installDir);
+  const quotedNodePath = quoteShellString(path.join(installDir, "bin", "node"));
+  const quotedNpmPath = quoteShellString(path.join(installDir, "bin", "npm"));
+  return `set -euo pipefail; url=${quotedUrl}; install_dir=${quotedInstallDir}; archive="$(mktemp -t paseo-node.XXXXXX.tar.gz)"; cleanup() { rm -f "$archive"; }; trap cleanup EXIT; rm -rf "$install_dir"; mkdir -p "$install_dir"; curl -fL --connect-timeout 20 --retry 2 --retry-delay 1 "$url" -o "$archive"; tar -xzf "$archive" -C "$install_dir" --strip-components 1; ${quotedNodePath} --version; ${quotedNpmPath} --version`;
 }
 
 export function buildWindowsGitBashMirrorInstallCommand(installerUrl: string): string {
@@ -642,6 +681,27 @@ export function resolveLatestNode22WindowsMsiUrlFromMirror(
     .map((entry) => {
       const name = entry.name ?? "";
       const match = name.match(/^node-v(22\.\d+\.\d+)-x64\.msi$/i);
+      if (!match || entry.type === "dir" || !entry.url) {
+        return null;
+      }
+      return { version: match[1]!, url: entry.url };
+    })
+    .filter((entry): entry is { version: string; url: string } => entry !== null)
+    .sort((left, right) => compareVersionStrings(right.version, left.version));
+
+  return candidates[0]?.url ?? null;
+}
+
+export function resolveLatestNode22DarwinTarballUrlFromMirror(
+  entries: MirrorDirectoryEntry[],
+  nodeArch: "arm64" | "x64" = arch === "arm64" ? "arm64" : "x64",
+): string | null {
+  const candidates = entries
+    .map((entry) => {
+      const name = entry.name ?? "";
+      const match = name.match(
+        new RegExp(`^node-v(22\\.\\d+\\.\\d+)-darwin-${nodeArch}\\.tar\\.gz$`, "i"),
+      );
       if (!match || entry.type === "dir" || !entry.url) {
         return null;
       }
@@ -745,6 +805,12 @@ async function resolveLatestNode22WindowsMsiUrl(): Promise<string | null> {
   );
 }
 
+async function resolveLatestNode22DarwinTarballUrl(): Promise<string | null> {
+  return resolveLatestNode22DarwinTarballUrlFromMirror(
+    await fetchMirrorEntries(WINDOWS_NODE_MIRROR_URL),
+  );
+}
+
 async function resolveLatestGitForWindowsInstallerUrl(): Promise<string | null> {
   const releaseDirs = await fetchMirrorEntries(WINDOWS_GIT_MIRROR_URL);
   const sortedDirs = releaseDirs
@@ -817,6 +883,32 @@ async function readNodeStatus(
   manager: RuntimeManagerId,
   options?: ShellOptions,
 ): Promise<NodeRuntimeStatus> {
+  if (manager === "managed") {
+    const env = buildManagedNodeEnv();
+    const [nodeProbe, npmProbe] = await Promise.all([
+      tryRunShell("node -v", { ...options, env }),
+      tryRunShell("npm -v", { ...options, env }),
+    ]);
+    const nodeVersion = parseSemanticVersion(nodeProbe?.stdout ?? nodeProbe?.stderr ?? null);
+    const npmVersion = parseSemanticVersion(npmProbe?.stdout ?? npmProbe?.stderr ?? null);
+    const major = parseMajorVersion(nodeVersion);
+
+    return {
+      installed: Boolean(nodeVersion),
+      version: nodeVersion,
+      major,
+      npmVersion,
+      satisfies: major !== null && major >= REQUIRED_NODE_MAJOR,
+      manager,
+      error:
+        nodeVersion && npmVersion
+          ? null
+          : (trimToNull(nodeProbe?.stderr) ??
+            trimToNull(npmProbe?.stderr) ??
+            `Managed Node.js was not found at ${resolveManagedNodeDir()}.`),
+    };
+  }
+
   if (process.platform === "win32" && manager === "shell") {
     const env = buildWindowsCliSearchEnv();
     const [nodeProbe, npmProbe] = await Promise.all([
@@ -1012,6 +1104,13 @@ async function installNode22IntoManager(
     const result = await runShell(wrapWithNode22Runtime("node -v && npm -v", manager), options);
     return [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
   }
+  if (manager === "managed") {
+    const result = await runShell(wrapWithNode22Runtime("node -v && npm -v", manager), {
+      ...options,
+      env: buildManagedNodeEnv(),
+    });
+    return [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+  }
   if (manager === "shell" && process.platform === "win32") {
     const outputs: string[] = [];
     let mirrorError: string | null = null;
@@ -1058,6 +1157,43 @@ async function installNode22IntoManager(
       ...options,
       forceWindowsCmd: true,
       env: buildWindowsCliSearchEnv(),
+    });
+    outputs.push([verifyResult.stdout, verifyResult.stderr].filter(Boolean).join("\n").trim());
+    return outputs.filter(Boolean).join("\n").trim();
+  }
+
+  if (manager === "shell" && process.platform === "darwin") {
+    const outputs: string[] = [];
+    let mirrorError: string | null = null;
+
+    try {
+      const tarballUrl = await resolveLatestNode22DarwinTarballUrl();
+      if (!tarballUrl) {
+        throw new Error(`No Node.js 22 macOS ${arch} tarball was found on npmmirror.`);
+      }
+      const installDir = resolveManagedNodeDir();
+      const mirrorResult = await runShell(
+        buildMacOSNodeDirectInstallCommand(tarballUrl, installDir),
+        options,
+      );
+      outputs.push([mirrorResult.stdout, mirrorResult.stderr].filter(Boolean).join("\n").trim());
+    } catch (error) {
+      mirrorError = getErrorMessage(error);
+      log.warn("[model-cli-manager] mirrored macOS Node.js install failed", {
+        error: mirrorError,
+      });
+    }
+
+    const status = await readNodeStatus("managed", options);
+    if (!status.satisfies) {
+      throw new Error(
+        `Automatic Node.js 22 installation failed via npmmirror${mirrorError ? `: ${mirrorError}` : ""}.`,
+      );
+    }
+
+    const verifyResult = await runShell("node -v && npm -v", {
+      ...options,
+      env: buildManagedNodeEnv(),
     });
     outputs.push([verifyResult.stdout, verifyResult.stderr].filter(Boolean).join("\n").trim());
     return outputs.filter(Boolean).join("\n").trim();

@@ -6,6 +6,7 @@ import {
   buildWindowsGitBashMirrorInstallCommand,
   buildWindowsGitBashPortableInstallCommand,
   buildWindowsGitInstallFailureMessage,
+  buildMacOSNodeDirectInstallCommand,
   buildWindowsNodeDirectInstallCommand,
   buildWindowsGitBashScoopInstallCommand,
   buildWindowsNpmPackageInstallCommand,
@@ -18,6 +19,7 @@ import {
   parseSemanticVersion,
   resolveLatestGitForWindowsInstallerUrlFromMirror,
   resolveLatestGitForWindowsPortableUrlFromMirror,
+  resolveLatestNode22DarwinTarballUrlFromMirror,
   resolveLatestNode22WindowsMsiUrlFromMirror,
   resolveCliStatusShellOptions,
   resolvePackageInstallShellOptions,
@@ -195,6 +197,33 @@ describe("model-cli-manager", () => {
     );
   });
 
+  it("picks the newest Node 22 macOS tarball for the current architecture", () => {
+    const entries = [
+      {
+        type: "file",
+        name: "node-v22.10.0-darwin-arm64.tar.gz",
+        url: "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.10.0-darwin-arm64.tar.gz",
+      },
+      {
+        type: "file",
+        name: "node-v22.11.0-darwin-x64.tar.gz",
+        url: "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.11.0-darwin-x64.tar.gz",
+      },
+      {
+        type: "file",
+        name: "node-v22.12.0-darwin-arm64.tar.gz",
+        url: "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.12.0-darwin-arm64.tar.gz",
+      },
+    ];
+
+    expect(resolveLatestNode22DarwinTarballUrlFromMirror(entries, "arm64")).toBe(
+      "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.12.0-darwin-arm64.tar.gz",
+    );
+    expect(resolveLatestNode22DarwinTarballUrlFromMirror(entries, "x64")).toBe(
+      "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.11.0-darwin-x64.tar.gz",
+    );
+  });
+
   it("picks the newest Git for Windows 64-bit installer from npmmirror release entries", () => {
     const url = resolveLatestGitForWindowsInstallerUrlFromMirror(
       [
@@ -265,6 +294,9 @@ describe("model-cli-manager", () => {
     expect(nodeCommand).toContain("msiexec.exe");
     expect(nodeCommand).toContain("/qn");
     expect(nodeCommand).toContain("/norestart");
+    expect(nodeCommand).toContain("/L*v");
+    expect(nodeCommand).toContain("node --version");
+    expect(nodeCommand).toContain("npm --version");
 
     const gitCommand = buildWindowsGitBashMirrorInstallCommand(
       "https://registry.npmmirror.com/-/binary/git-for-windows/v2.54.0.windows.1/Git-2.54.0-64-bit.exe",
@@ -295,6 +327,21 @@ describe("model-cli-manager", () => {
     expect(portableGitCommand).toContain("-lc");
     expect(portableGitCommand).toContain("PortableGit installed to");
     expect(portableGitCommand).not.toContain("Start-Process -FilePath $installerPath");
+  });
+
+  it("builds app-managed macOS Node install commands without sudo", () => {
+    const command = buildMacOSNodeDirectInstallCommand(
+      "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.12.0-darwin-arm64.tar.gz",
+      "/Users/alice/.paseo/toolchains/node22",
+    );
+
+    expect(command).toContain("curl -fL --connect-timeout 20");
+    expect(command).toContain("tar -xzf");
+    expect(command).toContain("--strip-components 1");
+    expect(command).toContain("'/Users/alice/.paseo/toolchains/node22/bin/node' --version");
+    expect(command).toContain("'/Users/alice/.paseo/toolchains/node22/bin/npm' --version");
+    expect(command).not.toContain("sudo");
+    expect(command).not.toContain("installer -pkg");
   });
 
   it("summarizes Git Bash installation failures with validation details", () => {
