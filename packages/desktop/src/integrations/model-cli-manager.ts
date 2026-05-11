@@ -1,10 +1,9 @@
-import { createWriteStream, existsSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { arch } from "node:process";
 import { execFile } from "node:child_process";
 import path from "node:path";
-import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import log from "electron-log/main";
 import { execCommand, resolvePaseoHome } from "@getpaseo/server";
@@ -659,11 +658,11 @@ export function buildWindowsGitBashDirectInstallCommand(): string {
 
 async function downloadFileWithFetch(url: string, destination: string): Promise<void> {
   const response = await fetch(url);
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
     throw new Error(`Download failed with HTTP ${response.status}: ${url}`);
   }
   await mkdir(path.dirname(destination), { recursive: true });
-  await pipeline(response.body, createWriteStream(destination));
+  await writeFile(destination, Buffer.from(await response.arrayBuffer()));
 }
 
 async function execFileForInstall(
