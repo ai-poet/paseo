@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { arch } from "node:process";
 import { execFile } from "node:child_process";
@@ -447,6 +447,10 @@ function resolveWindowsPortableGitDir(env: NodeJS.ProcessEnv = process.env): str
   return path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "PortableGit");
 }
 
+export function resolveWindowsManagedNodeDir(env: NodeJS.ProcessEnv = process.env): string {
+  return path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "node22-win-x64");
+}
+
 function createWindowsGitPathSnapshot(installDir: string): WindowsGitPathSnapshot {
   const gitCmdPath = path.win32.join(installDir, "cmd", "git.exe");
   const gitBinPath = path.win32.join(installDir, "bin", "git.exe");
@@ -470,6 +474,21 @@ function createWindowsGitPathSnapshot(installDir: string): WindowsGitPathSnapsho
   };
 }
 
+export function resolveWindowsPortableGitTempFallbackDirs(
+  installerPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const dirs: string[] = [];
+  appendUniquePath(dirs, path.win32.join(path.win32.dirname(installerPath), "PortableGit"));
+  appendUniquePath(dirs, env.TEMP ? path.win32.join(env.TEMP, "PortableGit") : null);
+  appendUniquePath(dirs, env.TMP ? path.win32.join(env.TMP, "PortableGit") : null);
+  appendUniquePath(
+    dirs,
+    env.LOCALAPPDATA ? path.win32.join(env.LOCALAPPDATA, "Temp", "PortableGit") : null,
+  );
+  return dirs;
+}
+
 function resolveManagedNodeDir(): string {
   return path.join(resolvePaseoHome(process.env), "toolchains", "node22");
 }
@@ -481,6 +500,7 @@ function resolveManagedNodeBinPath(command: "node" | "npm"): string {
 export function buildWindowsCliSearchPath(env: NodeJS.ProcessEnv = process.env): string {
   const paths: string[] = [];
   appendUniquePath(paths, env.APPDATA ? path.win32.join(env.APPDATA, "npm") : null);
+  appendUniquePath(paths, resolveWindowsManagedNodeDir(env));
   appendUniquePath(paths, env.ProgramFiles ? path.win32.join(env.ProgramFiles, "nodejs") : null);
   appendUniquePath(paths, path.win32.join(resolveWindowsPortableGitDir(env), "cmd"));
   appendUniquePath(paths, path.win32.join(resolveWindowsPortableGitDir(env), "bin"));
@@ -546,6 +566,26 @@ export function buildWindowsCliSearchPath(env: NodeJS.ProcessEnv = process.env):
     appendUniquePath(paths, entry);
   }
   return paths.join(";");
+}
+
+export function buildWindowsUserPathValue(currentPath: string, entriesToAdd: string[]): string {
+  const entries: string[] = [];
+  for (const entry of currentPath.split(";")) {
+    appendUniquePath(entries, entry);
+  }
+  for (const entry of entriesToAdd) {
+    appendUniquePath(entries, entry);
+  }
+  return entries.join(";");
+}
+
+export function resolveWindowsNpmGlobalBinPathFromPrefix(prefixOutput: string): string | null {
+  const prefix = trimToNull(prefixOutput);
+  if (!prefix) {
+    return null;
+  }
+  const normalized = prefix.replace(/[\\/]+node_modules[\\/]?$/i, "");
+  return normalized || null;
 }
 
 function buildWindowsCliSearchEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -666,6 +706,69 @@ async function downloadFileWithFetch(url: string, destination: string): Promise<
   await writeFile(destination, Buffer.from(await response.arrayBuffer()));
 }
 
+function getWindowsExternalCliPathEntries(env: NodeJS.ProcessEnv = process.env): string[] {
+  const managedNodeDir = resolveWindowsManagedNodeDir(env);
+  const portableGitDir = resolveWindowsPortableGitDir(env);
+  return [
+    existsSync(path.win32.join(managedNodeDir, "node.exe")) ? managedNodeDir : null,
+    env.APPDATA ? path.win32.join(env.APPDATA, "npm") : null,
+    existsSync(path.win32.join(portableGitDir, "cmd", "git.exe"))
+      ? path.win32.join(portableGitDir, "cmd")
+      : null,
+    existsSync(path.win32.join(portableGitDir, "bin", "bash.exe"))
+      ? path.win32.join(portableGitDir, "bin")
+      : null,
+    existsSync(path.win32.join(portableGitDir, "usr", "bin", "bash.exe"))
+      ? path.win32.join(portableGitDir, "usr", "bin")
+      : null,
+  ].filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+}
+
+async function ensureWindowsUserPathEntries(entriesToAdd: string[]): Promise<void> {
+  if (process.platform !== "win32") {
+    return;
+  }
+  const filtered = entriesToAdd.filter((entry) => entry.trim().length > 0);
+  if (filtered.length === 0) {
+    return;
+  }
+
+  const readResult = await tryRunShell(
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"[Environment]::GetEnvironmentVariable('Path', 'User')\"",
+    { forceWindowsCmd: true, env: buildWindowsCliSearchEnv() },
+  );
+  const before = readResult?.stdout ?? "";
+  const after = buildWindowsUserPathValue(before, filtered);
+  if (normalizeWindowsPath(before) === normalizeWindowsPath(after)) {
+    return;
+  }
+
+  await runShell(
+    `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; [Environment]::SetEnvironmentVariable('Path', ${quotePowerShellString(after)}, 'User')"`,
+    { forceWindowsCmd: true, env: buildWindowsCliSearchEnv() },
+  );
+  const mergedPath = buildWindowsUserPathValue(
+    process.env.PATH ?? process.env.Path ?? "",
+    filtered,
+  );
+  process.env.PATH = mergedPath;
+  process.env.Path = mergedPath;
+  log.info("[model-cli-manager] updated Windows user PATH", {
+    added: filtered,
+    beforeLength: before.length,
+    afterLength: after.length,
+  });
+}
+
+async function resolveWindowsNpmGlobalBinPath(options?: ShellOptions): Promise<string | null> {
+  const result = await tryRunShell("npm prefix -g", {
+    ...options,
+    forceWindowsCmd: true,
+    env: buildWindowsCliSearchEnv(),
+  });
+  return resolveWindowsNpmGlobalBinPathFromPrefix(result?.stdout ?? result?.stderr ?? "");
+}
+
 async function execFileForInstall(
   command: string,
   args: string[],
@@ -698,6 +801,98 @@ async function execFileForInstall(
   }
 }
 
+async function installWindowsNodeZipFromUrl(zipUrl: string): Promise<string> {
+  const installDir = resolveWindowsManagedNodeDir(process.env);
+  const stagingDir = path.win32.join(
+    process.env.TEMP ?? process.env.TMP ?? path.win32.dirname(installDir),
+    `paseo-node22-${Date.now()}`,
+  );
+  const zipPath = path.win32.join(stagingDir, "node22.zip");
+  const outputs: string[] = [];
+
+  log.info("[model-cli-manager] installing app-managed Windows Node.js from zip", {
+    zipUrl,
+    installDir,
+    stagingDir,
+    zipPath,
+  });
+
+  try {
+    try {
+      await mkdir(stagingDir, { recursive: true });
+      await downloadFileWithFetch(zipUrl, zipPath);
+      outputs.push(`Downloaded Node.js from ${zipUrl}`);
+    } catch (error) {
+      log.warn("[model-cli-manager] Node.js zip download failed", {
+        zipUrl,
+        zipPath,
+        error: getErrorMessage(error),
+      });
+      throw new Error(`Node zip download failed: ${getErrorMessage(error)}`);
+    }
+
+    try {
+      await execFileForInstall(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force",
+          zipPath,
+          stagingDir,
+        ],
+        buildWindowsCliSearchEnv(),
+      );
+    } catch (error) {
+      log.warn("[model-cli-manager] Node.js zip extraction failed", {
+        zipUrl,
+        zipPath,
+        stagingDir,
+        error: getErrorMessage(error),
+      });
+      throw new Error(`Node zip extract failed: ${getErrorMessage(error)}`);
+    }
+
+    const extractedCandidates = [
+      path.win32.join(stagingDir, path.win32.basename(new URL(zipUrl).pathname, ".zip")),
+      path.win32.join(
+        stagingDir,
+        readdirSync(stagingDir).find((entry) => {
+          const candidate = path.win32.join(stagingDir, entry);
+          return existsSync(path.win32.join(candidate, "node.exe"));
+        }) ?? "",
+      ),
+    ];
+    const extractedDir =
+      extractedCandidates.find((candidate) => existsSync(path.win32.join(candidate, "node.exe"))) ??
+      "";
+
+    if (!existsSync(path.win32.join(extractedDir, "node.exe"))) {
+      throw new Error("Node zip verify failed: extracted archive did not contain node.exe");
+    }
+
+    await rm(installDir, { recursive: true, force: true });
+    await mkdir(path.win32.dirname(installDir), { recursive: true });
+    await cp(extractedDir, installDir, { recursive: true });
+
+    const env = buildWindowsCliSearchEnv();
+    const nodePath = path.win32.join(installDir, "node.exe");
+    const npmPath = path.win32.join(installDir, "npm.cmd");
+    const [nodeResult, npmResult] = await Promise.all([
+      execFileForInstall(nodePath, ["--version"], env),
+      execFileForInstall(npmPath, ["--version"], env),
+    ]);
+    outputs.push([nodeResult.stdout, nodeResult.stderr].filter(Boolean).join("\n").trim());
+    outputs.push([npmResult.stdout, npmResult.stderr].filter(Boolean).join("\n").trim());
+    await ensureWindowsUserPathEntries(getWindowsExternalCliPathEntries(process.env));
+    return outputs.filter(Boolean).join("\n").trim();
+  } finally {
+    await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 function resolvePortableGitExecutables(snapshot: WindowsGitPathSnapshot): {
   gitPath: string | null;
   bashPath: string | null;
@@ -714,6 +909,22 @@ function resolvePortableGitExecutables(snapshot: WindowsGitPathSnapshot): {
         ? snapshot.bashUsrPath
         : null,
   };
+}
+
+async function adoptPortableGitFromFallbackDir(
+  fallbackDir: string,
+  installDir: string,
+): Promise<boolean> {
+  const fallbackSnapshot = createWindowsGitPathSnapshot(fallbackDir);
+  const fallbackExecutables = resolvePortableGitExecutables(fallbackSnapshot);
+  if (!fallbackExecutables.gitPath || !fallbackExecutables.bashPath) {
+    return false;
+  }
+
+  await rm(installDir, { recursive: true, force: true });
+  await mkdir(path.win32.dirname(installDir), { recursive: true });
+  await cp(fallbackDir, installDir, { recursive: true });
+  return true;
 }
 
 async function installPortableGitFromUrl(
@@ -768,20 +979,48 @@ async function installPortableGitFromUrl(
       throw new Error(`PortableGit extract: ${getErrorMessage(error)}`);
     }
 
-    const snapshot = createWindowsGitPathSnapshot(installDir);
-    const executables = resolvePortableGitExecutables(snapshot);
+    let snapshot = createWindowsGitPathSnapshot(installDir);
+    let executables = resolvePortableGitExecutables(snapshot);
     if (!executables.gitPath || !executables.bashPath) {
-      log.warn("[model-cli-manager] PortableGit verification paths missing", {
-        installerUrl,
-        installDir,
-        snapshot,
-        extractExitCode: extractResult.exitCode,
-        stdoutTail: commandOutputTail(extractResult.stdout),
-        stderrTail: commandOutputTail(extractResult.stderr),
-      });
-      throw new Error(
-        "PortableGit verify: PortableGit extraction did not create git.exe or bash.exe",
-      );
+      const fallbackDirs = resolveWindowsPortableGitTempFallbackDirs(installerPath, process.env);
+      const fallbackSnapshots = fallbackDirs.map((dir) => createWindowsGitPathSnapshot(dir));
+      const adoptedFrom = await (async () => {
+        for (const fallbackDir of fallbackDirs) {
+          if (await adoptPortableGitFromFallbackDir(fallbackDir, installDir)) {
+            return fallbackDir;
+          }
+        }
+        return null;
+      })();
+      if (adoptedFrom) {
+        snapshot = createWindowsGitPathSnapshot(installDir);
+        executables = resolvePortableGitExecutables(snapshot);
+        outputs.push(
+          `PortableGit extracted to temporary directory and was moved from ${adoptedFrom}`,
+        );
+        log.info("[model-cli-manager] adopted PortableGit from temporary extraction directory", {
+          installerUrl,
+          installDir,
+          adoptedFrom,
+          snapshot,
+        });
+      }
+      if (executables.gitPath && executables.bashPath) {
+        // Continue with the normal bash validation below.
+      } else {
+        log.warn("[model-cli-manager] PortableGit verification paths missing", {
+          installerUrl,
+          installDir,
+          snapshot,
+          fallbackSnapshots,
+          extractExitCode: extractResult.exitCode,
+          stdoutTail: commandOutputTail(extractResult.stdout),
+          stderrTail: commandOutputTail(extractResult.stderr),
+        });
+        throw new Error(
+          "PortableGit verify: PortableGit extraction did not create git.exe or bash.exe in the target or temporary extraction directories",
+        );
+      }
     }
 
     let bashResult: CommandResult;
@@ -855,6 +1094,24 @@ export function resolveLatestNode22WindowsMsiUrlFromMirror(
     .map((entry) => {
       const name = entry.name ?? "";
       const match = name.match(/^node-v(22\.\d+\.\d+)-x64\.msi$/i);
+      if (!match || entry.type === "dir" || !entry.url) {
+        return null;
+      }
+      return { version: match[1]!, url: entry.url };
+    })
+    .filter((entry): entry is { version: string; url: string } => entry !== null)
+    .sort((left, right) => compareVersionStrings(right.version, left.version));
+
+  return candidates[0]?.url ?? null;
+}
+
+export function resolveLatestNode22WindowsZipUrlFromMirror(
+  entries: MirrorDirectoryEntry[],
+): string | null {
+  const candidates = entries
+    .map((entry) => {
+      const name = entry.name ?? "";
+      const match = name.match(/^node-v(22\.\d+\.\d+)-win-x64\.zip$/i);
       if (!match || entry.type === "dir" || !entry.url) {
         return null;
       }
@@ -975,6 +1232,12 @@ async function fetchMirrorEntries(url: string): Promise<MirrorDirectoryEntry[]> 
 
 async function resolveLatestNode22WindowsMsiUrl(): Promise<string | null> {
   return resolveLatestNode22WindowsMsiUrlFromMirror(
+    await fetchMirrorEntries(WINDOWS_NODE_MIRROR_URL),
+  );
+}
+
+async function resolveLatestNode22WindowsZipUrl(): Promise<string | null> {
+  return resolveLatestNode22WindowsZipUrlFromMirror(
     await fetchMirrorEntries(WINDOWS_NODE_MIRROR_URL),
   );
 }
@@ -1287,43 +1550,66 @@ async function installNode22IntoManager(
   }
   if (manager === "shell" && process.platform === "win32") {
     const outputs: string[] = [];
-    let mirrorError: string | null = null;
+    const errors: string[] = [];
 
     try {
-      const installerUrl = await resolveLatestNode22WindowsMsiUrl();
-      if (!installerUrl) {
-        throw new Error("No Node.js 22 x64 MSI was found on npmmirror.");
+      const zipUrl = await resolveLatestNode22WindowsZipUrl();
+      if (!zipUrl) {
+        throw new Error("No Node.js 22 win-x64 zip was found on npmmirror.");
       }
-      const mirrorResult = await runShell(buildWindowsNodeDirectInstallCommand(installerUrl), {
-        ...options,
-        forceWindowsCmd: true,
-        env: buildWindowsCliSearchEnv(),
-      });
-      outputs.push([mirrorResult.stdout, mirrorResult.stderr].filter(Boolean).join("\n").trim());
+      outputs.push(await installWindowsNodeZipFromUrl(zipUrl));
     } catch (error) {
-      mirrorError = getErrorMessage(error);
-      log.warn("[model-cli-manager] mirrored Node.js install failed", { error: mirrorError });
+      errors.push(`Node zip: ${getErrorMessage(error)}`);
+      log.warn("[model-cli-manager] mirrored Node.js zip install failed", {
+        error: getErrorMessage(error),
+      });
     }
 
     let status = await readNodeStatus(manager, { ...options, forceWindowsCmd: true });
-    if (!status.satisfies) {
-      if (!(await commandExists("winget"))) {
-        throw new Error(
-          `Automatic Node.js 22 installation failed via npmmirror${mirrorError ? `: ${mirrorError}` : ""}. WinGet is not available for fallback.`,
-        );
-      }
 
-      const installResult = await runShell(
-        "winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements",
-        { ...options, forceWindowsCmd: true },
-      );
-      outputs.push([installResult.stdout, installResult.stderr].filter(Boolean).join("\n").trim());
+    if (!status.satisfies) {
+      try {
+        const installerUrl = await resolveLatestNode22WindowsMsiUrl();
+        if (!installerUrl) {
+          throw new Error("No Node.js 22 x64 MSI was found on npmmirror.");
+        }
+        const mirrorResult = await runShell(buildWindowsNodeDirectInstallCommand(installerUrl), {
+          ...options,
+          forceWindowsCmd: true,
+          env: buildWindowsCliSearchEnv(),
+        });
+        outputs.push([mirrorResult.stdout, mirrorResult.stderr].filter(Boolean).join("\n").trim());
+      } catch (error) {
+        errors.push(`Node MSI: ${getErrorMessage(error)}`);
+        log.warn("[model-cli-manager] mirrored Node.js MSI install failed", {
+          error: getErrorMessage(error),
+        });
+      }
       status = await readNodeStatus(manager, { ...options, forceWindowsCmd: true });
     }
 
     if (!status.satisfies) {
+      if (await commandExists("winget")) {
+        try {
+          const installResult = await runShell(
+            "winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements",
+            { ...options, forceWindowsCmd: true },
+          );
+          outputs.push(
+            [installResult.stdout, installResult.stderr].filter(Boolean).join("\n").trim(),
+          );
+          status = await readNodeStatus(manager, { ...options, forceWindowsCmd: true });
+        } catch (error) {
+          errors.push(`WinGet: ${getErrorMessage(error)}`);
+        }
+      } else {
+        errors.push("WinGet: not available");
+      }
+    }
+
+    if (!status.satisfies) {
       throw new Error(
-        `Node.js installation finished but the detected runtime is ${status.version ?? "unknown"}. Please ensure Node.js ${REQUIRED_NODE_MAJOR}+ is available in PATH.`,
+        `Automatic Node.js 22 installation failed. ${errors.join(" ")} Detected runtime: ${status.version ?? "unknown"}.`,
       );
     }
 
@@ -1475,6 +1761,7 @@ async function installWindowsGitBash(): Promise<string> {
   }
 
   await patchClaudeCodeGitBashPathForWindows(status.bashPath);
+  await ensureWindowsUserPathEntries(getWindowsExternalCliPathEntries(process.env));
 
   return outputs.filter(Boolean).join("\n").trim();
 }
@@ -1522,6 +1809,11 @@ async function installPackageIntoRuntime(
           runtimeOptions,
         );
         outputs.push([result.stdout, result.stderr].filter(Boolean).join("\n").trim());
+        const npmGlobalBin = await resolveWindowsNpmGlobalBinPath(runtimeOptions);
+        await ensureWindowsUserPathEntries([
+          ...getWindowsExternalCliPathEntries(process.env),
+          ...(npmGlobalBin ? [npmGlobalBin] : []),
+        ]);
         return outputs.filter(Boolean).join("\n").trim();
       } catch (error) {
         const label = registry === "npmmirror" ? "npmmirror npm registry" : "npm official registry";

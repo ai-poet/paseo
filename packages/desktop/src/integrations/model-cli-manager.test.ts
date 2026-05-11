@@ -10,6 +10,7 @@ import {
   buildWindowsNodeDirectInstallCommand,
   buildWindowsGitBashScoopInstallCommand,
   buildWindowsNpmPackageInstallCommand,
+  buildWindowsUserPathValue,
   REQUIRED_NODE_MAJOR,
   buildWindowsCliExecutableCandidates,
   buildWindowsCliSearchPath,
@@ -20,9 +21,13 @@ import {
   resolveLatestGitForWindowsInstallerUrlFromMirror,
   resolveLatestGitForWindowsPortableUrlFromMirror,
   resolveLatestNode22DarwinTarballUrlFromMirror,
+  resolveLatestNode22WindowsZipUrlFromMirror,
   resolveLatestNode22WindowsMsiUrlFromMirror,
   resolveCliStatusShellOptions,
   resolvePackageInstallShellOptions,
+  resolveWindowsManagedNodeDir,
+  resolveWindowsNpmGlobalBinPathFromPrefix,
+  resolveWindowsPortableGitTempFallbackDirs,
   shouldUseWindowsGitBash,
   wrapWithNode22Runtime,
   wrapWithRuntimeManager,
@@ -153,6 +158,7 @@ describe("model-cli-manager", () => {
 
     expect(searchPath.split(";")).toEqual([
       "C:\\Users\\alice\\AppData\\Roaming\\npm",
+      "C:\\Users\\alice\\.paseo\\toolchains\\node22-win-x64",
       "C:\\Program Files\\nodejs",
       "C:\\Users\\alice\\.paseo\\toolchains\\PortableGit\\cmd",
       "C:\\Users\\alice\\.paseo\\toolchains\\PortableGit\\bin",
@@ -171,6 +177,35 @@ describe("model-cli-manager", () => {
       "C:\\Users\\alice\\scoop\\apps\\git\\current\\usr\\bin",
       "C:\\Windows\\System32",
     ]);
+  });
+
+  it("builds user PATH values without replacing existing entries", () => {
+    const value = buildWindowsUserPathValue(
+      "C:\\Windows\\System32;C:\\Users\\alice\\AppData\\Roaming\\npm",
+      [
+        "C:\\Users\\alice\\.paseo\\toolchains\\node22-win-x64",
+        "C:\\Users\\alice\\AppData\\Roaming\\npm",
+        "C:\\Users\\alice\\.paseo\\toolchains\\PortableGit\\bin",
+      ],
+    );
+
+    expect(value.split(";")).toEqual([
+      "C:\\Windows\\System32",
+      "C:\\Users\\alice\\AppData\\Roaming\\npm",
+      "C:\\Users\\alice\\.paseo\\toolchains\\node22-win-x64",
+      "C:\\Users\\alice\\.paseo\\toolchains\\PortableGit\\bin",
+    ]);
+  });
+
+  it("resolves Windows npm global bin directories from prefix output", () => {
+    expect(
+      resolveWindowsNpmGlobalBinPathFromPrefix("C:\\Users\\alice\\AppData\\Roaming\\npm\r\n"),
+    ).toBe("C:\\Users\\alice\\AppData\\Roaming\\npm");
+    expect(
+      resolveWindowsNpmGlobalBinPathFromPrefix(
+        "C:\\Users\\alice\\AppData\\Roaming\\npm\\node_modules\n",
+      ),
+    ).toBe("C:\\Users\\alice\\AppData\\Roaming\\npm");
   });
 
   it("picks the newest Node 22 x64 MSI from npmmirror directory entries", () => {
@@ -194,6 +229,41 @@ describe("model-cli-manager", () => {
 
     expect(url).toBe(
       "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.11.0-x64.msi",
+    );
+  });
+
+  it("picks the newest Node 22 win-x64 zip from npmmirror directory entries", () => {
+    const url = resolveLatestNode22WindowsZipUrlFromMirror([
+      {
+        type: "file",
+        name: "node-v22.10.0-win-x64.zip",
+        url: "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.10.0-win-x64.zip",
+      },
+      {
+        type: "file",
+        name: "node-v22.12.0-win-arm64.zip",
+        url: "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.12.0-win-arm64.zip",
+      },
+      {
+        type: "file",
+        name: "node-v22.11.0-x64.msi",
+        url: "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.11.0-x64.msi",
+      },
+      {
+        type: "file",
+        name: "node-v22.12.0-win-x64.zip",
+        url: "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.12.0-win-x64.zip",
+      },
+    ]);
+
+    expect(url).toBe(
+      "https://registry.npmmirror.com/-/binary/node/latest-v22.x/node-v22.12.0-win-x64.zip",
+    );
+  });
+
+  it("resolves the app-managed Windows Node directory under Paseo home", () => {
+    expect(resolveWindowsManagedNodeDir({ PASEO_HOME: "C:\\Users\\alice\\.paseo" })).toBe(
+      "C:\\Users\\alice\\.paseo\\toolchains\\node22-win-x64",
     );
   });
 
@@ -323,6 +393,19 @@ describe("model-cli-manager", () => {
       "-gm2",
       "-InstallPath=C:\\\\Users\\\\alice\\\\.paseo\\\\toolchains\\\\PortableGit",
     ]);
+  });
+
+  it("searches temporary PortableGit extraction directories when the SFX ignores InstallPath", () => {
+    const dirs = resolveWindowsPortableGitTempFallbackDirs(
+      "C:\\Users\\alice\\AppData\\Local\\Temp\\paseo-portable-git.7z.exe",
+      {
+        TEMP: "C:\\Users\\alice\\AppData\\Local\\Temp",
+        TMP: "C:\\Users\\alice\\AppData\\Local\\Temp",
+        LOCALAPPDATA: "C:\\Users\\alice\\AppData\\Local",
+      },
+    );
+
+    expect(dirs).toEqual(["C:\\Users\\alice\\AppData\\Local\\Temp\\PortableGit"]);
   });
 
   it("builds app-managed macOS Node install commands without sudo", () => {
