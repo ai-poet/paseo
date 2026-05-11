@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -7,6 +8,8 @@ const workspaceRoot = path.resolve(__dirname, "../../..");
 const desktopPackageRoot = path.resolve(__dirname, "..");
 const builderConfigPath = path.join(desktopPackageRoot, "electron-builder.config.cjs");
 const brandingConfigPath = path.join(desktopPackageRoot, "branding.cjs");
+const runtimeBrandingPath = path.join(desktopPackageRoot, "src", "branding.ts");
+const compiledRuntimeBrandingPath = path.join(desktopPackageRoot, "src", "desktop-branding.json");
 const rootPackageJsonPath = path.join(workspaceRoot, "package.json");
 const desktopPackageJsonPath = path.join(desktopPackageRoot, "package.json");
 
@@ -68,6 +71,7 @@ describe("desktop packaging", () => {
   afterEach(() => {
     delete require.cache[require.resolve(builderConfigPath)];
     delete require.cache[require.resolve(brandingConfigPath)];
+    rmSync(compiledRuntimeBrandingPath, { force: true });
   });
 
   it("keeps the default Paseo package identity", () => {
@@ -122,7 +126,39 @@ describe("desktop packaging", () => {
     };
 
     expect(packageJson.scripts["build:main"]).toContain("node scripts/clean-dist.mjs");
+    expect(packageJson.scripts["build:main"]).toContain("node scripts/generate-branding.mjs");
     expect(packageJson.scripts["build:main"]).toContain("tsc -p tsconfig.json");
     expect(packageJson.scripts["build:main"]).toContain("--incremental false");
+  });
+
+  it("loads the compiled desktop brand when runtime env vars are absent", async () => {
+    mkdirSync(path.dirname(compiledRuntimeBrandingPath), { recursive: true });
+    writeFileSync(
+      compiledRuntimeBrandingPath,
+      JSON.stringify({
+        appName: "CyberAICoding",
+        desktopAppId: "com.cyberaicoding.desktop",
+        desktopIconPng: "assets/cybercode-icon.png",
+        desktopIconMac: "assets/cybercode-icon.icns",
+        desktopIconWin: "assets/cybercode-icon.ico",
+        desktopIconLinux: "assets/cybercode",
+        desktopUpdateOwner: "ai-poet",
+        desktopUpdateRepo: "paseo",
+      }),
+    );
+    const previousAppName = process.env.PASEO_APP_NAME;
+    delete process.env.PASEO_APP_NAME;
+    const module = await import(`${runtimeBrandingPath}?compiledBrand=${Date.now()}`);
+
+    try {
+      expect(module.getDesktopBranding().appName).toBe("CyberAICoding");
+      expect(module.getDesktopBranding().desktopIconWin).toBe("assets/cybercode-icon.ico");
+    } finally {
+      if (previousAppName === undefined) {
+        delete process.env.PASEO_APP_NAME;
+      } else {
+        process.env.PASEO_APP_NAME = previousAppName;
+      }
+    }
   });
 });

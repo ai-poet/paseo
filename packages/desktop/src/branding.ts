@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 export interface DesktopBranding {
   appName: string;
   desktopAppId: string;
@@ -9,6 +12,17 @@ export interface DesktopBranding {
   desktopUpdateRepo: string;
 }
 
+const DEFAULT_DESKTOP_BRANDING: DesktopBranding = {
+  appName: "Paseo",
+  desktopAppId: "sh.paseo.desktop",
+  desktopIconPng: "assets/icon.png",
+  desktopIconMac: "assets/icon.icns",
+  desktopIconWin: "assets/icon.ico",
+  desktopIconLinux: "assets",
+  desktopUpdateOwner: "ai-poet",
+  desktopUpdateRepo: "paseo",
+};
+
 function trimToNull(value: string | undefined): string | null {
   if (typeof value !== "string") {
     return null;
@@ -17,16 +31,62 @@ function trimToNull(value: string | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function readStringField(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readCompiledDesktopBranding(): Partial<DesktopBranding> {
+  try {
+    const raw = readFileSync(path.join(__dirname, "desktop-branding.json"), "utf-8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      appName: readStringField(parsed.appName) ?? undefined,
+      desktopAppId: readStringField(parsed.desktopAppId) ?? undefined,
+      desktopIconPng: readStringField(parsed.desktopIconPng) ?? undefined,
+      desktopIconMac: readStringField(parsed.desktopIconMac) ?? undefined,
+      desktopIconWin: readStringField(parsed.desktopIconWin) ?? undefined,
+      desktopIconLinux: readStringField(parsed.desktopIconLinux) ?? undefined,
+      desktopUpdateOwner: readStringField(parsed.desktopUpdateOwner) ?? undefined,
+      desktopUpdateRepo: readStringField(parsed.desktopUpdateRepo) ?? undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 export function getDesktopBranding(): DesktopBranding {
-  const appName = trimToNull(process.env.PASEO_APP_NAME) ?? "Paseo";
+  const compiled = readCompiledDesktopBranding();
+  const appName =
+    trimToNull(process.env.PASEO_APP_NAME) ?? compiled.appName ?? DEFAULT_DESKTOP_BRANDING.appName;
   return {
     appName,
-    desktopAppId: trimToNull(process.env.PASEO_DESKTOP_APP_ID) ?? "sh.paseo.desktop",
-    desktopIconPng: trimToNull(process.env.PASEO_DESKTOP_ICON_PNG) ?? "assets/icon.png",
-    desktopIconMac: trimToNull(process.env.PASEO_DESKTOP_ICON_MAC) ?? "assets/icon.icns",
-    desktopIconWin: trimToNull(process.env.PASEO_DESKTOP_ICON_WIN) ?? "assets/icon.ico",
-    desktopIconLinux: trimToNull(process.env.PASEO_DESKTOP_ICON_LINUX) ?? "assets",
-    desktopUpdateOwner: trimToNull(process.env.PASEO_DESKTOP_UPDATE_OWNER) ?? "ai-poet",
-    desktopUpdateRepo: trimToNull(process.env.PASEO_DESKTOP_UPDATE_REPO) ?? "paseo",
+    desktopAppId:
+      trimToNull(process.env.PASEO_DESKTOP_APP_ID) ??
+      compiled.desktopAppId ??
+      DEFAULT_DESKTOP_BRANDING.desktopAppId,
+    desktopIconPng:
+      trimToNull(process.env.PASEO_DESKTOP_ICON_PNG) ??
+      compiled.desktopIconPng ??
+      DEFAULT_DESKTOP_BRANDING.desktopIconPng,
+    desktopIconMac:
+      trimToNull(process.env.PASEO_DESKTOP_ICON_MAC) ??
+      compiled.desktopIconMac ??
+      DEFAULT_DESKTOP_BRANDING.desktopIconMac,
+    desktopIconWin:
+      trimToNull(process.env.PASEO_DESKTOP_ICON_WIN) ??
+      compiled.desktopIconWin ??
+      DEFAULT_DESKTOP_BRANDING.desktopIconWin,
+    desktopIconLinux:
+      trimToNull(process.env.PASEO_DESKTOP_ICON_LINUX) ??
+      compiled.desktopIconLinux ??
+      DEFAULT_DESKTOP_BRANDING.desktopIconLinux,
+    desktopUpdateOwner:
+      trimToNull(process.env.PASEO_DESKTOP_UPDATE_OWNER) ??
+      compiled.desktopUpdateOwner ??
+      DEFAULT_DESKTOP_BRANDING.desktopUpdateOwner,
+    desktopUpdateRepo:
+      trimToNull(process.env.PASEO_DESKTOP_UPDATE_REPO) ??
+      compiled.desktopUpdateRepo ??
+      DEFAULT_DESKTOP_BRANDING.desktopUpdateRepo,
   };
 }

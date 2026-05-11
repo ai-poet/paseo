@@ -86,9 +86,9 @@ describe("model-cli-manager", () => {
     expect(isWindowsGitBashPath("C:/Windows/System32/bash.exe")).toBe(false);
     expect(isWindowsGitBashPath("C:\\Windows\\SysWOW64\\bash.exe")).toBe(false);
     expect(isWindowsGitBashPath("C:/Windows/System32/wsl.exe")).toBe(false);
-    expect(isWindowsGitBashPath("C:/Users/alice/.paseo/toolchains/mingit-2.54.0/bin/bash.exe")).toBe(
-      false,
-    );
+    expect(
+      isWindowsGitBashPath("C:/Users/alice/.paseo/toolchains/mingit-2.54.0/bin/bash.exe"),
+    ).toBe(false);
   });
 
   it("accepts Git for Windows and Scoop Git Bash paths", () => {
@@ -275,6 +275,7 @@ describe("model-cli-manager", () => {
     );
     expect(portableGitCommand).toContain("PortableGit");
     expect(portableGitCommand).toContain("-y");
+    expect(portableGitCommand).toContain("cmd\\\\git.exe");
     expect(portableGitCommand).toContain("git-bash.exe");
     expect(portableGitCommand).toContain("bin\\\\bash.exe");
   });

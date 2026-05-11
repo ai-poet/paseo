@@ -215,8 +215,14 @@ async function resolveWindowsGitBashPath(): Promise<string | null> {
   }
 
   const fallbackCandidates = [
-    path.join(resolveWindowsPaseoHome(process.env), "toolchains", "PortableGit", "bin", "bash.exe"),
-    path.join(
+    path.win32.join(
+      resolveWindowsPaseoHome(process.env),
+      "toolchains",
+      "PortableGit",
+      "bin",
+      "bash.exe",
+    ),
+    path.win32.join(
       resolveWindowsPaseoHome(process.env),
       "toolchains",
       "PortableGit",
@@ -255,6 +261,76 @@ async function resolveWindowsGitBashPath(): Promise<string | null> {
   return (
     fallbackCandidates.find((entry) => existsSync(entry) && isWindowsGitBashPath(entry)) ?? null
   );
+}
+
+async function resolveWindowsGitExecutablePath(): Promise<string | null> {
+  if (process.platform !== "win32") {
+    return null;
+  }
+
+  const whereResult = await tryRunShell("where git", {
+    forceWindowsCmd: true,
+    env: buildWindowsCliSearchEnv(),
+  });
+  const detected =
+    whereResult?.stdout
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .find((entry) => entry.toLowerCase().endsWith(".exe") && existsSync(entry)) ?? null;
+  if (detected) {
+    return detected;
+  }
+
+  const fallbackCandidates = [
+    path.win32.join(
+      resolveWindowsPaseoHome(process.env),
+      "toolchains",
+      "PortableGit",
+      "cmd",
+      "git.exe",
+    ),
+    path.win32.join(
+      resolveWindowsPaseoHome(process.env),
+      "toolchains",
+      "PortableGit",
+      "bin",
+      "git.exe",
+    ),
+    path.win32.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "cmd", "git.exe"),
+    path.win32.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "git.exe"),
+    path.win32.join(
+      process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
+      "Git",
+      "cmd",
+      "git.exe",
+    ),
+    path.win32.join(
+      process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
+      "Git",
+      "bin",
+      "git.exe",
+    ),
+    path.win32.join(
+      process.env.USERPROFILE ?? "",
+      "scoop",
+      "apps",
+      "git",
+      "current",
+      "cmd",
+      "git.exe",
+    ),
+    path.win32.join(
+      process.env.USERPROFILE ?? "",
+      "scoop",
+      "apps",
+      "git",
+      "current",
+      "bin",
+      "git.exe",
+    ),
+  ];
+
+  return fallbackCandidates.find((entry) => existsSync(entry)) ?? null;
 }
 
 function normalizeWindowsPath(value: string): string {
@@ -314,8 +390,14 @@ export function buildWindowsCliSearchPath(env: NodeJS.ProcessEnv = process.env):
   const paths: string[] = [];
   appendUniquePath(paths, env.APPDATA ? path.win32.join(env.APPDATA, "npm") : null);
   appendUniquePath(paths, env.ProgramFiles ? path.win32.join(env.ProgramFiles, "nodejs") : null);
-  appendUniquePath(paths, path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "PortableGit", "cmd"));
-  appendUniquePath(paths, path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "PortableGit", "bin"));
+  appendUniquePath(
+    paths,
+    path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "PortableGit", "cmd"),
+  );
+  appendUniquePath(
+    paths,
+    path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "PortableGit", "bin"),
+  );
   appendUniquePath(
     paths,
     path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "PortableGit", "usr", "bin"),
@@ -380,6 +462,22 @@ function buildWindowsCliSearchEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.
   };
 }
 
+async function tryRunWindowsExecutable(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<CommandResult | null> {
+  try {
+    return await execCommand(command, args, {
+      env,
+      timeout: 10 * 60 * 1000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function wrapWithRuntimeManager(command: string, manager: RuntimeManagerId): string {
   if (manager === "nvm") {
     const nvmScriptPath = getNvmScriptPath();
@@ -434,7 +532,7 @@ export function buildWindowsGitBashPortableInstallCommand(
 ): string {
   const quotedUrl = quotePowerShellString(installerUrl);
   const quotedInstallDir = quotePowerShellString(installDir);
-  return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $installerUrl=${quotedUrl}; $installDir=${quotedInstallDir}; $installerPath=Join-Path $env:TEMP ('paseo-portable-git-' + [Guid]::NewGuid().ToString('N') + '.7z.exe'); try { if (Test-Path $installDir) { Remove-Item -Path $installDir -Recurse -Force }; New-Item -ItemType Directory -Path $installDir -Force | Out-Null; Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -TimeoutSec 60; $process=Start-Process -FilePath $installerPath -ArgumentList '-y',('-o' + $installDir) -Wait -PassThru; if ($process.ExitCode -ne 0) { throw ('PortableGit extractor failed with exit code ' + $process.ExitCode) }; $gitBash=Join-Path $installDir 'git-bash.exe'; $bash=Join-Path $installDir 'bin\\\\bash.exe'; if ((-not (Test-Path $gitBash)) -and (-not (Test-Path $bash))) { throw 'PortableGit extracted but Git Bash was not found' } } catch { throw ('PortableGit mirror install failed: ' + $_.Exception.Message) } finally { Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue }"`;
+  return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $installerUrl=${quotedUrl}; $installDir=${quotedInstallDir}; $installerPath=Join-Path $env:TEMP ('paseo-portable-git-' + [Guid]::NewGuid().ToString('N') + '.7z.exe'); try { if (Test-Path $installDir) { Remove-Item -Path $installDir -Recurse -Force }; New-Item -ItemType Directory -Path $installDir -Force | Out-Null; Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -TimeoutSec 60; $process=Start-Process -FilePath $installerPath -ArgumentList @('-y',('-o' + $installDir)) -Wait -PassThru; if ($process.ExitCode -ne 0) { throw ('PortableGit extractor failed with exit code ' + $process.ExitCode) }; $git=Join-Path $installDir 'cmd\\\\git.exe'; $gitBash=Join-Path $installDir 'git-bash.exe'; $bash=Join-Path $installDir 'bin\\\\bash.exe'; if (-not (Test-Path $git)) { throw 'PortableGit extracted but git.exe was not found' }; if ((-not (Test-Path $gitBash)) -and (-not (Test-Path $bash))) { throw 'PortableGit extracted but Git Bash was not found' } } catch { throw ('PortableGit mirror install failed: ' + $_.Exception.Message) } finally { Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue }"`;
 }
 
 export function buildWindowsGitBashDirectInstallCommand(): string {
@@ -728,8 +826,11 @@ async function readGitStatus(): Promise<GitRuntimeStatus> {
 
   const env = buildWindowsCliSearchEnv();
   const bashPath = await resolveWindowsGitBashPath();
+  const gitPath = await resolveWindowsGitExecutablePath();
   const [gitProbe, bashProbe] = await Promise.all([
-    tryRunShell("git --version", { forceWindowsCmd: true, env }),
+    gitPath
+      ? tryRunWindowsExecutable(gitPath, ["--version"], env)
+      : tryRunShell("git --version", { forceWindowsCmd: true, env }),
     bashPath
       ? tryRunShell("echo ok && git --version", {
           gitBashPath: bashPath,
