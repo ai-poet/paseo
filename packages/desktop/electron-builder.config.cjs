@@ -17,6 +17,8 @@ module.exports = {
   extraResources: [
     { from: "../app/dist", to: "app-dist" },
     { from: "../../skills", to: "skills" },
+    { from: brand.desktopIconPng, to: "icon.png" },
+    { from: brand.desktopIconWin, to: "icon.ico" },
   ],
   publish: {
     provider: "github",

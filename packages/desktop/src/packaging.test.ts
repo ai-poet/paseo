@@ -53,6 +53,7 @@ function loadBuilderConfig(env: NodeJS.ProcessEnv = {}) {
         owner: string;
         repo: string;
       };
+      extraResources: Array<{ from: string; to: string }>;
     };
   } finally {
     delete require.cache[require.resolve(builderConfigPath)];
@@ -93,6 +94,7 @@ describe("desktop packaging", () => {
     const config = loadBuilderConfig({
       PASEO_APP_NAME: "CyberAICoding",
       PASEO_DESKTOP_APP_ID: "com.cyberaicoding.desktop",
+      PASEO_DESKTOP_ICON_PNG: "assets/cybercode-icon.png",
       PASEO_DESKTOP_ICON_MAC: "assets/cybercode-icon.icns",
       PASEO_DESKTOP_ICON_WIN: "assets/cybercode-icon.ico",
       PASEO_DESKTOP_UPDATE_OWNER: "ai-poet",
@@ -104,6 +106,12 @@ describe("desktop packaging", () => {
     expect(config.executableName).toBe("CyberAICoding");
     expect(config.mac.icon).toBe("assets/cybercode-icon.icns");
     expect(config.win.icon).toBe("assets/cybercode-icon.ico");
+    expect(config.extraResources).toEqual(
+      expect.arrayContaining([
+        { from: "assets/cybercode-icon.png", to: "icon.png" },
+        { from: "assets/cybercode-icon.ico", to: "icon.ico" },
+      ]),
+    );
     expect(config.mac.artifactName).toBe("CyberAICoding-${version}-${arch}.${ext}");
     expect(config.win.artifactName).toBe("CyberAICoding-${version}-${arch}.${ext}");
     expect(config.publish.owner).toBe("ai-poet");

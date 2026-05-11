@@ -35,10 +35,11 @@ function getNotificationIcon(): Electron.NativeImage | null {
     path.isAbsolute(desktopBranding.desktopIconPng)
       ? desktopBranding.desktopIconPng
       : path.resolve(__dirname, "..", desktopBranding.desktopIconPng),
+    app.isPackaged ? path.join(process.resourcesPath, "icon.png") : null,
     path.resolve(__dirname, "../assets/icon.png"),
     path.resolve(__dirname, "../assets/64x64.png"),
     path.resolve(__dirname, "../assets/128x128.png"),
-  ];
+  ].filter((entry): entry is string => entry !== null);
 
   for (const iconPath of candidates) {
     if (!existsSync(iconPath)) {
