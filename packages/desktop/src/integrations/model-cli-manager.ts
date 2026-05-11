@@ -816,17 +816,19 @@ async function ensureWindowsUserPathEntries(entriesToAdd: string[]): Promise<voi
     return;
   }
 
-  await execFileForInstall("powershell.exe", buildWindowsSetUserPathPowerShellArgs(after), env).catch(
-    (error) => {
-      log.warn("[model-cli-manager] failed to write Windows user PATH", {
-        added: filtered,
-        beforeLength: before.length,
-        afterLength: after.length,
-        error: getErrorMessage(error),
-      });
-      throw new Error(`Windows user PATH write failed: ${getErrorMessage(error)}`);
-    },
-  );
+  await execFileForInstall(
+    "powershell.exe",
+    buildWindowsSetUserPathPowerShellArgs(after),
+    env,
+  ).catch((error) => {
+    log.warn("[model-cli-manager] failed to write Windows user PATH", {
+      added: filtered,
+      beforeLength: before.length,
+      afterLength: after.length,
+      error: getErrorMessage(error),
+    });
+    throw new Error(`Windows user PATH write failed: ${getErrorMessage(error)}`);
+  });
   const verifyResult = await execFileForInstall(
     "powershell.exe",
     buildWindowsGetUserPathPowerShellArgs(),

@@ -357,5 +357,4 @@ describe("use-setup-checks availability helpers", () => {
       },
     ]);
   });
-
 });
