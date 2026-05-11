@@ -4,7 +4,7 @@ import {
   buildWindowsGitBashDirectInstallCommand,
   buildWindowsGitBashInstallCommand,
   buildWindowsGitBashMirrorInstallCommand,
-  buildWindowsGitBashPortableInstallCommand,
+  buildWindowsGitBashPortableExtractArgs,
   buildWindowsGitInstallFailureMessage,
   buildMacOSNodeDirectInstallCommand,
   buildWindowsNodeDirectInstallCommand,
@@ -308,25 +308,21 @@ describe("model-cli-manager", () => {
     expect(gitCommand).toContain("/SUPPRESSMSGBOXES");
     expect(gitCommand).toContain("/CLOSEAPPLICATIONS");
     expect(gitCommand).toContain("/RESTARTAPPLICATIONS");
+    expect(gitCommand).toContain("/CURRENTUSER");
     expect(gitCommand).toContain("/o:PathOption=Cmd");
     expect(gitCommand).toContain("/o:BashTerminalOption=MinTTY");
+  });
 
-    const portableGitCommand = buildWindowsGitBashPortableInstallCommand(
-      "https://registry.npmmirror.com/-/binary/git-for-windows/v2.54.0.windows.1/PortableGit-2.54.0-64-bit.7z.exe",
+  it("builds native PortableGit extractor arguments without shell wrappers", () => {
+    const args = buildWindowsGitBashPortableExtractArgs(
       "C:\\Users\\alice\\.paseo\\toolchains\\PortableGit",
     );
-    expect(portableGitCommand).toContain("PortableGit");
-    expect(portableGitCommand).toContain("-y");
-    expect(portableGitCommand).toContain("-gm2");
-    expect(portableGitCommand).toContain("-InstallPath=");
-    expect(portableGitCommand).toContain("cmd\\\\git.exe");
-    expect(portableGitCommand).toContain("bin\\\\git.exe");
-    expect(portableGitCommand).toContain("git-bash.exe");
-    expect(portableGitCommand).toContain("bin\\\\bash.exe");
-    expect(portableGitCommand).toContain("& $installerPath @extractArgs");
-    expect(portableGitCommand).toContain("-lc");
-    expect(portableGitCommand).toContain("PortableGit installed to");
-    expect(portableGitCommand).not.toContain("Start-Process -FilePath $installerPath");
+
+    expect(args).toEqual([
+      "-y",
+      "-gm2",
+      "-InstallPath=C:\\Users\\alice\\.paseo\\toolchains\\PortableGit",
+    ]);
   });
 
   it("builds app-managed macOS Node install commands without sudo", () => {
@@ -347,8 +343,9 @@ describe("model-cli-manager", () => {
   it("summarizes Git Bash installation failures with validation details", () => {
     const message = buildWindowsGitInstallFailureMessage(
       [
-        "PortableGit npmmirror validation: Git executable was not found in app-managed PortableGit or Git for Windows paths.",
-        "npmmirror: Git mirror installer failed: access denied",
+        "PortableGit download: connection reset",
+        "PortableGit verify: PortableGit extraction did not create git.exe or bash.exe",
+        "Git installer verify: Git Bash was not found in app-managed PortableGit or Git for Windows paths.",
       ],
       {
         installed: false,
@@ -360,6 +357,8 @@ describe("model-cli-manager", () => {
 
     expect(message).toContain("Git Bash setup failed.");
     expect(message).toContain("Git Bash was not found");
+    expect(message).toContain("PortableGit download");
+    expect(message).toContain("PortableGit verify");
     expect(message).toContain("Attempts:");
     expect(message).not.toContain("Windows PATH");
   });
@@ -382,6 +381,7 @@ describe("model-cli-manager", () => {
     expect(command).toContain("powershell -NoProfile");
     expect(command).toContain("Git-64-bit.exe");
     expect(command).toContain("/VERYSILENT");
+    expect(command).toContain("/CURRENTUSER");
     expect(command).toContain("/o:PathOption=Cmd");
     expect(command).toContain("Invoke-WebRequest");
     expect(command).toContain("Start-Process");

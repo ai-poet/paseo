@@ -1,7 +1,11 @@
-import { existsSync } from "node:fs";
+import { createWriteStream, existsSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { arch } from "node:process";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
 import log from "electron-log/main";
 import { execCommand, resolvePaseoHome } from "@getpaseo/server";
 import { patchClaudeCodeGitBashPathForWindows } from "../features/provider-switch.js";
@@ -15,6 +19,7 @@ const NPMMIRROR_REGISTRY_URL = "https://registry.npmmirror.com";
 const WINDOWS_GIT_WINGET_PACKAGE_ID = "Git.Git";
 const WINDOWS_GIT_DIRECT_DOWNLOAD_URL =
   "https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe";
+const execFileAsync = promisify(execFile);
 
 type RuntimeManagerId = "nvm" | "brew" | "managed" | "shell";
 
@@ -58,6 +63,16 @@ export interface ModelCliInstallResult {
 interface CommandResult {
   stdout: string;
   stderr: string;
+}
+
+interface WindowsGitPathSnapshot {
+  installDir: string;
+  gitCmdPath: string;
+  gitBinPath: string;
+  gitBashPath: string;
+  bashBinPath: string;
+  bashUsrPath: string;
+  exists: Record<string, boolean>;
 }
 
 interface ShellOptions {
@@ -111,6 +126,14 @@ function simplifyAttemptMessage(message: string): string {
     return normalized;
   }
   return `${normalized.slice(0, 257).trimEnd()}...`;
+}
+
+function commandOutputTail(value: string | null | undefined): string | null {
+  const trimmed = trimToNull(value);
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.length <= 1200 ? trimmed : trimmed.slice(-1200);
 }
 
 export function buildWindowsGitInstallFailureMessage(
@@ -242,21 +265,8 @@ async function resolveWindowsGitBashPath(): Promise<string | null> {
   }
 
   const fallbackCandidates = [
-    path.win32.join(
-      resolveWindowsPaseoHome(process.env),
-      "toolchains",
-      "PortableGit",
-      "bin",
-      "bash.exe",
-    ),
-    path.win32.join(
-      resolveWindowsPaseoHome(process.env),
-      "toolchains",
-      "PortableGit",
-      "usr",
-      "bin",
-      "bash.exe",
-    ),
+    path.win32.join(resolveWindowsPortableGitDir(process.env), "bin", "bash.exe"),
+    path.win32.join(resolveWindowsPortableGitDir(process.env), "usr", "bin", "bash.exe"),
     path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe"),
     path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "usr", "bin", "bash.exe"),
     path.join(
@@ -326,20 +336,8 @@ async function resolveWindowsGitExecutablePath(): Promise<string | null> {
   }
 
   const fallbackCandidates = [
-    path.win32.join(
-      resolveWindowsPaseoHome(process.env),
-      "toolchains",
-      "PortableGit",
-      "cmd",
-      "git.exe",
-    ),
-    path.win32.join(
-      resolveWindowsPaseoHome(process.env),
-      "toolchains",
-      "PortableGit",
-      "bin",
-      "git.exe",
-    ),
+    path.win32.join(resolveWindowsPortableGitDir(process.env), "cmd", "git.exe"),
+    path.win32.join(resolveWindowsPortableGitDir(process.env), "bin", "git.exe"),
     path.win32.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "cmd", "git.exe"),
     path.win32.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "git.exe"),
     path.win32.join(
@@ -446,6 +444,33 @@ function resolveWindowsPaseoHome(env: NodeJS.ProcessEnv = process.env): string {
   return resolvePaseoHome(env);
 }
 
+function resolveWindowsPortableGitDir(env: NodeJS.ProcessEnv = process.env): string {
+  return path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "PortableGit");
+}
+
+function createWindowsGitPathSnapshot(installDir: string): WindowsGitPathSnapshot {
+  const gitCmdPath = path.win32.join(installDir, "cmd", "git.exe");
+  const gitBinPath = path.win32.join(installDir, "bin", "git.exe");
+  const gitBashPath = path.win32.join(installDir, "git-bash.exe");
+  const bashBinPath = path.win32.join(installDir, "bin", "bash.exe");
+  const bashUsrPath = path.win32.join(installDir, "usr", "bin", "bash.exe");
+  return {
+    installDir,
+    gitCmdPath,
+    gitBinPath,
+    gitBashPath,
+    bashBinPath,
+    bashUsrPath,
+    exists: {
+      gitCmdPath: existsSync(gitCmdPath),
+      gitBinPath: existsSync(gitBinPath),
+      gitBashPath: existsSync(gitBashPath),
+      bashBinPath: existsSync(bashBinPath),
+      bashUsrPath: existsSync(bashUsrPath),
+    },
+  };
+}
+
 function resolveManagedNodeDir(): string {
   return path.join(resolvePaseoHome(process.env), "toolchains", "node22");
 }
@@ -458,18 +483,9 @@ export function buildWindowsCliSearchPath(env: NodeJS.ProcessEnv = process.env):
   const paths: string[] = [];
   appendUniquePath(paths, env.APPDATA ? path.win32.join(env.APPDATA, "npm") : null);
   appendUniquePath(paths, env.ProgramFiles ? path.win32.join(env.ProgramFiles, "nodejs") : null);
-  appendUniquePath(
-    paths,
-    path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "PortableGit", "cmd"),
-  );
-  appendUniquePath(
-    paths,
-    path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "PortableGit", "bin"),
-  );
-  appendUniquePath(
-    paths,
-    path.win32.join(resolveWindowsPaseoHome(env), "toolchains", "PortableGit", "usr", "bin"),
-  );
+  appendUniquePath(paths, path.win32.join(resolveWindowsPortableGitDir(env), "cmd"));
+  appendUniquePath(paths, path.win32.join(resolveWindowsPortableGitDir(env), "bin"));
+  appendUniquePath(paths, path.win32.join(resolveWindowsPortableGitDir(env), "usr", "bin"));
   appendUniquePath(
     paths,
     env.ProgramFiles ? path.win32.join(env.ProgramFiles, "Git", "cmd") : null,
@@ -630,20 +646,178 @@ export function buildMacOSNodeDirectInstallCommand(tarballUrl: string, installDi
 
 export function buildWindowsGitBashMirrorInstallCommand(installerUrl: string): string {
   const quotedUrl = quotePowerShellString(installerUrl);
-  return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $installerUrl=${quotedUrl}; $installerPath=Join-Path $env:TEMP ('paseo-git-installer-' + [Guid]::NewGuid().ToString('N') + '.exe'); try { Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -TimeoutSec 60; $installerArgs=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/NOCANCEL','/CLOSEAPPLICATIONS','/RESTARTAPPLICATIONS','/o:PathOption=Cmd','/o:BashTerminalOption=MinTTY'); $process=Start-Process -FilePath $installerPath -ArgumentList $installerArgs -Wait -PassThru; if ($process.ExitCode -ne 0) { throw ('Git for Windows installer failed with exit code ' + $process.ExitCode) } } catch { throw ('Git mirror installer failed: ' + $_.Exception.Message) } finally { Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue }"`;
+  return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $installerUrl=${quotedUrl}; $installerPath=Join-Path $env:TEMP ('paseo-git-installer-' + [Guid]::NewGuid().ToString('N') + '.exe'); try { Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -TimeoutSec 60; $installerArgs=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/NOCANCEL','/CURRENTUSER','/CLOSEAPPLICATIONS','/RESTARTAPPLICATIONS','/o:PathOption=Cmd','/o:BashTerminalOption=MinTTY'); $process=Start-Process -FilePath $installerPath -ArgumentList $installerArgs -Wait -PassThru; if ($process.ExitCode -ne 0) { throw ('Git for Windows installer failed with exit code ' + $process.ExitCode) } } catch { throw ('Git mirror installer failed: ' + $_.Exception.Message) } finally { Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue }"`;
 }
 
-export function buildWindowsGitBashPortableInstallCommand(
-  installerUrl: string,
-  installDir: string,
-): string {
-  const quotedUrl = quotePowerShellString(installerUrl);
-  const quotedInstallDir = quotePowerShellString(installDir);
-  return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $installerUrl=${quotedUrl}; $installDir=${quotedInstallDir}; $installerPath=Join-Path $env:TEMP ('paseo-portable-git-' + [Guid]::NewGuid().ToString('N') + '.7z.exe'); try { if (Test-Path $installDir) { Remove-Item -Path $installDir -Recurse -Force }; New-Item -ItemType Directory -Path $installDir -Force | Out-Null; Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -TimeoutSec 60; $extractArgs=@('-y','-gm2',('-InstallPath=' + $installDir)); & $installerPath @extractArgs; if ($LASTEXITCODE -ne 0) { throw ('PortableGit extractor failed with exit code ' + $LASTEXITCODE) }; $gitCmd=Join-Path $installDir 'cmd\\\\git.exe'; $gitBin=Join-Path $installDir 'bin\\\\git.exe'; $gitBash=Join-Path $installDir 'git-bash.exe'; $bash=Join-Path $installDir 'bin\\\\bash.exe'; if ((-not (Test-Path $gitCmd)) -and (-not (Test-Path $gitBin))) { throw ('PortableGit extracted but git.exe was not found under ' + $installDir) }; if ((-not (Test-Path $gitBash)) -and (-not (Test-Path $bash))) { throw ('PortableGit extracted but Git Bash was not found under ' + $installDir) }; $bashProbe=if (Test-Path $bash) { $bash } else { Join-Path $installDir 'usr\\\\bin\\\\bash.exe' }; if (-not (Test-Path $bashProbe)) { throw ('PortableGit extracted but bash.exe was not found under ' + $installDir) }; & $bashProbe -lc 'echo ok && git --version'; if ($LASTEXITCODE -ne 0) { throw ('PortableGit Bash validation failed with exit code ' + $LASTEXITCODE) }; Write-Output ('PortableGit installed to ' + $installDir); Write-Output ('Git executable: ' + $(if (Test-Path $gitCmd) { $gitCmd } else { $gitBin })); Write-Output ('Git Bash executable: ' + $bashProbe) } catch { throw ('PortableGit mirror install failed: ' + $_.Exception.Message) } finally { Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue }"`;
+export function buildWindowsGitBashPortableExtractArgs(installDir: string): string[] {
+  return ["-y", "-gm2", `-InstallPath=${installDir}`];
 }
 
 export function buildWindowsGitBashDirectInstallCommand(): string {
   return buildWindowsGitBashMirrorInstallCommand(WINDOWS_GIT_DIRECT_DOWNLOAD_URL);
+}
+
+async function downloadFileWithFetch(url: string, destination: string): Promise<void> {
+  const response = await fetch(url);
+  if (!response.ok || !response.body) {
+    throw new Error(`Download failed with HTTP ${response.status}: ${url}`);
+  }
+  await mkdir(path.dirname(destination), { recursive: true });
+  await pipeline(response.body, createWriteStream(destination));
+}
+
+async function execFileForInstall(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<CommandResult & { exitCode: number }> {
+  try {
+    const result = await execFileAsync(command, args, {
+      env,
+      timeout: 10 * 60 * 1000,
+      maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true,
+    });
+    return {
+      stdout: result.stdout?.toString() ?? "",
+      stderr: result.stderr?.toString() ?? "",
+      exitCode: 0,
+    };
+  } catch (error) {
+    const maybeError = error as Error & {
+      stdout?: string | Buffer;
+      stderr?: string | Buffer;
+      code?: number | string;
+    };
+    const exitCode = typeof maybeError.code === "number" ? maybeError.code : 1;
+    const stdout = maybeError.stdout?.toString() ?? "";
+    const stderr = maybeError.stderr?.toString() ?? "";
+    throw new Error(
+      `exit code ${exitCode}${stderr ? `: ${commandOutputTail(stderr)}` : ""}${stdout ? ` stdout: ${commandOutputTail(stdout)}` : ""}`,
+    );
+  }
+}
+
+function resolvePortableGitExecutables(snapshot: WindowsGitPathSnapshot): {
+  gitPath: string | null;
+  bashPath: string | null;
+} {
+  return {
+    gitPath: snapshot.exists.gitCmdPath
+      ? snapshot.gitCmdPath
+      : snapshot.exists.gitBinPath
+        ? snapshot.gitBinPath
+        : null,
+    bashPath: snapshot.exists.bashBinPath
+      ? snapshot.bashBinPath
+      : snapshot.exists.bashUsrPath
+        ? snapshot.bashUsrPath
+        : null,
+  };
+}
+
+async function installPortableGitFromUrl(
+  installerUrl: string,
+  installDir: string,
+): Promise<string> {
+  const installerPath = path.win32.join(
+    process.env.TEMP ?? process.env.TMP ?? installDir,
+    `paseo-portable-git-${Date.now()}.7z.exe`,
+  );
+  const outputs: string[] = [];
+  log.info("[model-cli-manager] installing app-managed PortableGit", {
+    installerUrl,
+    installDir,
+    installerPath,
+  });
+
+  try {
+    try {
+      await downloadFileWithFetch(installerUrl, installerPath);
+      outputs.push(`Downloaded PortableGit from ${installerUrl}`);
+    } catch (error) {
+      log.warn("[model-cli-manager] PortableGit download failed", {
+        installerUrl,
+        installerPath,
+        error: getErrorMessage(error),
+      });
+      throw new Error(`PortableGit download: ${getErrorMessage(error)}`);
+    }
+
+    await rm(installDir, { recursive: true, force: true });
+    await mkdir(installDir, { recursive: true });
+
+    const extractArgs = buildWindowsGitBashPortableExtractArgs(installDir);
+    let extractResult: CommandResult & { exitCode: number };
+    try {
+      extractResult = await execFileForInstall(
+        installerPath,
+        extractArgs,
+        buildWindowsCliSearchEnv(),
+      );
+      outputs.push([extractResult.stdout, extractResult.stderr].filter(Boolean).join("\n").trim());
+    } catch (error) {
+      const snapshot = createWindowsGitPathSnapshot(installDir);
+      log.warn("[model-cli-manager] PortableGit extraction failed", {
+        installerPath,
+        installDir,
+        extractArgs,
+        snapshot,
+        error: getErrorMessage(error),
+      });
+      throw new Error(`PortableGit extract: ${getErrorMessage(error)}`);
+    }
+
+    const snapshot = createWindowsGitPathSnapshot(installDir);
+    const executables = resolvePortableGitExecutables(snapshot);
+    if (!executables.gitPath || !executables.bashPath) {
+      log.warn("[model-cli-manager] PortableGit verification paths missing", {
+        installerUrl,
+        installDir,
+        snapshot,
+        extractExitCode: extractResult.exitCode,
+        stdoutTail: commandOutputTail(extractResult.stdout),
+        stderrTail: commandOutputTail(extractResult.stderr),
+      });
+      throw new Error(
+        "PortableGit verify: PortableGit extraction did not create git.exe or bash.exe",
+      );
+    }
+
+    let bashResult: CommandResult;
+    try {
+      bashResult = (await execFileAsync(executables.bashPath, ["-lc", "echo ok && git --version"], {
+        env: buildWindowsCliSearchEnv(),
+        timeout: 10 * 60 * 1000,
+        maxBuffer: 16 * 1024 * 1024,
+        windowsHide: true,
+      })) as CommandResult;
+    } catch (error) {
+      log.warn("[model-cli-manager] PortableGit Bash validation failed", {
+        installerUrl,
+        installDir,
+        snapshot,
+        bashPath: executables.bashPath,
+        error: getErrorMessage(error),
+      });
+      throw new Error(`PortableGit verify: ${getErrorMessage(error)}`);
+    }
+
+    log.info("[model-cli-manager] PortableGit is ready", {
+      installDir,
+      gitPath: executables.gitPath,
+      bashPath: executables.bashPath,
+      bashStdoutTail: commandOutputTail(bashResult.stdout),
+      bashStderrTail: commandOutputTail(bashResult.stderr),
+    });
+    outputs.push(`PortableGit installed to ${installDir}`);
+    outputs.push(`Git executable: ${executables.gitPath}`);
+    outputs.push(`Git Bash executable: ${executables.bashPath}`);
+    outputs.push([bashResult.stdout, bashResult.stderr].filter(Boolean).join("\n").trim());
+    return outputs.filter(Boolean).join("\n").trim();
+  } finally {
+    await rm(installerPath, { force: true }).catch(() => undefined);
+  }
 }
 
 export function buildWindowsNpmPackageInstallCommand(
@@ -1222,23 +1396,13 @@ async function installWindowsGitBash(): Promise<string> {
     if (!portableUrl) {
       throw new Error("No PortableGit 64-bit full distribution was found on npmmirror.");
     }
-    const installDir = path.win32.join(
-      resolveWindowsPaseoHome(process.env),
-      "toolchains",
-      "PortableGit",
-    );
-    const portableResult = await runShell(
-      buildWindowsGitBashPortableInstallCommand(portableUrl, installDir),
-      {
-        forceWindowsCmd: true,
-        env: buildWindowsCliSearchEnv(),
-      },
-    );
-    outputs.push([portableResult.stdout, portableResult.stderr].filter(Boolean).join("\n").trim());
+    const installDir = resolveWindowsPortableGitDir(process.env);
+    outputs.push(await installPortableGitFromUrl(portableUrl, installDir));
   } catch (error) {
     errors.push(`PortableGit npmmirror: ${getErrorMessage(error)}`);
     log.warn("[model-cli-manager] mirrored PortableGit install failed", {
       error: getErrorMessage(error),
+      snapshot: createWindowsGitPathSnapshot(resolveWindowsPortableGitDir(process.env)),
     });
   }
 
