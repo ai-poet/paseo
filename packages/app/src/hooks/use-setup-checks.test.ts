@@ -79,6 +79,17 @@ import {
 import type { Sub2APIGroup, Sub2APIKey } from "@/lib/sub2api-client";
 import type { ModelCliRuntimeStatus } from "@/desktop/daemon/desktop-daemon";
 
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  return {
+    ...actual,
+    Platform: {
+      ...actual.Platform,
+      OS: "web",
+    },
+  };
+});
+
 function makeGroup(id: number, platform: Sub2APIGroup["platform"]): Sub2APIGroup {
   return {
     id,

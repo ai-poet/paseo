@@ -242,6 +242,35 @@ interface CliInstallStep {
   run: () => Promise<{ status: ModelCliRuntimeStatus }>;
 }
 
+export function getCliInstallSteps(): CliInstallStep[] {
+  return [
+    {
+      id: "git",
+      label: "Git Bash",
+      installingDescription: "Installing Git Bash...",
+      run: installGitBashRuntime,
+    },
+    {
+      id: "node",
+      label: "Node.js 22",
+      installingDescription: "Installing Node.js 22...",
+      run: installNode22Runtime,
+    },
+    {
+      id: "codex",
+      label: "Codex",
+      installingDescription: "Installing Codex CLI...",
+      run: installCodexCli,
+    },
+    {
+      id: "claude",
+      label: "Claude Code",
+      installingDescription: "Installing Claude Code CLI...",
+      run: installClaudeCodeCli,
+    },
+  ];
+}
+
 export function useSetupChecks(): UseSetupChecksReturn {
   const router = useRouter();
   const { settings } = useAppSettings();
@@ -445,32 +474,7 @@ export function useSetupChecks(): UseSetupChecksReturn {
               description: "Preparing CLI installation...",
             });
             try {
-              const installSteps: CliInstallStep[] = [
-                {
-                  id: "git",
-                  label: "Git Bash",
-                  installingDescription: "Installing Git Bash...",
-                  run: installGitBashRuntime,
-                },
-                {
-                  id: "node",
-                  label: "Node.js 22",
-                  installingDescription: "Installing Node.js 22...",
-                  run: installNode22Runtime,
-                },
-                {
-                  id: "codex",
-                  label: "Codex",
-                  installingDescription: "Installing Codex CLI...",
-                  run: installCodexCli,
-                },
-                {
-                  id: "claude",
-                  label: "Claude Code",
-                  installingDescription: "Installing Claude Code CLI...",
-                  run: installClaudeCodeCli,
-                },
-              ];
+              const installSteps = getCliInstallSteps();
               let result: { status: ModelCliRuntimeStatus } | null = null;
               for (const step of installSteps) {
                 updateCheck("cliConfig", {
