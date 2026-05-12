@@ -218,7 +218,14 @@ export interface NodeRuntimeStatus {
   major: number | null;
   npmVersion: string | null;
   satisfies: boolean;
-  manager: "nvm" | "brew" | "shell";
+  manager: "nvm" | "brew" | "managed" | "shell";
+  error: string | null;
+}
+
+export interface GitRuntimeStatus {
+  installed: boolean;
+  version: string | null;
+  bashPath: string | null;
   error: string | null;
 }
 
@@ -253,7 +260,7 @@ function parseNodeRuntimeStatus(raw: unknown): NodeRuntimeStatus {
     throw new Error("Unexpected node runtime status response.");
   }
   const manager = toStringOrNull(raw.manager);
-  if (manager !== "nvm" && manager !== "brew" && manager !== "shell") {
+  if (manager !== "nvm" && manager !== "brew" && manager !== "managed" && manager !== "shell") {
     throw new Error("Unexpected node runtime manager.");
   }
   return {
@@ -341,6 +348,10 @@ export async function installSkills(): Promise<InstallStatus> {
 
 export async function getModelCliRuntimeStatus(): Promise<ModelCliRuntimeStatus> {
   return parseModelCliRuntimeStatus(await invokeDesktopCommand("get_model_cli_runtime_status"));
+}
+
+export async function installGitBashRuntime(): Promise<ModelCliInstallResult> {
+  return parseModelCliInstallResult(await invokeDesktopCommand("install_git_bash_runtime"));
 }
 
 export async function installNode22Runtime(): Promise<ModelCliInstallResult> {

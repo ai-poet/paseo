@@ -34,21 +34,19 @@ describe("sub2api i18n helpers", () => {
   it("localizes payment labels", () => {
     expect(getSub2APIPaymentLabel("alipay", "zh")).toBe("支付宝");
     expect(getSub2APIPaymentLabel("wxpay_direct", "zh")).toBe("微信支付");
-    expect(getSub2APIPaymentLabel("bank", "zh")).toBe("银行卡支付");
     expect(getSub2APIPaymentLabel("alipay", "en")).toBe("Alipay");
     expect(getSub2APIPaymentLabel("wxpay_direct", "en")).toBe("WeChat Pay");
-    expect(getSub2APIPaymentLabel("bank", "en")).toBe("Bank card payment");
+    expect(getSub2APIPaymentLabel("usdt.polygon", "en")).toBe("USDT (Polygon)");
   });
 
   it("filters payment methods by locale like the Sub2API pay center", () => {
-    const allTypes = ["alipay", "wxpay_direct", "bank", "stripe", "usdt.plasma", "usdc.solana"];
+    const allTypes = ["alipay", "wxpay_direct", "stripe", "usdt.plasma", "usdc.solana"];
 
-    expect(filterSub2APIPaymentTypesByLocale(allTypes, "zh")).toEqual([
-      "alipay",
-      "wxpay_direct",
-      "bank",
+    expect(filterSub2APIPaymentTypesByLocale(allTypes, "zh")).toEqual(["alipay", "wxpay_direct"]);
+    expect(filterSub2APIPaymentTypesByLocale(allTypes, "en")).toEqual([
+      "usdt.plasma",
+      "usdc.solana",
     ]);
-    expect(filterSub2APIPaymentTypesByLocale(allTypes, "en")).toEqual(["bank"]);
   });
 
   it("exposes Chinese and English UI copy", () => {
@@ -66,5 +64,13 @@ describe("sub2api i18n helpers", () => {
     expect(getSub2APIMessages("en").paseoCloudApiKeys.title).toBe("API Keys (advanced)");
     expect(getSub2APIMessages("zh").paseoCloudUsage.title).toBe("用量");
     expect(getSub2APIMessages("en").paseoCloudUsage.title).toBe("Usage");
+    expect(getSub2APIMessages("zh").setupCheck.title).toBe("环境检查");
+    expect(getSub2APIMessages("en").setupCheck.title).toBe("Environment Check");
+    expect(getSub2APIMessages("zh").loginScreen.primaryLogin).toBe("登录");
+    expect(getSub2APIMessages("en").loginScreen.primaryLogin).toBe("Sign in");
+    expect(getSub2APIMessages("zh").modeSelect.signInMeta).toBe("登录 · 推荐");
+    expect(getSub2APIMessages("en").modeSelect.signInMeta).toBe("Sign in · Recommended");
+    expect(getSub2APIMessages("zh").authAlerts.loginFailed).toBe("登录失败");
+    expect(getSub2APIMessages("en").authAlerts.loginFailed).toBe("Login failed");
   });
 });

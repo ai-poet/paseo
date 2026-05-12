@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isSub2APIRedirectPaymentType,
-  resolveSub2APIPaymentOrderFlow,
-} from "./sub2api-pay-flow";
+import { isSub2APIRedirectPaymentType, resolveSub2APIPaymentOrderFlow } from "./sub2api-pay-flow";
 
 const baseOrder = {
   orderId: "order-123",
