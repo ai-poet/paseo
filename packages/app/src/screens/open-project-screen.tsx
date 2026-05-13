@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { View, Text } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { FolderOpen, Smartphone } from "lucide-react-native";
+import { FolderOpen } from "lucide-react-native";
 import { PaseoLogo } from "@/components/icons/paseo-logo";
 import { Button } from "@/components/ui/button";
 import { MenuHeader } from "@/components/headers/menu-header";
@@ -16,8 +16,6 @@ import {
   HEADER_TOP_PADDING_MOBILE,
 } from "@/constants/layout";
 import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
-import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
-import { PairDeviceModal } from "@/desktop/components/pair-device-modal";
 import { useAppLocale } from "@/hooks/use-app-locale";
 import { getAppMessages } from "@/i18n/sub2api";
 
@@ -26,8 +24,6 @@ export function OpenProjectScreen({ serverId }: { serverId: string }) {
   const openProjectPicker = useOpenProjectPicker(serverId);
   const hasHydrated = useSessionStore((s) => s.sessions[serverId]?.hasHydratedWorkspaces ?? false);
   const hasProjects = useHasWorkspaces(serverId);
-  const isLocalDaemon = useIsLocalDaemon(serverId);
-  const [isPairDeviceOpen, setIsPairDeviceOpen] = useState(false);
   const locale = useAppLocale();
   const text = useMemo(() => getAppMessages(locale).openProject, [locale]);
 
@@ -62,23 +58,8 @@ export function OpenProjectScreen({ serverId }: { serverId: string }) {
           >
             {text.addProject}
           </Button>
-          {isLocalDaemon ? (
-            <Button
-              variant="outline"
-              leftIcon={Smartphone}
-              onPress={() => setIsPairDeviceOpen(true)}
-              testID="open-project-pair-device"
-            >
-              {text.pairDevice}
-            </Button>
-          ) : null}
         </View>
       </View>
-      <PairDeviceModal
-        visible={isPairDeviceOpen}
-        onClose={() => setIsPairDeviceOpen(false)}
-        testID="open-project-pair-device-modal"
-      />
     </View>
   );
 }
