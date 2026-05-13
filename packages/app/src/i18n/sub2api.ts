@@ -276,7 +276,7 @@ export const sub2apiMessages = {
       accountFallback: "账户",
       signIn: "登录",
       signInBody: (cloudName: string, appName: string) =>
-        `使用 GitHub 连接 ${cloudName}，使用我们子托管的AI模型服务，管理账单、API 密钥、路由分组和模型广场。首次登录时，${appName} 会尝试自动配置您的 Claude Code 或 Codex 配置从而使用我们的AI模型服务`,
+        `使用 GitHub 连接 ${cloudName}，使用我们自托管的AI模型服务，管理账单、API 密钥、路由分组和模型广场。首次登录时，${appName} 会尝试自动配置您的 Claude Code 或 Codex 配置从而使用我们的AI模型服务`,
       loginWithGitHub: "使用 GitHub 登录",
       connectedHint: (cloudName: string) =>
         `${cloudName} 会话已连接。你可以通过左侧功能区分别管理密钥、路由和模型。`,
@@ -392,7 +392,7 @@ export const sub2apiMessages = {
     loginScreen: {
       title: (appName: string) => `登录 ${appName}`,
       subtitle: (cloudName: string, appName: string) =>
-        `请在浏览器中完成 ${cloudName} 登录。首次登录时，${appName} 会尝试为你补齐缺失的 Claude Code 和 Codex 路由，且不会覆盖此设备上已有的路由。`,
+        `请在浏览器中完成 ${cloudName} 登录。首次登录后，Claude Code 和 Codex 将使用我们自托管的AI模型服务，且不会覆盖此设备上已有的设置。`,
       envUrlInvalid:
         "EXPO_PUBLIC_MANAGED_SERVICE_URL 不是有效的 http(s) URL。请修正后重新构建或重启。",
       waitingForBrowser: "正在等待浏览器...",
@@ -1808,7 +1808,7 @@ export const sub2apiMessages = {
     loginScreen: {
       title: (appName: string) => `Sign in to ${appName}`,
       subtitle: (cloudName: string, appName: string) =>
-        `Complete sign-in in your browser for ${cloudName}. On first sign-in, ${appName} tries to configure any missing Claude Code and Codex routes for you without replacing routes that already exist on this device.`,
+        `Complete sign-in in your browser for ${cloudName}. After first sign-in, Claude Code and Codex will use our self-hosted AI model service, and will not replace the settings that already exist on this device.`,
       envUrlInvalid:
         "EXPO_PUBLIC_MANAGED_SERVICE_URL is not a valid http(s) URL. Fix it and rebuild or restart.",
       waitingForBrowser: "Waiting for browser...",

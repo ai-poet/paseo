@@ -76,7 +76,7 @@ describe("sub2api i18n helpers", () => {
     expect(getSub2APIMessages("zh").settings.sections.general).toBe("通用");
     expect(getSub2APIMessages("en").settings.sections.general).toBe("General");
     expect(getSub2APIMessages("zh").cloudPanel.signInBody("Paseo Cloud", "Paseo")).toContain(
-      "使用我们子托管的AI模型服务",
+      "使用我们自托管的AI模型服务",
     );
     expect(getSub2APIMessages("en").cloudPanel.signInBody("Paseo Cloud", "Paseo")).toContain(
       "sub-managed AI model service",
