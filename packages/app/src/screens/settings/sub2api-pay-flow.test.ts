@@ -12,8 +12,8 @@ const baseOrder = {
 };
 
 describe("sub2api-pay-flow", () => {
-  it("treats Alipay, WeChat Pay, and bank payments as browser redirects", () => {
-    for (const paymentType of ["alipay", "wxpay_direct", "bank"] as const) {
+  it("treats WeChat Pay and bank payments as browser redirects", () => {
+    for (const paymentType of ["wxpay_direct", "bank"] as const) {
       expect(isSub2APIRedirectPaymentType(paymentType)).toBe(true);
       expect(
         resolveSub2APIPaymentOrderFlow({
@@ -24,6 +24,10 @@ describe("sub2api-pay-flow", () => {
         }),
       ).toBe("redirect");
     }
+  });
+
+  it("does not treat alipay as a redirect payment in cheaprouter build", () => {
+    expect(isSub2APIRedirectPaymentType("alipay")).toBe(false);
   });
 
   it("keeps non-redirect QR orders in QR flow", () => {

@@ -6,7 +6,7 @@ export type Sub2APIPaymentOrderFlowInput = {
   clientSecret?: string | null;
 };
 
-const REDIRECT_PAYMENT_PREFIXES = ["alipay", "wxpay", "bank"] as const;
+const REDIRECT_PAYMENT_PREFIXES = ["wxpay", "bank"] as const;
 
 function normalizePaymentType(paymentType: string | null | undefined): string {
   return paymentType?.trim().toLowerCase() ?? "";

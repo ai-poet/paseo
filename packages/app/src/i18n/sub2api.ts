@@ -9,7 +9,7 @@ type LocaleResolutionInput = {
 };
 
 const DEFAULT_LOCALE: Sub2APILocale = "zh";
-const FIAT_PAYMENT_PREFIXES = ["alipay", "wxpay"] as const;
+const FIAT_PAYMENT_PREFIXES = ["wxpay"] as const;
 const CRYPTO_PAYMENT_PREFIXES = ["usdt", "usdc"] as const;
 
 export function normalizeSub2APILocale(value: string | null | undefined): Sub2APILocale {
